@@ -36,7 +36,7 @@
     },
     "apps/electron": {
       "name": "@proma/electron",
-      "version": "0.15.6",
+      "version": "0.15.7",
       "dependencies": {
         "@anthropic-ai/claude-agent-sdk": "0.3.201",
         "@anthropic-ai/sdk": "^0.93.0",
@@ -59,6 +59,7 @@
         "@emoji-mart/react": "^1.1.1",
         "@larksuiteoapi/node-sdk": "^1.65.0",
         "@proma/core": "workspace:*",
+        "@proma/server-core": "workspace:*",
         "@proma/session-core": "workspace:*",
         "@proma/shared": "workspace:*",
         "@proma/ui": "workspace:*",
@@ -202,6 +203,23 @@
         "@anthropic-ai/claude-agent-sdk": ">=0.2.123",
         "@anthropic-ai/sdk": ">=0.70.0",
         "@modelcontextprotocol/sdk": ">=1.0.0",
+      },
+    },
+    "packages/server-core": {
+      "name": "@proma/server-core",
+      "version": "0.1.0",
+      "dependencies": {
+        "@proma/core": "workspace:*",
+        "@proma/shared": "workspace:*",
+      },
+      "devDependencies": {
+        "typescript": "^5.0.0",
+      },
+      "peerDependencies": {
+        "@anthropic-ai/claude-agent-sdk": "0.3.201",
+        "@earendil-works/pi-agent-core": "0.80.9",
+        "@earendil-works/pi-ai": "0.80.9",
+        "@earendil-works/pi-coding-agent": "0.80.9",
       },
     },
     "packages/session-core": {
@@ -570,6 +588,8 @@
     "@proma/electron": ["@proma/electron@workspace:apps/electron"],
 
     "@proma/server": ["@proma/server@workspace:apps/server"],
+
+    "@proma/server-core": ["@proma/server-core@workspace:packages/server-core"],
 
     "@proma/session-core": ["@proma/session-core@workspace:packages/session-core"],
 

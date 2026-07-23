@@ -119,6 +119,10 @@ import {
 } from './lib/voice-dictation-window'
 import { registerGlobalShortcut, unregisterAllGlobalShortcuts } from './lib/global-shortcut-service'
 import { setPromaVersion } from '@proma/core'
+import { configureServerCore } from '@proma/server-core'
+import { SafeStorageCryptoProvider, createElectronEnvProbe } from './lib/server-core-providers'
+import { setCodexModelsFetcher } from './lib/channel-manager'
+import { listCodexModels } from './lib/adapters/pi-model-registry'
 import { TRAY_IPC_CHANNELS } from '../types'
 
 const MIGRATION_IPC_OPEN = 'migration:open-import-file'
@@ -482,6 +486,14 @@ app.whenReady().then(bootstrap).catch(handleBootstrapFailure)
 async function bootstrap(): Promise<void> {
   // 初始化 Proma 版本号（供 User-Agent 等全局标识使用）
   setPromaVersion(app.getVersion())
+
+  // 注入 server-core 端口（safeStorage 加密 / Electron 环境探针）+ Codex 模型拉取回调。
+  // 必须在任何使用核心域（渠道加解密、配置路径）的调用之前完成。
+  configureServerCore({
+    crypto: new SafeStorageCryptoProvider(),
+    envProbe: createElectronEnvProbe(),
+  })
+  setCodexModelsFetcher(listCodexModels)
 
   // 注册自定义协议 proma-file:// 用于内联预览本地文件。
   // 协议只接受主进程签发的 opaque token，不解析 renderer 提供的绝对路径。

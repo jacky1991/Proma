@@ -1,96 +1,23 @@
 /**
- * 应用设置服务
+ * 应用设置服务（Electron 端）
  *
- * 管理应用设置（主题模式等）的读写。
- * 存储在 ~/.proma/settings.json
+ * 逻辑真源在 @proma/server-core/settings-service；此处仅做类型还原包装：
+ * server-core 持宽松 AppSettings（避开 renderer TabItem 依赖），Electron 端还原为完整 AppSettings。
+ * 运行时读写的是同一份 ~/.proma/settings.json，行为与迁移前一致。
  */
 
-import { readFileSync, writeFileSync, existsSync } from 'node:fs'
-import { getSettingsPath } from './config-paths'
-import { DEFAULT_AGENT_RUNTIME, DEFAULT_INTERFACE_VARIANT, DEFAULT_THEME_MODE } from '../../types'
 import type { AppSettings } from '../../types'
+import {
+  getSettings as scGetSettings,
+  updateSettings as scUpdateSettings,
+} from '@proma/server-core/settings-service'
 
-/**
- * 获取应用设置
- *
- * 如果文件不存在，返回默认设置。
- */
+/** 获取应用设置（类型还原为 Electron 完整 AppSettings）。 */
 export function getSettings(): AppSettings {
-  const filePath = getSettingsPath()
-
-  if (!existsSync(filePath)) {
-    return {
-      themeMode: DEFAULT_THEME_MODE,
-      interfaceVariant: DEFAULT_INTERFACE_VARIANT,
-      onboardingCompleted: false,
-      environmentCheckSkipped: false,
-      notificationsEnabled: true,
-      longTextPasteAsAttachmentEnabled: false,
-      richTextRenderingEnabled: false,
-      feishuSessionMirror: { mode: 'off' },
-      builtinMcpDisabledIds: [],
-      agentRuntime: DEFAULT_AGENT_RUNTIME,
-      agentThinking: { type: 'adaptive' },
-    }
-  }
-
-  try {
-    const raw = readFileSync(filePath, 'utf-8')
-    const data = JSON.parse(raw) as Partial<AppSettings> & { experimentalAgentRuntimeSwitchEnabled?: boolean }
-    // Pi runtime 已默认可用；读取时清理旧版本遗留的实验开关。
-    const { experimentalAgentRuntimeSwitchEnabled: _legacyRuntimeSwitch, ...settings } = data
-    return {
-      ...settings,
-      themeMode: data.themeMode || DEFAULT_THEME_MODE,
-      interfaceVariant: data.interfaceVariant || DEFAULT_INTERFACE_VARIANT,
-      onboardingCompleted: data.onboardingCompleted ?? false,
-      environmentCheckSkipped: data.environmentCheckSkipped ?? false,
-      notificationsEnabled: data.notificationsEnabled ?? true,
-      longTextPasteAsAttachmentEnabled: data.longTextPasteAsAttachmentEnabled ?? false,
-      richTextRenderingEnabled: data.richTextRenderingEnabled ?? false,
-      feishuSessionMirror: data.feishuSessionMirror ?? { mode: 'off' },
-      builtinMcpDisabledIds: settings.builtinMcpDisabledIds ?? [],
-      agentRuntime: settings.agentRuntime ?? DEFAULT_AGENT_RUNTIME,
-      agentThinking: settings.agentThinking ?? { type: 'adaptive' },
-    }
-  } catch (error) {
-    console.error('[设置] 读取失败:', error)
-    return {
-      themeMode: DEFAULT_THEME_MODE,
-      interfaceVariant: DEFAULT_INTERFACE_VARIANT,
-      onboardingCompleted: false,
-      environmentCheckSkipped: false,
-      notificationsEnabled: true,
-      longTextPasteAsAttachmentEnabled: false,
-      richTextRenderingEnabled: false,
-      feishuSessionMirror: { mode: 'off' },
-      builtinMcpDisabledIds: [],
-      agentRuntime: DEFAULT_AGENT_RUNTIME,
-      agentThinking: { type: 'adaptive' },
-    }
-  }
+  return scGetSettings() as AppSettings
 }
 
-/**
- * 更新应用设置
- *
- * 合并更新字段并写入文件。
- */
+/** 更新应用设置（合并字段并写回，类型还原）。 */
 export function updateSettings(updates: Partial<AppSettings>): AppSettings {
-  const current = getSettings()
-  const updated: AppSettings = {
-    ...current,
-    ...updates,
-  }
-  const filePath = getSettingsPath()
-
-  try {
-    writeFileSync(filePath, JSON.stringify(updated, null, 2), 'utf-8')
-    console.log('[设置] 已更新 keys:', Object.keys(updates).join(', '))
-  } catch (error) {
-    console.error('[设置] 写入失败:', error)
-    throw new Error('写入应用设置失败')
-  }
-
-  return updated
+  return scUpdateSettings(updates as Record<string, unknown>) as AppSettings
 }

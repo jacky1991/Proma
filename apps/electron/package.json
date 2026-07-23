@@ -1,6 +1,6 @@
 {
   "name": "@proma/electron",
-  "version": "0.15.6",
+  "version": "0.15.7",
   "description": "Proma next gen ai software with general agents - Electron App",
   "main": "dist/main.cjs",
   "author": {
@@ -65,6 +65,7 @@
     "@emoji-mart/react": "^1.1.1",
     "@larksuiteoapi/node-sdk": "^1.65.0",
     "@proma/core": "workspace:*",
+    "@proma/server-core": "workspace:*",
     "@proma/session-core": "workspace:*",
     "@proma/shared": "workspace:*",
     "@proma/ui": "workspace:*",
