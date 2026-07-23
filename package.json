@@ -10,6 +10,8 @@
   ],
   "scripts": {
     "dev": "bun run --filter='@proma/electron' dev",
+    "dev:web": "bun run --filter='@proma/web' dev",
+    "dev:server": "bun run --filter='@proma/server' dev",
     "electron:dev": "bun run --filter='@proma/electron' dev",
     "electron:build": "bun run --filter='@proma/electron' build",
     "electron:start": "bun run --filter='@proma/electron' start",
