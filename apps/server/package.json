@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@proma/shared": "workspace:*",
+    "@proma/server-core": "workspace:*",
     "hono": "^4.11.5"
   },
   "devDependencies": {

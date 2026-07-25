@@ -1324,6 +1324,13 @@ export const PROMA_PERMISSION_MODES = ['bypassPermissions', 'plan'] as const
 
 export type PromaPermissionMode = typeof PROMA_PERMISSION_MODES[number]
 
+/**
+ * 默认权限模式。
+ *
+ * M2 迭代 3 说明：权限交互基础设施已就绪（WS 下行推送 + HTTP 上行响应 + 重连恢复），
+ * 用户可通过 UI 切换到 plan 模式触发权限请求。
+ * 默认保持 bypassPermissions（与桌面端一致），避免新用户首次体验被频繁审批打断。
+ */
 export const PROMA_DEFAULT_PERMISSION_MODE: PromaPermissionMode = 'bypassPermissions'
 
 export interface PromaPermissionModeConfig {

@@ -155,9 +155,9 @@ describe('Agent 会话 runtime 元数据', () => {
     const defaultRuntimeSession = manager.createAgentSession('默认内核会话')
     const piRuntimeSession = manager.createAgentSession('Pi 内核会话', undefined, undefined, undefined, 'pi')
 
-    expect(defaultRuntimeSession.agentRuntime).toBe('claude')
+    expect(defaultRuntimeSession.agentRuntime).toBe('pi')
     expect(piRuntimeSession.agentRuntime).toBe('pi')
-    expect(manager.getAgentSessionMeta(defaultRuntimeSession.id)?.agentRuntime).toBe('claude')
+    expect(manager.getAgentSessionMeta(defaultRuntimeSession.id)?.agentRuntime).toBe('pi')
     expect(manager.getAgentSessionMeta(piRuntimeSession.id)?.agentRuntime).toBe('pi')
     expect(defaultRuntimeSession.openAIThinkingLevel).toBe('off')
   })

@@ -426,7 +426,26 @@ export function parseSkillVersion(skillDir: string): string {
   return '0.0.0'
 }
 
-// 注：getBundledCliPath / seedDefaultSkills（及 compareSemver / defaultSkillCopyFilter 等
+/**
+ * 获取打包进 App 的 proma CLI 二进制路径。
+ *
+ * 打包模式下从 EnvProbe.resourcesPath/bin 取（electron-builder extraResources 注入）。
+ * 开发模式 / Server 端没有编译二进制——返回 undefined，由调用方回退到源码运行。
+ */
+export function getBundledCliPath(): string | undefined {
+  let probe: ReturnType<typeof getEnvProbe>
+  try {
+    probe = getEnvProbe()
+  } catch {
+    return undefined
+  }
+  if (!probe.isPackaged || !probe.resourcesPath) return undefined
+  const binName = process.platform === 'win32' ? 'proma.exe' : 'proma'
+  const cliPath = join(probe.resourcesPath, 'bin', binName)
+  return existsSync(cliPath) ? cliPath : undefined
+}
+
+// 注：seedDefaultSkills（及 compareSemver / defaultSkillCopyFilter 等
 // 其专属辅助）依赖 process.resourcesPath / app.isPackaged，属 Electron 打包职责，不进 server-core——
 // 由 Electron 端 lib/config-paths.ts 在 re-export 纯路径函数之外本地保留。
 

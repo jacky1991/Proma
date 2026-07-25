@@ -227,7 +227,7 @@ function validateScheduleFields(input: Partial<CreateAutomationInput | UpdateAut
   if (input.maxRuns !== undefined && (!isFiniteInt(input.maxRuns) || input.maxRuns < 1)) {
     throw new Error(`非法的 maxRuns: ${String(input.maxRuns)}（应为 ≥1 的整数）`)
   }
-  if (input.agentRuntime !== undefined && input.agentRuntime !== 'claude' && input.agentRuntime !== 'pi') {
+  if (input.agentRuntime !== undefined && input.agentRuntime !== 'pi') {
     throw new Error(`非法的 agentRuntime: ${String(input.agentRuntime)}`)
   }
   if (input.sessionMode !== undefined && input.sessionMode !== 'daily' && input.sessionMode !== 'reuse') {
@@ -505,4 +505,27 @@ export async function buildPiBuiltinTools(
   tools.push(...cloudTools)
 
   return { tools, collaborationAvailable }
+}
+
+// ===== Deps 导出（供 Orchestrator 注入） =====
+
+import type { PiBuiltinToolDeps } from '@proma/server-core/adapters/pi-builtin-tools'
+
+/**
+ * 创建 Electron 端的 PiBuiltinToolDeps（包含 automation / collaboration / web-search 真实实现）
+ */
+export function createPiBuiltinToolDeps(): PiBuiltinToolDeps {
+  return {
+    isWebSearchEnabled: isWebSearchEnabledForAgent,
+    buildWebTools: (sdk) => buildWebTools(sdk as PiSdk),
+    buildAutomationTools: (sdk, ctx) => buildAutomationTools(sdk as PiSdk, ctx),
+    buildCollaborationTools: (sdk, ctx) => buildPiCollaborationTools(sdk as PiSdk, {
+      sessionId: ctx.sessionId,
+      channelId: ctx.channelId,
+      modelId: ctx.modelId,
+      workspaceId: ctx.workspaceId,
+      permissionMode: ctx.permissionMode,
+      triggeredBy: ctx.triggeredBy,
+    }) as ToolDefinition[],
+  }
 }

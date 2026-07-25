@@ -79,7 +79,7 @@ function validateScheduleFields(input: Partial<CreateAutomationInput | UpdateAut
   if (input.maxRuns !== undefined && (!isFiniteInt(input.maxRuns) || input.maxRuns < 1)) {
     throw new Error(`非法的 maxRuns: ${String(input.maxRuns)}（应为 ≥1 的整数）`)
   }
-  if (input.agentRuntime !== undefined && input.agentRuntime !== 'claude' && input.agentRuntime !== 'pi') {
+  if (input.agentRuntime !== undefined && input.agentRuntime !== 'pi') {
     throw new Error(`非法的 agentRuntime: ${String(input.agentRuntime)}`)
   }
   if (input.sessionMode !== undefined && input.sessionMode !== 'daily' && input.sessionMode !== 'reuse') {
@@ -100,7 +100,7 @@ function summarizeAutomation(a: Automation, includeHistory: boolean): Record<str
     scheduledAt: a.scheduledAt,
     maxRuns: a.maxRuns,
     runCount: a.runCount ?? 0,
-    agentRuntime: a.agentRuntime ?? 'claude',
+    agentRuntime: a.agentRuntime ?? 'pi',
     completedAt: a.completedAt,
     sessionMode: a.sessionMode,
     workspaceId: a.workspaceId,
@@ -134,7 +134,7 @@ function getCurrentAutomationId(ctx: AutomationAgentToolContext): string | undef
 function buildAutomationSchemas(z: ZodModule['z']) {
   const scheduleType = z.enum(['interval', 'daily', 'weekly', 'monthly', 'once'])
   const sessionMode = z.enum(['daily', 'reuse'])
-  const agentRuntime = z.enum(['claude', 'pi'])
+  const agentRuntime = z.enum(['pi'])
   return {
     list: {
       active: z.boolean().optional().describe('只列出启用或暂停任务；不传则列出全部'),

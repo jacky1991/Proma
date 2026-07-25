@@ -161,6 +161,7 @@
       "name": "@proma/server",
       "version": "0.0.1",
       "dependencies": {
+        "@proma/server-core": "workspace:*",
         "@proma/shared": "workspace:*",
         "hono": "^4.11.5",
       },
@@ -170,7 +171,7 @@
     },
     "apps/web": {
       "name": "@proma/web",
-      "version": "0.0.1",
+      "version": "0.0.2",
       "dependencies": {
         "@proma/core": "workspace:*",
         "@proma/shared": "workspace:*",
@@ -207,10 +208,11 @@
     },
     "packages/server-core": {
       "name": "@proma/server-core",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "dependencies": {
         "@proma/core": "workspace:*",
         "@proma/shared": "workspace:*",
+        "iconv-lite": "^0.6.3",
       },
       "devDependencies": {
         "typescript": "^5.0.0",

@@ -73,3 +73,17 @@ export async function injectBuiltinMcpServers(ctx: BuiltinMcpInjectContext): Pro
 
   return { collaborationAvailable }
 }
+
+// ===== Deps 导出（供 Orchestrator 注入） =====
+
+import type { BuiltinMcpDeps } from '@proma/server-core/builtin-mcp/registry'
+
+/**
+ * 创建 Electron 端的 BuiltinMcpDeps（包含 automation / collaboration 真实实现）
+ */
+export function createBuiltinMcpDeps(): BuiltinMcpDeps {
+  return {
+    injectAutomationMcpServer: injectAutomationMcpServer,
+    injectCollaborationMcpServer: injectAgentCollaborationMcpServer,
+  }
+}

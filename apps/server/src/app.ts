@@ -1,6 +1,10 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
-import { AGENT_IPC_CHANNELS } from '@proma/shared'
+import { agent } from './routes/agent'
+import { channel } from './routes/channel'
+import { settings } from './routes/settings'
+import { systemPrompt } from './routes/system-prompt'
+import { chat } from './routes/chat'
 
 const app = new Hono()
 
@@ -19,13 +23,11 @@ app.get('/api/health', (c) =>
   c.json({ ok: true, name: 'proma-server', version: '0.0.1' }),
 )
 
-/**
- * 示例路由：Agent 会话列表（对应 AGENT_IPC_CHANNELS.LIST_SESSIONS）
- * POST /api/agent:list-sessions → []
- *
- * 迭代 0 返回空列表以打通 shim→HTTP→server 链路；
- * 迭代 1 接入 @proma/server-core 后替换为引擎实例化结果。
- */
-app.post(`/api/${AGENT_IPC_CHANNELS.LIST_SESSIONS}`, (c) => c.json([]))
+// 挂载路由
+app.route('/api', agent)
+app.route('/api', channel)
+app.route('/api', settings)
+app.route('/api', systemPrompt)
+app.route('/api', chat)
 
 export { app }

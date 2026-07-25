@@ -1,13 +1,26 @@
 import { app } from './app'
+import { websocketHandlers } from './ws'
 
 const port = Number(process.env.PORT ?? 3000)
 
-Bun.serve({
+const server = Bun.serve({
   port,
-  fetch: app.fetch,
-  // websocket 处理器占位：M2 迭代 3 启用 AgentEventBus → WS 推送
+  fetch(req, srv) {
+    const url = new URL(req.url)
+    // WebSocket 升级：/ws 路径
+    if (url.pathname === '/ws') {
+      // upgrade 时初始化连接状态（subscriptions 集合），open 中无需重复赋值
+      if (srv.upgrade(req, { data: { sessions: new Set<string>() } })) {
+        return // 升级成功，不返回 HTTP 响应
+      }
+      return new Response('WebSocket 升级失败', { status: 400 })
+    }
+    // 其余请求走 Hono 路由
+    return app.fetch(req)
+  },
+  websocket: websocketHandlers,
 })
 
 console.log(`Proma server listening on http://127.0.0.1:${port}`)
 console.log(`  健康检查：GET  http://127.0.0.1:${port}/api/health`)
-console.log(`  示例路由：POST http://127.0.0.1:${port}/api/agent:list-sessions`)
+console.log(`  WebSocket：ws://127.0.0.1:${port}/ws`)

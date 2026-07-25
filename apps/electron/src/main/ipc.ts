@@ -2429,8 +2429,8 @@ export function registerIpcHandlers(): void {
         throw new Error('Agent 正在运行，完成后再切换内核')
       }
 
-      // 历史会话缺失 runtime 时按 Claude 处理，避免将 Claude SDK 会话 ID 交给 Pi 恢复。
-      const previousRuntime: AgentRuntime = isAgentRuntime(current.agentRuntime) ? current.agentRuntime : 'claude'
+      // 历史会话缺失 runtime 时按 Pi 处理（Claude 已移除）。
+      const previousRuntime: AgentRuntime = isAgentRuntime(current.agentRuntime) ? current.agentRuntime : 'pi'
       const updates: Partial<Pick<AgentSessionMeta, 'agentRuntime' | 'sdkSessionId'>> = {
         agentRuntime: runtime,
       }
@@ -4423,15 +4423,9 @@ export function registerIpcHandlers(): void {
     input: Partial<CreateAutomationInput | UpdateAutomationInput>,
     existing?: Automation,
   ): void => {
-    // 更新历史任务时，缺失的持久化 runtime 仍按 Claude 解释；仅新建任务使用 Pi 默认值。
-    const finalRuntime: AgentRuntime = input.agentRuntime ?? existing?.agentRuntime ?? (existing ? 'claude' : 'pi')
+    // Claude 已移除，统一使用 Pi runtime。
+    const finalRuntime: AgentRuntime = input.agentRuntime ?? existing?.agentRuntime ?? 'pi'
     const finalChannelId = input.channelId !== undefined ? input.channelId : existing?.channelId
-    if (finalRuntime === 'claude' && finalChannelId) {
-      const agentChannelIds = getSettings().agentChannelIds ?? []
-      if (!agentChannelIds.includes(finalChannelId)) {
-        throw new Error('Claude Agent 内核只能使用已启用的 Agent 兼容渠道')
-      }
-    }
   }
 
   const validateAutomationScheduleComplete = (

@@ -803,7 +803,7 @@ export async function forkAgentSession(input: ForkSessionInput): Promise<AgentSe
     sourceMeta.channelId,
     sourceMeta.workspaceId,
     forkModelId,
-    'claude',
+    'pi',
   )
 
   updateAgentSessionMeta(newMeta.id, {

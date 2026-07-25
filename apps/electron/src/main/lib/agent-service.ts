@@ -28,11 +28,12 @@ import type {
   AgentExternalRunSource,
   AgentMessage,
 } from '@proma/shared'
-import { ClaudeAgentAdapter, scanAndKillOrphanedClaudeSubprocesses } from './adapters/claude-agent-adapter'
+import { scanAndKillOrphanedClaudeSubprocesses } from './adapters/claude-agent-adapter'
 import { PiAgentAdapter, cleanupPiRuntimeResources } from './adapters/pi-agent-adapter'
-import { RuntimeRoutingAgentAdapter } from './adapters/runtime-routing-agent-adapter'
 import { AgentEventBus } from './agent-event-bus'
 import { AgentOrchestrator } from './agent-orchestrator'
+import { createPiBuiltinToolDeps } from './adapters/pi-builtin-tools'
+import { createBuiltinMcpDeps } from './builtin-mcp/registry'
 import { getAgentSessionWorkspacePath, getWorkspaceFilesDir } from './config-paths'
 import { getAgentSessionMeta, updateAgentSessionMeta } from './agent-session-manager'
 import { setAgentStopper, setHeadlessAgentRunner } from './agent-headless-runner-registry'
@@ -40,11 +41,11 @@ import { setAgentStopper, setHeadlessAgentRunner } from './agent-headless-runner
 // ===== 实例创建 =====
 
 const eventBus = new AgentEventBus()
-const adapter = new RuntimeRoutingAgentAdapter({
-  claude: new ClaudeAgentAdapter(),
-  pi: new PiAgentAdapter(),
+const adapter = new PiAgentAdapter()  // M2：Pi 为唯一 Agent runtime
+const orchestrator = new AgentOrchestrator(adapter, eventBus, {
+  piBuiltinToolDeps: createPiBuiltinToolDeps(),
+  builtinMcpDeps: createBuiltinMcpDeps(),
 })
-const orchestrator = new AgentOrchestrator(adapter, eventBus)
 
 /** 导出 EventBus 供飞书 Bridge 等外部服务订阅事件 */
 export { eventBus as agentEventBus }

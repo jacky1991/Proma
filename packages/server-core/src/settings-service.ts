@@ -25,6 +25,9 @@ export interface AppSettings {
   interfaceVariant?: string
   agentRuntime?: string
   agentThinking?: { type: string; budget_tokens?: number }
+  agentEffort?: string
+  agentMaxTurns?: number
+  agentMaxBudgetUsd?: number
   builtinMcpEnabledIds?: string[]
   builtinMcpDisabledIds?: string[]
   onboardingCompleted?: boolean

@@ -126,7 +126,7 @@ export async function runAutomation(automation: Automation, manual = false): Pro
     //  - daily：再叠加一层「同一自然日」+「上下文占用率 < 阈值」双重判断
     //    （基于 automation.lastRunAt 排除 skipped 运行；占用率读不到时按"未知"保守复用）
     const sessionMode = automation.sessionMode ?? AUTOMATION_DEFAULT_SESSION_MODE
-    const agentRuntime: AgentRuntime = automation.agentRuntime ?? 'claude'
+    const agentRuntime: AgentRuntime = automation.agentRuntime ?? 'pi'
 
     let reuseSessionId: string | undefined
     const lastSessionMeta = automation.lastSessionId ? getAgentSessionMeta(automation.lastSessionId) : undefined
@@ -164,7 +164,7 @@ export async function runAutomation(automation: Automation, manual = false): Pro
     }
 
     const targetSessionMeta = getAgentSessionMeta(targetSessionId)
-    const previousAgentRuntime: AgentRuntime = targetSessionMeta?.agentRuntime ?? 'claude'
+    const previousAgentRuntime: AgentRuntime = targetSessionMeta?.agentRuntime ?? 'pi'
     if (targetSessionMeta && previousAgentRuntime !== agentRuntime) {
       updateAgentSessionMeta(targetSessionId, {
         agentRuntime,

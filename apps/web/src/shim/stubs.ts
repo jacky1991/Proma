@@ -29,8 +29,6 @@ export const safeDefaults: Record<string, () => Promise<unknown>> = {
 
   // 各域列表：返回空列表让 UI 进入「空态」而非报错
   listChannels: () => Promise.resolve([]),
-  listConversations: () => Promise.resolve([]),
-  listPinnedConversations: () => Promise.resolve([]),
   getAgentWorkspaces: () => Promise.resolve([]),
   getSystemPrompts: () => Promise.resolve([]),
   listChatTools: () => Promise.resolve([]),

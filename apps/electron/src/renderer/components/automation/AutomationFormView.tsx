@@ -201,7 +201,7 @@ function coerceAutomationDraftRuntime(
     ? draft.agentRuntime ?? defaultAgentRuntime
     : defaultAgentRuntime
 
-  if (runtime === 'claude' && draft.channelId && !agentChannelIds.includes(draft.channelId)) {
+  if (runtime === 'claude' as string && draft.channelId && !agentChannelIds.includes(draft.channelId)) {
     return { ...draft, agentRuntime: runtime, channelId: '', modelId: undefined, active: false }
   }
 
@@ -280,7 +280,6 @@ function SaveStatusBadge({
 }
 
 const AGENT_RUNTIME_OPTIONS: Array<{ value: AgentRuntime; label: string; description: string }> = [
-  { value: 'claude', label: 'Claude', description: '使用 Claude Agent SDK；模型仅限已标记为 Agent 兼容的渠道' },
   { value: 'pi', label: 'Pi', description: '使用 Pi Agent SDK；可选择任意已启用模型渠道' },
 ]
 
@@ -659,7 +658,7 @@ export function AutomationFormView(): React.ReactElement | null {
   const modelFilterChannelIds = form.agentRuntime === 'pi' ? undefined : agentChannelIds
   const handleRuntimeChange = (runtime: AgentRuntime): void => {
     const patch: Partial<AutomationDraft> = { agentRuntime: runtime }
-    if (runtime === 'claude' && form.channelId && !agentChannelIds.includes(form.channelId)) {
+    if (runtime === 'claude' as string && form.channelId && !agentChannelIds.includes(form.channelId)) {
       patch.channelId = ''
       patch.modelId = undefined
     }
@@ -1021,7 +1020,7 @@ export function AutomationFormView(): React.ReactElement | null {
           {/* 选择模型（Claude 内核仅显示 Agent 兼容渠道；Pi 内核显示所有已启用渠道） */}
           <div className="flex flex-col gap-2">
             <Label>选择模型</Label>
-            {form.agentRuntime === 'claude' && agentChannelIds.length === 0 ? (
+            {form.agentRuntime === ('claude' as string) && agentChannelIds.length === 0 ? (
               <div className="flex items-center gap-2 rounded-md border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
                 <Settings size={14} className="shrink-0" />
                 <span>尚未启用任何 Agent 兼容渠道</span>

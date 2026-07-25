@@ -2,7 +2,9 @@
  * 渠道管理器
  *
  * 负责渠道的 CRUD 操作、API Key 加密/解密、连接测试。
- * 使用 Electron safeStorage 进行 API Key 加密（底层使用 OS 级加密）。
+ * API Key 加密经 CryptoPort 注入（getCryptoPort）：桌面端注入 Electron safeStorage
+ *   （底层 OS 级加密：macOS Keychain / Windows DPAPI / Linux Secret Service），
+ *   服务端注入 Node 原生加密实现；未注入时降级为明文存储。
  * 数据持久化到 ~/.proma/channels.json。
  */
 
@@ -255,10 +257,11 @@ function writeConfig(config: ChannelsConfig): void {
 /**
  * 加密 API Key
  *
- * 使用 Electron safeStorage 加密，底层使用：
+ * 经 CryptoPort 注入的加密实现（桌面端为 Electron safeStorage，底层使用：
  * - macOS: Keychain
  * - Windows: DPAPI
  * - Linux: Secret Service API
+ * 服务端为 Node 原生加密；未注入时降级为明文存储）。
  *
  * @returns base64 编码的加密字符串
  */

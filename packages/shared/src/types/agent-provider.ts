@@ -7,8 +7,8 @@
 
 import type { SDKMessage } from './agent'
 
-/** Agent runtime 实现 */
-export type AgentRuntime = 'claude' | 'pi'
+/** Agent runtime 实现（M2 迭代 3：Claude 已下线，Pi 为唯一 runtime） */
+export type AgentRuntime = 'pi'
 
 /** SDK 用户消息（队列消息注入用，匹配 SDK SDKUserMessage 结构） */
 export interface SDKUserMessageInput {
