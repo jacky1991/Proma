@@ -18,7 +18,19 @@ import {
   deleteMessage,
   truncateMessagesFrom,
   updateContextDividers,
+  searchConversationMessages,
 } from '@proma/server-core/conversation-manager'
+import {
+  saveAttachment,
+  readAttachmentAsBase64,
+  deleteAttachment,
+} from '@proma/server-core/attachment-service'
+import { extractTextFromAttachment } from '@proma/server-core/document-parser'
+import {
+  getTutorialContent,
+  createWelcomeConversation,
+} from '@proma/server-core/tutorial-service'
+import type { AttachmentSaveInput, ConversationMeta } from '@proma/shared'
 import {
   sendChatMessage,
   stopChatGeneration,
@@ -137,6 +149,67 @@ chat.post(`/${CHAT_IPC_CHANNELS.GENERATE_TITLE}`, async (c) => {
   const input = await c.req.json<GenerateTitleInput>()
   const title = await generateChatTitle(input)
   return c.json({ title })
+})
+
+// ===== 附件管理 =====
+
+/** POST /api/chat:save-attachment → AttachmentSaveResult */
+chat.post(`/${CHAT_IPC_CHANNELS.SAVE_ATTACHMENT}`, async (c) => {
+  const input = await c.req.json<AttachmentSaveInput>()
+  return c.json(saveAttachment(input))
+})
+
+/** POST /api/chat:read-attachment → string (base64) */
+chat.post(`/${CHAT_IPC_CHANNELS.READ_ATTACHMENT}`, async (c) => {
+  const { localPath } = await c.req.json<{ localPath: string }>()
+  return c.json(readAttachmentAsBase64(localPath))
+})
+
+/** POST /api/chat:delete-attachment → { ok: true } */
+chat.post(`/${CHAT_IPC_CHANNELS.DELETE_ATTACHMENT}`, async (c) => {
+  const { localPath } = await c.req.json<{ localPath: string }>()
+  deleteAttachment(localPath)
+  return c.json({ ok: true })
+})
+
+/** POST /api/chat:extract-attachment-text → string */
+chat.post(`/${CHAT_IPC_CHANNELS.EXTRACT_ATTACHMENT_TEXT}`, async (c) => {
+  const { localPath } = await c.req.json<{ localPath: string }>()
+  const text = await extractTextFromAttachment(localPath)
+  return c.json(text)
+})
+
+// ===== 辅助功能 =====
+
+/** POST /api/chat:toggle-archive → ConversationMeta */
+chat.post(`/${CHAT_IPC_CHANNELS.TOGGLE_ARCHIVE}`, async (c) => {
+  const { id } = await c.req.json<{ id: string }>()
+  const conversations = listConversations()
+  const current = conversations.find((cv) => cv.id === id)
+  if (!current) return c.json({ error: '对话不存在' }, 404)
+  const newArchived = !current.archived
+  // 归档时自动取消置顶
+  const updates: Partial<ConversationMeta> = { archived: newArchived }
+  if (newArchived && current.pinned) {
+    updates.pinned = false
+  }
+  return c.json(updateConversationMeta(id, updates))
+})
+
+/** POST /api/chat:search-messages → MessageSearchResult[] */
+chat.post(`/${CHAT_IPC_CHANNELS.SEARCH_MESSAGES}`, async (c) => {
+  const { query } = await c.req.json<{ query: string }>()
+  return c.json(await searchConversationMessages(query))
+})
+
+/** POST /api/chat:get-tutorial-content → string | null */
+chat.post(`/${CHAT_IPC_CHANNELS.GET_TUTORIAL_CONTENT}`, (c) => {
+  return c.json(getTutorialContent())
+})
+
+/** POST /api/chat:create-welcome-conversation → ConversationMeta | null */
+chat.post(`/${CHAT_IPC_CHANNELS.CREATE_WELCOME_CONVERSATION}`, (c) => {
+  return c.json(createWelcomeConversation())
 })
 
 export { chat }

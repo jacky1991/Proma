@@ -5,6 +5,10 @@ import { channel } from './routes/channel'
 import { settings } from './routes/settings'
 import { systemPrompt } from './routes/system-prompt'
 import { chat } from './routes/chat'
+import { upload } from './routes/upload'
+import { chatTool } from './routes/chat-tool'
+import { storage } from './routes/storage'
+import { automation } from './routes/automation'
 
 const app = new Hono()
 
@@ -29,5 +33,9 @@ app.route('/api', channel)
 app.route('/api', settings)
 app.route('/api', systemPrompt)
 app.route('/api', chat)
+app.route('/api', upload)
+app.route('/api', chatTool)
+app.route('/api', storage)
+app.route('/api', automation)
 
 export { app }

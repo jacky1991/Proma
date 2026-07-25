@@ -7,10 +7,10 @@
 
 import { Hono } from 'hono'
 import { AGENT_IPC_CHANNELS } from '@proma/shared'
-import type { AgentSendInput, AgentGenerateTitleInput, AgentMessage, PermissionResponse, AskUserResponse, ExitPlanModeResponse, PendingRequestsSnapshot, PromaPermissionMode, WorkspaceMcpConfig, McpServerEntry, FileEntry } from '@proma/shared'
+import type { AgentSendInput, AgentGenerateTitleInput, AgentMessage, PermissionResponse, AskUserResponse, ExitPlanModeResponse, PendingRequestsSnapshot, PromaPermissionMode, WorkspaceMcpConfig, McpServerEntry, FileEntry, AgentAttachDirectoryInput, AgentAttachFileInput, WorkspaceAttachDirectoryInput, WorkspaceAttachFileInput, ForkSessionInput, RewindSessionInput, AgentQueueMessageInput, AgentThinkingLevel, AgentSaveFilesInput, AgentSaveWorkspaceFilesInput, AgentSavedFile, AgentSessionReferenceSearchInput, MoveSessionToWorkspaceInput, WorkspaceWorktreeRepo, GetTaskOutputInput, GetTaskOutputResult, StopTaskInput, FileAccessOptions } from '@proma/shared'
 import { isPromaPermissionMode } from '@proma/shared'
 import { existsSync, readdirSync, statSync, rmSync, renameSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { resolve, relative, join } from 'node:path'
+import { resolve, relative, join, dirname, basename, sep } from 'node:path'
 import {
   listAgentSessions,
   createAgentSession,
@@ -18,6 +18,11 @@ import {
   getAgentSessionSDKMessages,
   updateAgentSessionMeta,
   getAgentSessionMeta,
+  forkAgentSession,
+  searchAgentSessionMessages,
+  migrateChatToAgentSession,
+  moveSessionToWorkspace,
+  searchAgentSessionReferences,
 } from '@proma/server-core/agent-session-manager'
 import {
   listAgentWorkspaces,
@@ -50,9 +55,18 @@ import {
   listWorkspaceAutoMemoryFiles,
   readWorkspaceAutoMemoryFile,
   writeWorkspaceAutoMemoryFile,
+  getWorkspaceAttachedDirectories,
+  getWorkspaceAttachedFiles,
+  attachWorkspaceDirectory,
+  detachWorkspaceDirectory,
+  attachWorkspaceFile,
+  detachWorkspaceFile,
+  getWorktreeRepos,
+  addWorktreeRepo,
+  removeWorktreeRepo,
 } from '@proma/server-core/agent-workspace-manager'
 import { setBuiltinMcpUserEnabled } from '@proma/server-core/builtin-mcp/settings'
-import { getWorkspaceSkillsDir, getAgentWorkspacesDir, getAgentSessionWorkspacePath } from '@proma/server-core/config-paths'
+import { getWorkspaceSkillsDir, getAgentWorkspacesDir, getAgentSessionWorkspacePath, getWorkspaceFilesDir, getConfigDir } from '@proma/server-core/config-paths'
 import { validateMcpServer } from '@proma/server-core/mcp-validator'
 import { permissionService } from '@proma/server-core/agent-permission-service'
 import { askUserService } from '@proma/server-core/agent-ask-user-service'
@@ -611,6 +625,498 @@ agent.post(`/${AGENT_IPC_CHANNELS.SEARCH_WORKSPACE_FILES}`, async (c) => {
     totalCount: matched.length,
     truncated: matched.length > limit,
   })
+})
+
+// ===== 上下文挂载（会话级） =====
+
+/** 路径安全黑名单（M2.5 单用户基础版，M3 多用户时加强） */
+const PATH_BLACKLIST_STATIC = ['/etc', '/root', '/sys', '/proc', '/dev', '/boot', '/var/run']
+
+function assertPathSafe(targetPath: string): void {
+  const resolved = resolve(targetPath)
+  // 静态系统目录 + 动态配置目录（~/.proma/）
+  const blacklist = [...PATH_BLACKLIST_STATIC, getConfigDir()]
+  for (const blocked of blacklist) {
+    if (resolved === blocked || resolved.startsWith(blocked + '/')) {
+      throw new Error(`不允许挂载受保护目录: ${blocked}`)
+    }
+  }
+}
+
+/** POST /api/agent:attach-directory → string[] */
+agent.post(`/${AGENT_IPC_CHANNELS.ATTACH_DIRECTORY}`, async (c) => {
+  const input = await c.req.json<AgentAttachDirectoryInput>()
+  const meta = getAgentSessionMeta(input.sessionId)
+  if (!meta) return c.json({ error: `会话不存在: ${input.sessionId}` }, 404)
+
+  assertPathSafe(input.directoryPath)
+  if (!existsSync(input.directoryPath)) {
+    return c.json({ error: `目录不存在: ${input.directoryPath}` }, 400)
+  }
+
+  const existing = meta.attachedDirectories ?? []
+  if (existing.includes(input.directoryPath)) return c.json(existing)
+
+  const updated = [...existing, input.directoryPath]
+  updateAgentSessionMeta(input.sessionId, { attachedDirectories: updated })
+  return c.json(updated)
+})
+
+/** POST /api/agent:detach-directory → string[] */
+agent.post(`/${AGENT_IPC_CHANNELS.DETACH_DIRECTORY}`, async (c) => {
+  const input = await c.req.json<AgentAttachDirectoryInput>()
+  const meta = getAgentSessionMeta(input.sessionId)
+  if (!meta) return c.json({ error: `会话不存在: ${input.sessionId}` }, 404)
+
+  const existing = meta.attachedDirectories ?? []
+  const updated = existing.filter((d) => d !== input.directoryPath)
+  updateAgentSessionMeta(input.sessionId, { attachedDirectories: updated })
+  return c.json(updated)
+})
+
+/** POST /api/agent:attach-file → string[] */
+agent.post(`/${AGENT_IPC_CHANNELS.ATTACH_FILE}`, async (c) => {
+  const input = await c.req.json<AgentAttachFileInput>()
+  const meta = getAgentSessionMeta(input.sessionId)
+  if (!meta) return c.json({ error: `会话不存在: ${input.sessionId}` }, 404)
+
+  assertPathSafe(input.filePath)
+  const safePath = resolve(input.filePath)
+  if (!existsSync(safePath)) {
+    return c.json({ error: `文件不存在: ${input.filePath}` }, 400)
+  }
+  const stats = statSync(safePath)
+  if (!stats.isFile()) return c.json({ error: '只能附加文件' }, 400)
+
+  const existing = meta.attachedFiles ?? []
+  if (existing.includes(safePath)) return c.json(existing)
+
+  const updated = [...existing, safePath]
+  updateAgentSessionMeta(input.sessionId, { attachedFiles: updated })
+  return c.json(updated)
+})
+
+/** POST /api/agent:detach-file → string[] */
+agent.post(`/${AGENT_IPC_CHANNELS.DETACH_FILE}`, async (c) => {
+  const input = await c.req.json<AgentAttachFileInput>()
+  const meta = getAgentSessionMeta(input.sessionId)
+  if (!meta) return c.json({ error: `会话不存在: ${input.sessionId}` }, 404)
+
+  const existing = meta.attachedFiles ?? []
+  const updated = existing.filter((f) => f !== input.filePath)
+  updateAgentSessionMeta(input.sessionId, { attachedFiles: updated })
+  return c.json(updated)
+})
+
+// ===== 上下文挂载（工作区级） =====
+
+/** POST /api/agent:attach-workspace-directory → string[] */
+agent.post(`/${AGENT_IPC_CHANNELS.ATTACH_WORKSPACE_DIRECTORY}`, async (c) => {
+  const input = await c.req.json<WorkspaceAttachDirectoryInput>()
+  assertPathSafe(input.directoryPath)
+  if (!existsSync(input.directoryPath)) {
+    return c.json({ error: `目录不存在: ${input.directoryPath}` }, 400)
+  }
+  return c.json(attachWorkspaceDirectory(input.workspaceSlug, input.directoryPath))
+})
+
+/** POST /api/agent:detach-workspace-directory → string[] */
+agent.post(`/${AGENT_IPC_CHANNELS.DETACH_WORKSPACE_DIRECTORY}`, async (c) => {
+  const input = await c.req.json<WorkspaceAttachDirectoryInput>()
+  return c.json(detachWorkspaceDirectory(input.workspaceSlug, input.directoryPath))
+})
+
+/** POST /api/agent:attach-workspace-file → string[] */
+agent.post(`/${AGENT_IPC_CHANNELS.ATTACH_WORKSPACE_FILE}`, async (c) => {
+  const input = await c.req.json<WorkspaceAttachFileInput>()
+  assertPathSafe(input.filePath)
+  const safePath = resolve(input.filePath)
+  if (!existsSync(safePath)) {
+    return c.json({ error: `文件不存在: ${input.filePath}` }, 400)
+  }
+  const stats = statSync(safePath)
+  if (!stats.isFile()) return c.json({ error: '只能附加文件' }, 400)
+  return c.json(attachWorkspaceFile(input.workspaceSlug, safePath))
+})
+
+/** POST /api/agent:detach-workspace-file → string[] */
+agent.post(`/${AGENT_IPC_CHANNELS.DETACH_WORKSPACE_FILE}`, async (c) => {
+  const input = await c.req.json<WorkspaceAttachFileInput>()
+  return c.json(detachWorkspaceFile(input.workspaceSlug, input.filePath))
+})
+
+/** POST /api/agent:get-workspace-directories → string[] */
+agent.post(`/${AGENT_IPC_CHANNELS.GET_WORKSPACE_DIRECTORIES}`, async (c) => {
+  const { workspaceSlug } = await c.req.json<{ workspaceSlug: string }>()
+  return c.json(getWorkspaceAttachedDirectories(workspaceSlug))
+})
+
+/** POST /api/agent:get-workspace-attached-files → string[] */
+agent.post(`/${AGENT_IPC_CHANNELS.GET_WORKSPACE_ATTACHED_FILES}`, async (c) => {
+  const { workspaceSlug } = await c.req.json<{ workspaceSlug: string }>()
+  return c.json(getWorkspaceAttachedFiles(workspaceSlug))
+})
+
+// ===== 会话高级操作 =====
+
+/** POST /api/agent:fork-session → AgentSessionMeta */
+agent.post(`/${AGENT_IPC_CHANNELS.FORK_SESSION}`, async (c) => {
+  const input = await c.req.json<ForkSessionInput>()
+  const newMeta = await forkAgentSession(input)
+  return c.json(newMeta)
+})
+
+/** POST /api/agent:rewind-session → RewindSessionResult */
+agent.post(`/${AGENT_IPC_CHANNELS.REWIND_SESSION}`, async (c) => {
+  const input = await c.req.json<RewindSessionInput>()
+  const result = await orchestrator.rewindSession(input.sessionId, input.assistantMessageUuid)
+  return c.json(result)
+})
+
+/** POST /api/agent:search-messages → AgentMessageSearchResult[] */
+agent.post(`/${AGENT_IPC_CHANNELS.SEARCH_MESSAGES}`, async (c) => {
+  const { query } = await c.req.json<{ query: string }>()
+  return c.json(await searchAgentSessionMessages(query))
+})
+
+/** POST /api/agent:queue-message → string (uuid) */
+agent.post(`/${AGENT_IPC_CHANNELS.QUEUE_MESSAGE}`, async (c) => {
+  const input = await c.req.json<AgentQueueMessageInput>()
+  const uuid = await orchestrator.queueMessage(
+    input.sessionId,
+    input.userMessage,
+    input.rawUserMessage,
+    undefined,
+    input.uuid,
+    { interrupt: input.interrupt },
+    input.mentionedSkills,
+    input.mentionedMcpServers,
+    input.mentionedSessionIds,
+  )
+  return c.json(uuid)
+})
+
+// ===== 会话设置 =====
+
+/** POST /api/agent:update-session-agent-runtime → AgentSessionMeta（降级为 no-op） */
+agent.post(`/${AGENT_IPC_CHANNELS.UPDATE_SESSION_AGENT_RUNTIME}`, async (c) => {
+  const { sessionId } = await c.req.json<{ sessionId: string; runtime: string }>()
+  const meta = getAgentSessionMeta(sessionId)
+  if (!meta) return c.json({ error: `Agent 会话不存在: ${sessionId}` }, 404)
+  // Pi 为唯一 runtime，返回当前元数据即可
+  return c.json(meta)
+})
+
+/** POST /api/agent:update-session-codex-fast-mode → AgentSessionMeta */
+agent.post(`/${AGENT_IPC_CHANNELS.UPDATE_SESSION_CODEX_FAST_MODE}`, async (c) => {
+  const { sessionId, enabled } = await c.req.json<{ sessionId: string; enabled: boolean }>()
+  if (typeof enabled !== 'boolean') {
+    return c.json({ error: `无效的 Codex Fast Mode 状态: ${String(enabled)}` }, 400)
+  }
+  const meta = getAgentSessionMeta(sessionId)
+  if (!meta) return c.json({ error: `Agent 会话不存在: ${sessionId}` }, 404)
+  if (orchestrator.isActive(sessionId)) {
+    return c.json({ error: 'Agent 正在运行，完成后再切换快速模式' }, 409)
+  }
+  return c.json(updateAgentSessionMeta(sessionId, { codexFastMode: enabled }))
+})
+
+/** POST /api/agent:update-session-openai-reasoning → AgentSessionMeta */
+agent.post(`/${AGENT_IPC_CHANNELS.UPDATE_SESSION_OPENAI_REASONING}`, async (c) => {
+  const { sessionId, thinkingLevel } = await c.req.json<{ sessionId: string; thinkingLevel: AgentThinkingLevel }>()
+  const validLevels: AgentThinkingLevel[] = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh']
+  if (!validLevels.includes(thinkingLevel)) {
+    return c.json({ error: `无效的 Codex 思考深度: ${String(thinkingLevel)}` }, 400)
+  }
+  const meta = getAgentSessionMeta(sessionId)
+  if (!meta) return c.json({ error: `Agent 会话不存在: ${sessionId}` }, 404)
+  if (orchestrator.isActive(sessionId)) {
+    return c.json({ error: 'Agent 正在运行，完成后再切换思考深度' }, 409)
+  }
+  return c.json(updateAgentSessionMeta(sessionId, { openAIThinkingLevel: thinkingLevel }))
+})
+
+// ===== 迭代 5：挂载文件操作 =====
+
+/** 路径安全校验：确保路径在已授权目录内 */
+function assertAttachedPathAllowed(targetPath: string, access?: FileAccessOptions): void {
+  const resolved = resolve(targetPath)
+  const allowedDirs: string[] = []
+  const allowedFiles: string[] = []
+
+  // 收集会话级挂载
+  if (access?.sessionId) {
+    const meta = getAgentSessionMeta(access.sessionId)
+    if (meta?.attachedDirectories) allowedDirs.push(...meta.attachedDirectories)
+    if (meta?.attachedFiles) allowedFiles.push(...meta.attachedFiles)
+    // 也允许访问会话工作目录
+    if (meta?.workspaceId) {
+      const ws = getAgentWorkspace(meta.workspaceId)
+      if (ws) allowedDirs.push(getAgentSessionWorkspacePath(ws.slug, access.sessionId))
+    }
+  }
+
+  // 收集工作区级挂载
+  if (access?.workspaceSlug) {
+    allowedDirs.push(...getWorkspaceAttachedDirectories(access.workspaceSlug))
+    allowedFiles.push(...getWorkspaceAttachedFiles(access.workspaceSlug))
+    allowedDirs.push(getWorkspaceFilesDir(access.workspaceSlug))
+  }
+
+  // 始终允许 agent-workspaces 根目录
+  allowedDirs.push(getAgentWorkspacesDir())
+
+  const isAllowed = allowedDirs.some((dir) => {
+    const resolvedDir = resolve(dir)
+    return resolved === resolvedDir || resolved.startsWith(resolvedDir + sep)
+  }) || allowedFiles.some((file) => resolve(file) === resolved)
+
+  if (!isAllowed) {
+    throw new Error('访问路径不在允许范围内')
+  }
+}
+
+/** POST /api/agent:list-attached-directory → FileEntry[] */
+agent.post(`/${AGENT_IPC_CHANNELS.LIST_ATTACHED_DIRECTORY}`, async (c) => {
+  const { dirPath, access } = await c.req.json<{ dirPath: string; access?: FileAccessOptions }>()
+  const safePath = resolve(dirPath)
+  assertAttachedPathAllowed(safePath, access)
+
+  if (!existsSync(safePath)) return c.json([])
+
+  const entries: FileEntry[] = []
+  const items = readdirSync(safePath, { withFileTypes: true })
+  for (const item of items) {
+    if (HIDDEN_FS_ENTRIES.has(item.name)) continue
+    const fullPath = resolve(safePath, item.name)
+    const isDirectory = item.isDirectory()
+    const size = isDirectory ? undefined : statSync(fullPath).size
+    entries.push({ name: item.name, path: fullPath, isDirectory, size })
+  }
+
+  entries.sort((a, b) => {
+    if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1
+    const aHidden = a.name.startsWith('.')
+    const bHidden = b.name.startsWith('.')
+    if (aHidden !== bHidden) return aHidden ? 1 : -1
+    return a.name.localeCompare(b.name)
+  })
+
+  return c.json(entries)
+})
+
+/** POST /api/agent:read-attached-file → string（base64） */
+agent.post(`/${AGENT_IPC_CHANNELS.READ_ATTACHED_FILE}`, async (c) => {
+  const { filePath, sessionId, workspaceSlug } = await c.req.json<{
+    filePath: string
+    sessionId?: string
+    workspaceSlug?: string
+  }>()
+
+  if (!filePath || typeof filePath !== 'string') {
+    return c.json({ error: '无效的文件路径' }, 400)
+  }
+
+  const safePath = resolve(filePath)
+  assertAttachedPathAllowed(safePath, { sessionId, workspaceSlug })
+
+  const MAX_FILE_SIZE = 20 * 1024 * 1024 // 20 MB
+  const fileStat = statSync(safePath)
+  if (fileStat.size > MAX_FILE_SIZE) {
+    return c.json({ error: `文件过大（${Math.round(fileStat.size / 1024 / 1024)}MB），最大支持 20MB` }, 400)
+  }
+
+  const buffer = readFileSync(safePath)
+  return c.json(buffer.toString('base64'))
+})
+
+/** POST /api/agent:rename-attached-file → { ok: true } */
+agent.post(`/${AGENT_IPC_CHANNELS.RENAME_ATTACHED_FILE}`, async (c) => {
+  const { filePath, newName, access } = await c.req.json<{
+    filePath: string
+    newName: string
+    access?: FileAccessOptions
+  }>()
+
+  if (newName.includes('/') || newName.includes('\\') || newName.includes('..') || newName.includes(sep)) {
+    return c.json({ error: '文件名不能包含路径分隔符或 ".."' }, 400)
+  }
+
+  const safePath = resolve(filePath)
+  assertAttachedPathAllowed(safePath, access)
+  const newPath = join(dirname(safePath), newName)
+  renameSync(safePath, newPath)
+  return c.json({ ok: true })
+})
+
+/** POST /api/agent:move-attached-file → { ok: true } */
+agent.post(`/${AGENT_IPC_CHANNELS.MOVE_ATTACHED_FILE}`, async (c) => {
+  const { filePath, targetDir, access } = await c.req.json<{
+    filePath: string
+    targetDir: string
+    access?: FileAccessOptions
+  }>()
+
+  const safePath = resolve(filePath)
+  const safeTarget = resolve(targetDir)
+  assertAttachedPathAllowed(safePath, access)
+  assertAttachedPathAllowed(safeTarget, access)
+  renameSync(safePath, join(safeTarget, basename(safePath)))
+  return c.json({ ok: true })
+})
+
+// ===== 迭代 5：Worktree 管理 =====
+
+/** POST /api/agent:get-worktree-repos → WorkspaceWorktreeRepo[] */
+agent.post(`/${AGENT_IPC_CHANNELS.GET_WORKTREE_REPOS}`, async (c) => {
+  const { workspaceSlug } = await c.req.json<{ workspaceSlug: string }>()
+  return c.json(await getWorktreeRepos(workspaceSlug))
+})
+
+/** POST /api/agent:add-worktree-repo → WorkspaceWorktreeRepo[] */
+agent.post(`/${AGENT_IPC_CHANNELS.ADD_WORKTREE_REPO}`, async (c) => {
+  const { workspaceSlug, repo } = await c.req.json<{ workspaceSlug: string; repo: WorkspaceWorktreeRepo }>()
+  return c.json(addWorktreeRepo(workspaceSlug, repo))
+})
+
+/** POST /api/agent:remove-worktree-repo → WorkspaceWorktreeRepo[] */
+agent.post(`/${AGENT_IPC_CHANNELS.REMOVE_WORKTREE_REPO}`, async (c) => {
+  const { workspaceSlug, repoPath } = await c.req.json<{ workspaceSlug: string; repoPath: string }>()
+  return c.json(removeWorktreeRepo(workspaceSlug, repoPath))
+})
+
+// ===== 迭代 5：Agent 杂项通道 =====
+
+/** POST /api/agent:migrate-chat-to-agent → { ok: true } */
+agent.post(`/${AGENT_IPC_CHANNELS.MIGRATE_CHAT_TO_AGENT}`, async (c) => {
+  const { conversationId, agentSessionId } = await c.req.json<{ conversationId: string; agentSessionId: string }>()
+  migrateChatToAgentSession(conversationId, agentSessionId)
+  return c.json({ ok: true })
+})
+
+/** POST /api/agent:confirm-working-done → AgentSessionMeta */
+agent.post(`/${AGENT_IPC_CHANNELS.CLEAR_COMPLETION_STATE}`, async (c) => {
+  const { id } = await c.req.json<{ id: string }>()
+  const meta = getAgentSessionMeta(id)
+  if (!meta) return c.json({ error: `Agent 会话不存在: ${id}` }, 404)
+  const updates: Partial<import('@proma/shared').AgentSessionMeta> = {}
+  if (meta.manualWorking) updates.manualWorking = false
+  if (meta.completedButUnconfirmed) updates.completedButUnconfirmed = false
+  if (Object.keys(updates).length === 0) return c.json(meta)
+  return c.json(updateAgentSessionMeta(id, updates))
+})
+
+/** POST /api/agent:search-session-references → AgentSessionReferenceSearchResult[] */
+agent.post(`/${AGENT_IPC_CHANNELS.SEARCH_SESSION_REFERENCES}`, async (c) => {
+  const input = await c.req.json<AgentSessionReferenceSearchInput>()
+  return c.json(searchAgentSessionReferences(input))
+})
+
+/** POST /api/agent:move-session-to-workspace → AgentSessionMeta */
+agent.post(`/${AGENT_IPC_CHANNELS.MOVE_SESSION_TO_WORKSPACE}`, async (c) => {
+  const input = await c.req.json<MoveSessionToWorkspaceInput>()
+  if (orchestrator.isActive(input.sessionId)) {
+    // 短暂等待后重试一次（渲染进程 running 状态可能比主进程清理更早变为 false）
+    await new Promise((r) => setTimeout(r, 500))
+    if (orchestrator.isActive(input.sessionId)) {
+      return c.json({ error: '会话正在运行中，请停止后再迁移' }, 409)
+    }
+  }
+  return c.json(moveSessionToWorkspace(input.sessionId, input.targetWorkspaceId))
+})
+
+/** 最大附件大小（100MB） */
+const MAX_ATTACHMENT_SIZE = 100 * 1024 * 1024
+
+/** POST /api/agent:save-files-to-session → AgentSavedFile[] */
+agent.post(`/${AGENT_IPC_CHANNELS.SAVE_FILES_TO_SESSION}`, async (c) => {
+  const input = await c.req.json<AgentSaveFilesInput>()
+  const sessionDir = getAgentSessionWorkspacePath(input.workspaceSlug, input.sessionId)
+  const results: AgentSavedFile[] = []
+  const usedPaths = new Set<string>()
+
+  for (const file of input.files) {
+    let targetPath = join(sessionDir, file.filename)
+
+    // 防止同名文件覆盖
+    if (usedPaths.has(targetPath) || existsSync(targetPath)) {
+      const dotIdx = file.filename.lastIndexOf('.')
+      const baseName = dotIdx > 0 ? file.filename.slice(0, dotIdx) : file.filename
+      const ext = dotIdx > 0 ? file.filename.slice(dotIdx) : ''
+      let counter = 1
+      let candidate = join(sessionDir, `${baseName}-${counter}${ext}`)
+      while (usedPaths.has(candidate) || existsSync(candidate)) {
+        counter++
+        candidate = join(sessionDir, `${baseName}-${counter}${ext}`)
+      }
+      targetPath = candidate
+    }
+    usedPaths.add(targetPath)
+
+    mkdirSync(dirname(targetPath), { recursive: true })
+
+    if (file.data.length * 0.75 > MAX_ATTACHMENT_SIZE) {
+      console.warn(`[Agent 路由] 文件超过 100MB 限制，跳过: ${file.filename}`)
+      continue
+    }
+
+    writeFileSync(targetPath, Buffer.from(file.data, 'base64'))
+    results.push({ filename: targetPath.slice(sessionDir.length + 1), targetPath })
+  }
+
+  return c.json(results)
+})
+
+/** POST /api/agent:save-files-to-workspace → AgentSavedFile[] */
+agent.post(`/${AGENT_IPC_CHANNELS.SAVE_FILES_TO_WORKSPACE}`, async (c) => {
+  const input = await c.req.json<AgentSaveWorkspaceFilesInput>()
+  const wsFilesDir = getWorkspaceFilesDir(input.workspaceSlug)
+  const results: AgentSavedFile[] = []
+  const usedPaths = new Set<string>()
+
+  for (const file of input.files) {
+    let targetPath = join(wsFilesDir, file.filename)
+
+    if (usedPaths.has(targetPath) || existsSync(targetPath)) {
+      const dotIdx = file.filename.lastIndexOf('.')
+      const baseName = dotIdx > 0 ? file.filename.slice(0, dotIdx) : file.filename
+      const ext = dotIdx > 0 ? file.filename.slice(dotIdx) : ''
+      let counter = 1
+      let candidate = join(wsFilesDir, `${baseName}-${counter}${ext}`)
+      while (usedPaths.has(candidate) || existsSync(candidate)) {
+        counter++
+        candidate = join(wsFilesDir, `${baseName}-${counter}${ext}`)
+      }
+      targetPath = candidate
+    }
+    usedPaths.add(targetPath)
+
+    mkdirSync(dirname(targetPath), { recursive: true })
+
+    if (file.data.length * 0.75 > MAX_ATTACHMENT_SIZE) {
+      console.warn(`[Agent 路由] 工作区文件超过 100MB 限制，跳过: ${file.filename}`)
+      continue
+    }
+
+    writeFileSync(targetPath, Buffer.from(file.data, 'base64'))
+    results.push({ filename: targetPath.slice(wsFilesDir.length + 1), targetPath })
+  }
+
+  return c.json(results)
+})
+
+/** POST /api/agent:get-task-output → GetTaskOutputResult（保留接口，暂未实现） */
+agent.post(`/${AGENT_IPC_CHANNELS.GET_TASK_OUTPUT}`, async (c) => {
+  await c.req.json<GetTaskOutputInput>()
+  console.warn('[Agent 路由] GET_TASK_OUTPUT: 当前版本暂未实现，返回空输出')
+  return c.json({ output: '', isComplete: false } satisfies GetTaskOutputResult)
+})
+
+/** POST /api/agent:stop-task → { ok: true }（保留接口，暂未实现） */
+agent.post(`/${AGENT_IPC_CHANNELS.STOP_TASK}`, async (c) => {
+  const input = await c.req.json<StopTaskInput>()
+  console.warn(`[Agent 路由] STOP_TASK: 任务停止功能待实现 (type=${input.type})`)
+  return c.json({ ok: true })
 })
 
 export { agent }
