@@ -468,4 +468,6 @@ export interface CodexOAuthLoginResult {
   accountId?: string
   /** 失败或取消时的用户可读原因 */
   message?: string
+  /** Web 端专用：授权 URL，客户端在新窗口打开（桌面端不使用此字段） */
+  authUrl?: string
 }
