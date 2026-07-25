@@ -22,17 +22,14 @@ export const safeDefaults: Record<string, () => Promise<unknown>> = {
   getGitRepoStatus: () => Promise.resolve(null),
   checkEnvironment: () => Promise.resolve(null),
 
-  // 设置 / 档案：最小可用默认（主题由 index.html 的 localStorage 脚本先行初始化）
-  getSettings: () => Promise.resolve({ themeMode: 'dark' }),
-  getUserProfile: () => Promise.resolve({ userName: '', avatar: '' }),
+  // 主题：浏览器端由 matchMedia 处理，此处仅为启动期占位
   getSystemTheme: () => Promise.resolve('dark'),
 
-  // 各域列表：返回空列表让 UI 进入「空态」而非报错
-  listChannels: () => Promise.resolve([]),
-  getAgentWorkspaces: () => Promise.resolve([]),
+  // 未迁移的列表类方法：返回空列表让 UI 进入「空态」而非报错
+  // 注：已迁移到 migrated.ts 的方法（getSettings / getUserProfile / listChannels /
+  //     getAgentWorkspaces / getWorkspaceCapabilities 等）由 Proxy 优先命中 migrated，
+  //     不在此处重复声明。
   getSystemPrompts: () => Promise.resolve([]),
   listChatTools: () => Promise.resolve([]),
-  listAutomations: () => Promise.resolve([]),
-  getWorkspaceCapabilities: () => Promise.resolve(null),
   listWorkspaceFiles: () => Promise.resolve([]),
 }

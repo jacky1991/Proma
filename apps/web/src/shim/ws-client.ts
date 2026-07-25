@@ -89,8 +89,29 @@ export function createWsClient(config: ShimConfig): WsClient {
         // 分发到对应 channel 的回调
         const callbacks = subscriptions.get(msg.channel)
         if (callbacks) {
-          for (const cb of callbacks) {
-            cb(msg.payload)
+          // 处理 text_batch 聚合帧：逐条还原为 text 事件，对 renderer 透明
+          const payload = msg.payload as {
+            kind?: string
+            event?: { type?: string; deltas?: string[] }
+          }
+          if (
+            payload.kind === 'proma_event' &&
+            payload.event?.type === 'text_batch' &&
+            Array.isArray(payload.event.deltas)
+          ) {
+            for (const delta of payload.event.deltas) {
+              const singlePayload = {
+                kind: 'proma_event',
+                event: { type: 'text', text: delta },
+              }
+              for (const cb of callbacks) {
+                cb(singlePayload)
+              }
+            }
+          } else {
+            for (const cb of callbacks) {
+              cb(msg.payload)
+            }
           }
         }
       } catch (err) {

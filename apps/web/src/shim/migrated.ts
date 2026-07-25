@@ -1,5 +1,5 @@
 import type { ElectronAPI } from './types'
-import type { AgentSessionMeta, AgentStreamEvent, AgentStreamCompletePayload, PermissionResponse, AskUserResponse, ExitPlanModeResponse, PendingRequestsSnapshot } from '@proma/shared'
+import type { AgentSessionMeta, AgentStreamEvent, AgentStreamCompletePayload, PermissionResponse, AskUserResponse, ExitPlanModeResponse, PendingRequestsSnapshot, AttachmentSaveInput, FileDialogResult, AgentQueueMessageInput, ForkSessionInput, RewindSessionInput, AgentAttachDirectoryInput, AgentAttachFileInput, WorkspaceAttachDirectoryInput, WorkspaceAttachFileInput, AgentSaveFilesInput, AgentSaveWorkspaceFilesInput, AgentSessionReferenceSearchInput, MoveSessionToWorkspaceInput, WorkspaceWorktreeRepo, FileAccessOptions, ChannelDirectTestInput, CodexOAuthLoginResult } from '@proma/shared'
 import { createHttpClient, type ShimConfig } from './http-client'
 import { createWsClient } from './ws-client'
 
@@ -149,6 +149,245 @@ export function createMigrated(config: ShimConfig): Partial<ElectronAPI> {
       wsClient.on('chat:stream:error', cb),
     onStreamToolActivity: (cb: (event: unknown) => void) =>
       wsClient.on('chat:stream:tool-activity', cb),
+
+    // ===== Chat 附件管理 =====
+    saveAttachment: (input: AttachmentSaveInput) => invoke('chat:save-attachment', input),
+    readAttachment: (localPath: string) => invoke('chat:read-attachment', { localPath }),
+    deleteAttachment: (localPath: string) => invoke('chat:delete-attachment', { localPath }),
+    extractAttachmentText: (localPath: string) => invoke('chat:extract-attachment-text', { localPath }),
+
+    /**
+     * 浏览器文件选择器（替代 Electron 文件对话框）
+     *
+     * 创建隐藏 <input type="file">，用户选择后读取为 base64，
+     * 返回与 Electron 端一致的 FileDialogResult 格式。
+     */
+    openFileDialog: () => {
+      return new Promise<FileDialogResult>((resolve) => {
+        const input = document.createElement('input')
+        input.type = 'file'
+        input.multiple = true
+        input.style.display = 'none'
+        // 接受图片、文档、文本等常见类型
+        input.accept = 'image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.md,.json,.csv,.xml,.html,.js,.ts,.py,.zip,.rtf,.odt,.odp,.ods'
+
+        input.onchange = async () => {
+          const fileList = Array.from(input.files ?? [])
+          document.body.removeChild(input)
+
+          if (fileList.length === 0) {
+            resolve({ files: [] })
+            return
+          }
+
+          const files: FileDialogResult['files'] = []
+          const skippedFiles: FileDialogResult['skippedFiles'] = []
+          // 10MB 以上走大文件路径（Web 端不做本地路径引用，直接读取）
+          const LARGE_FILE_THRESHOLD = 50 * 1024 * 1024
+
+          for (const file of fileList) {
+            try {
+              if (file.size > LARGE_FILE_THRESHOLD) {
+                skippedFiles.push({
+                  filename: file.name,
+                  mediaType: file.type,
+                  size: file.size,
+                  reason: 'unreadable',
+                  message: `文件超过 ${LARGE_FILE_THRESHOLD / 1024 / 1024}MB 限制`,
+                })
+                continue
+              }
+              const buffer = await file.arrayBuffer()
+              const base64 = btoa(
+                new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), ''),
+              )
+              files.push({
+                filename: file.name,
+                mediaType: file.type || 'application/octet-stream',
+                data: base64,
+                size: file.size,
+              })
+            } catch {
+              skippedFiles.push({
+                filename: file.name,
+                mediaType: file.type,
+                size: file.size,
+                reason: 'unreadable',
+                message: '读取文件失败',
+              })
+            }
+          }
+
+          resolve({ files, skippedFiles: skippedFiles.length > 0 ? skippedFiles : undefined })
+        }
+
+        // 用户取消选择
+        input.oncancel = () => {
+          document.body.removeChild(input)
+          resolve({ files: [] })
+        }
+
+        document.body.appendChild(input)
+        input.click()
+      })
+    },
+
+    // ===== Chat 辅助功能 =====
+    toggleArchiveConversation: (id: string) => invoke('chat:toggle-archive', { id }),
+    searchConversationMessages: (query: string) => invoke('chat:search-messages', { query }),
+    getTutorialContent: () => invoke('chat:get-tutorial-content'),
+    createWelcomeConversation: () => invoke('chat:create-welcome-conversation'),
+
+    // ===== Agent 上下文挂载（会话级） =====
+    attachDirectory: (input: AgentAttachDirectoryInput) => invoke('agent:attach-directory', input),
+    detachDirectory: (input: AgentAttachDirectoryInput) => invoke('agent:detach-directory', input),
+    attachFile: (input: AgentAttachFileInput) => invoke('agent:attach-file', input),
+    detachFile: (input: AgentAttachFileInput) => invoke('agent:detach-file', input),
+
+    // ===== Agent 上下文挂载（工作区级） =====
+    attachWorkspaceDirectory: (input: WorkspaceAttachDirectoryInput) => invoke('agent:attach-workspace-directory', input),
+    detachWorkspaceDirectory: (input: WorkspaceAttachDirectoryInput) => invoke('agent:detach-workspace-directory', input),
+    attachWorkspaceFile: (input: WorkspaceAttachFileInput) => invoke('agent:attach-workspace-file', input),
+    detachWorkspaceFile: (input: WorkspaceAttachFileInput) => invoke('agent:detach-workspace-file', input),
+    getWorkspaceDirectories: (workspaceSlug: string) => invoke('agent:get-workspace-directories', { workspaceSlug }),
+    getWorkspaceAttachedFiles: (workspaceSlug: string) => invoke('agent:get-workspace-attached-files', { workspaceSlug }),
+
+    /**
+     * Web 端文件夹选择（替代 Electron 文件夹对话框）
+     *
+     * 浏览器无法选择服务端目录，降级为 prompt 输入路径。
+     */
+    openFolderDialog: () => {
+      const path = window.prompt('请输入服务端目录的绝对路径：')
+      if (!path) return Promise.resolve(null)
+      const name = path.split('/').filter(Boolean).pop() ?? path
+      return Promise.resolve({ path, name })
+    },
+
+    // ===== Agent 会话高级操作 =====
+    forkAgentSession: (input: ForkSessionInput) => invoke('agent:fork-session', input),
+    rewindSession: (input: RewindSessionInput) => invoke('agent:rewind-session', input),
+    searchAgentSessionMessages: (query: string) => invoke('agent:search-messages', { query }),
+    queueAgentMessage: (input: AgentQueueMessageInput) => invoke('agent:queue-message', input),
+
+    // ===== Agent 会话设置 =====
+    updateSessionAgentRuntime: (sessionId: string, runtime: string) => invoke('agent:update-session-agent-runtime', { sessionId, runtime }),
+    updateSessionCodexFastMode: (sessionId: string, enabled: boolean) => invoke('agent:update-session-codex-fast-mode', { sessionId, enabled }),
+    updateSessionOpenAIThinkingLevel: (sessionId: string, thinkingLevel: string) => invoke('agent:update-session-openai-reasoning', { sessionId, thinkingLevel }),
+
+    // ===== WS 推送事件订阅 =====
+    onCapabilitiesChanged: (cb: () => void) =>
+      wsClient.on('agent:capabilities-changed', cb as (payload: unknown) => void),
+    onWorkspaceFilesChanged: (cb: () => void) =>
+      wsClient.on('agent:workspace-files-changed', cb as (payload: unknown) => void),
+
+    // ===== 迭代 5：Chat Tool 域 =====
+    getAllTools: () => invoke('chat-tool:get-all-tools'),
+    getToolCredentials: (toolId: string) => invoke('chat-tool:get-credentials', { toolId }),
+    updateToolState: (toolId: string, state: unknown) => invoke('chat-tool:update-state', { toolId, state }),
+    updateToolCredentials: (toolId: string, credentials: Record<string, string>) => invoke('chat-tool:update-credentials', { toolId, credentials }),
+    testTool: (toolId: string) => invoke('chat-tool:test', { toolId }),
+    createCustomTool: (meta: unknown) => invoke('chat-tool:create-custom', meta),
+    deleteCustomTool: (toolId: string) => invoke('chat-tool:delete-custom', { toolId }),
+    onCustomToolChanged: (cb: () => void) =>
+      wsClient.on('chat-tool:custom-tool-changed', cb as (payload: unknown) => void),
+
+    // ===== 迭代 5：Channel 扩展 =====
+    decryptChannelKey: (channelId: string) => invoke('channel:decrypt-key', { channelId }),
+    testChannelDirect: (input: ChannelDirectTestInput) => invoke('channel:test-direct', input),
+    getChannelPlanQuota: (channelId: string) => invoke('channel:get-plan-quota', { channelId }),
+    codexOauthLogin: async () => {
+      const result = await invoke<CodexOAuthLoginResult & { authUrl?: string }>('channel:codex-oauth-login')
+      // 如果返回了授权 URL，在新窗口打开
+      if (result.success && result.authUrl) {
+        window.open(result.authUrl, '_blank', 'width=600,height=700')
+      }
+      return result
+    },
+    codexOauthCancel: () => invoke('channel:codex-oauth-cancel'),
+    onCodexOauthComplete: (cb: (result: CodexOAuthLoginResult) => void) =>
+      wsClient.on('channel:codex-oauth-complete', cb as (payload: unknown) => void),
+
+    // ===== 迭代 5：Agent 挂载文件操作 =====
+    listAttachedDirectory: (dirPath: string, access?: FileAccessOptions) => invoke('agent:list-attached-directory', { dirPath, access }),
+    readAttachedFile: (filePath: string, sessionId?: string, workspaceSlug?: string) => invoke('agent:read-attached-file', { filePath, sessionId, workspaceSlug }),
+    renameAttachedFile: (filePath: string, newName: string, access?: FileAccessOptions) => invoke('agent:rename-attached-file', { filePath, newName, access }),
+    moveAttachedFile: (filePath: string, targetDir: string, access?: FileAccessOptions) => invoke('agent:move-attached-file', { filePath, targetDir, access }),
+
+    // ===== 迭代 5：Agent Worktree =====
+    getWorktreeRepos: (workspaceSlug: string) => invoke('agent:get-worktree-repos', { workspaceSlug }),
+    addWorktreeRepo: (workspaceSlug: string, repo: WorkspaceWorktreeRepo) => invoke('agent:add-worktree-repo', { workspaceSlug, repo }),
+    removeWorktreeRepo: (workspaceSlug: string, repoPath: string) => invoke('agent:remove-worktree-repo', { workspaceSlug, repoPath }),
+
+    // ===== 迭代 5：Agent 杂项 =====
+    migrateChatToAgent: (conversationId: string, agentSessionId: string) => invoke('agent:migrate-chat-to-agent', { conversationId, agentSessionId }),
+    confirmWorkingDone: (id: string) => invoke('agent:confirm-working-done', { id }),
+    searchSessionReferences: (input: AgentSessionReferenceSearchInput) => invoke('agent:search-session-references', input),
+    moveSessionToWorkspace: (input: MoveSessionToWorkspaceInput) => invoke('agent:move-session-to-workspace', input),
+    saveFilesToSession: (input: AgentSaveFilesInput) => invoke('agent:save-files-to-session', input),
+    saveFilesToWorkspace: (input: AgentSaveWorkspaceFilesInput) => invoke('agent:save-files-to-workspace', input),
+    getTaskOutput: (input: unknown) => invoke('agent:get-task-output', input),
+    stopTask: (input: unknown) => invoke('agent:stop-task', input),
+
+    // ===== 迭代 6：Storage 管理 =====
+    getStorageStats: () => invoke('storage:get-stats'),
+    cleanupStorage: (options: unknown) => invoke('storage:cleanup', options),
+    cleanupTempFiles: () => invoke('storage:cleanup-temp'),
+
+    // ===== 迭代 6：Scratch-pad =====
+    loadScratchPad: () => invoke<string>('scratch-pad:load'),
+    saveScratchPad: (content: string) => invoke('scratch-pad:save', { content }),
+    exportScratchPad: (markdown: string, filename?: string) => {
+      // Web 端：通过服务端生成文件 → 浏览器下载
+      return fetch(`${config.apiBase}/scratch-pad:export`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ markdown, filename }),
+      }).then(async (res) => {
+        if (!res.ok) throw new Error('导出失败')
+        const blob = await res.blob()
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = filename || 'scratch-pad.md'
+        a.click()
+        URL.revokeObjectURL(url)
+        return filename || 'scratch-pad.md'
+      })
+    },
+
+    // ===== 迭代 6：Proxy =====
+    getProxySettings: () => invoke('proxy:get-settings'),
+    updateProxySettings: (config: unknown) => invoke('proxy:update-settings', config),
+    detectSystemProxy: () => invoke('proxy:detect-system'),
+
+    // ===== 迭代 6：GitHub Release =====
+    getLatestRelease: () => invoke('github-release:get-latest'),
+    listReleases: (options?: unknown) => invoke('github-release:list', options),
+    getReleaseByTag: (tag: string) => invoke('github-release:get-by-tag', { tag }),
+
+    // ===== 迭代 6：Automation =====
+    listAutomations: () => invoke('automation:list'),
+    createAutomation: (input: unknown) => invoke('automation:create', input),
+    updateAutomation: (input: unknown) => invoke('automation:update', input),
+    deleteAutomation: (id: string) => invoke('automation:delete', { id }),
+    toggleAutomation: (id: string, active: boolean) => invoke('automation:toggle', { id, active }),
+    runAutomationNow: (id: string) => invoke('automation:run-now', { id }),
+    onAutomationChanged: (cb: () => void) =>
+      wsClient.on('automation:changed', cb as (payload: unknown) => void),
+
+    // ===== 迭代 6：Settings 主题事件（浏览器端实现，不走服务端） =====
+    onSystemThemeChanged: (cb: (isDark: boolean) => void) => {
+      const mq = window.matchMedia('(prefers-color-scheme: dark)')
+      const handler = (e: MediaQueryListEvent) => cb(e.matches)
+      mq.addEventListener('change', handler)
+      return () => mq.removeEventListener('change', handler)
+    },
+    onThemeSettingsChanged: (cb: (payload: { themeMode: string; themeStyle: string; interfaceVariant?: string }) => void) => {
+      const bc = new BroadcastChannel('proma-theme')
+      bc.onmessage = (e) => cb(e.data as { themeMode: string; themeStyle: string; interfaceVariant?: string })
+      return () => bc.close()
+    },
   } as Partial<ElectronAPI>
 }
 
@@ -266,4 +505,101 @@ export const migratedNames: ReadonlySet<string> = new Set([
   'onStreamComplete',
   'onStreamError',
   'onStreamToolActivity',
+  // Chat 附件管理
+  'saveAttachment',
+  'readAttachment',
+  'deleteAttachment',
+  'extractAttachmentText',
+  'openFileDialog',
+  // Chat 辅助功能
+  'toggleArchiveConversation',
+  'searchConversationMessages',
+  'getTutorialContent',
+  'createWelcomeConversation',
+  // Agent 上下文挂载（会话级）
+  'attachDirectory',
+  'detachDirectory',
+  'attachFile',
+  'detachFile',
+  // Agent 上下文挂载（工作区级）
+  'attachWorkspaceDirectory',
+  'detachWorkspaceDirectory',
+  'attachWorkspaceFile',
+  'detachWorkspaceFile',
+  'getWorkspaceDirectories',
+  'getWorkspaceAttachedFiles',
+  'openFolderDialog',
+  // Agent 会话高级操作
+  'forkAgentSession',
+  'rewindSession',
+  'searchAgentSessionMessages',
+  'queueAgentMessage',
+  // Agent 会话设置
+  'updateSessionAgentRuntime',
+  'updateSessionCodexFastMode',
+  'updateSessionOpenAIThinkingLevel',
+  // WS 推送事件订阅
+  'onCapabilitiesChanged',
+  'onWorkspaceFilesChanged',
+  // 迭代 5：Chat Tool 域
+  'getAllTools',
+  'getToolCredentials',
+  'updateToolState',
+  'updateToolCredentials',
+  'testTool',
+  'createCustomTool',
+  'deleteCustomTool',
+  'onCustomToolChanged',
+  // 迭代 5：Channel 扩展
+  'decryptChannelKey',
+  'testChannelDirect',
+  'getChannelPlanQuota',
+  'codexOauthLogin',
+  'codexOauthCancel',
+  'onCodexOauthComplete',
+  // 迭代 5：Agent 挂载文件操作
+  'listAttachedDirectory',
+  'readAttachedFile',
+  'renameAttachedFile',
+  'moveAttachedFile',
+  // 迭代 5：Agent Worktree
+  'getWorktreeRepos',
+  'addWorktreeRepo',
+  'removeWorktreeRepo',
+  // 迭代 5：Agent 杂项
+  'migrateChatToAgent',
+  'confirmWorkingDone',
+  'searchSessionReferences',
+  'moveSessionToWorkspace',
+  'saveFilesToSession',
+  'saveFilesToWorkspace',
+  'getTaskOutput',
+  'stopTask',
+  // 迭代 6：Storage 管理
+  'getStorageStats',
+  'cleanupStorage',
+  'cleanupTempFiles',
+  // 迭代 6：Scratch-pad
+  'loadScratchPad',
+  'saveScratchPad',
+  'exportScratchPad',
+  // 迭代 6：Proxy
+  'getProxySettings',
+  'updateProxySettings',
+  'detectSystemProxy',
+  // 迭代 6：GitHub Release
+  'getLatestRelease',
+  'listReleases',
+  'getReleaseByTag',
+  // 迭代 6：Automation
+  'listAutomations',
+  'createAutomation',
+  'updateAutomation',
+  'deleteAutomation',
+  'toggleAutomation',
+  'runAutomationNow',
+  'onAutomationChanged',
+  // 迭代 6：Settings 主题事件
+  'onSystemThemeChanged',
+  'onThemeSettingsChanged',
 ])
