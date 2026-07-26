@@ -66,7 +66,9 @@ import {
   removeWorktreeRepo,
 } from '@proma/server-core/agent-workspace-manager'
 import { setBuiltinMcpUserEnabled } from '@proma/server-core/builtin-mcp/settings'
-import { getWorkspaceSkillsDir, getAgentWorkspacesDir, getAgentSessionWorkspacePath, getWorkspaceFilesDir, getConfigDir } from '@proma/server-core/config-paths'
+import { getWorkspaceSkillsDir, getAgentWorkspacesDir, getAgentSessionWorkspacePath, getWorkspaceFilesDir, getConfigDir, getUserSessionWorkspacesDir } from '@proma/server-core/config-paths'
+import type { UserScope } from '@proma/server-core/config-paths'
+import { getUserScope } from '../utils/user-scope'
 import { validateMcpServer } from '@proma/server-core/mcp-validator'
 import { permissionService } from '@proma/server-core/agent-permission-service'
 import { askUserService } from '@proma/server-core/agent-ask-user-service'
@@ -79,65 +81,74 @@ const agent = new Hono()
 
 /** POST /api/agent:list-sessions → AgentSessionMeta[] */
 agent.post(`/${AGENT_IPC_CHANNELS.LIST_SESSIONS}`, (c) => {
-  return c.json(listAgentSessions())
+  const scope = getUserScope(c)
+  return c.json(listAgentSessions(scope))
 })
 
 /** POST /api/agent:create-session → AgentSessionMeta */
 agent.post(`/${AGENT_IPC_CHANNELS.CREATE_SESSION}`, async (c) => {
+  const scope = getUserScope(c)
   const { title, channelId, workspaceId, modelId } = await c.req.json()
-  const session = createAgentSession(title, channelId, workspaceId, modelId)
+  const session = createAgentSession(title, channelId, workspaceId, modelId, undefined, scope)
   return c.json(session)
 })
 
 /** POST /api/agent:delete-session → { ok: true } */
 agent.post(`/${AGENT_IPC_CHANNELS.DELETE_SESSION}`, async (c) => {
+  const scope = getUserScope(c)
   const { id } = await c.req.json()
-  deleteAgentSession(id)
+  deleteAgentSession(id, scope)
   return c.json({ ok: true })
 })
 
 /** POST /api/agent:get-sdk-messages → SDKMessage[] */
 agent.post(`/${AGENT_IPC_CHANNELS.GET_SDK_MESSAGES}`, async (c) => {
+  const scope = getUserScope(c)
   const { id } = await c.req.json()
-  return c.json(getAgentSessionSDKMessages(id))
+  return c.json(getAgentSessionSDKMessages(id, scope))
 })
 
 /** POST /api/agent:update-title → { ok: true } */
 agent.post(`/${AGENT_IPC_CHANNELS.UPDATE_TITLE}`, async (c) => {
+  const scope = getUserScope(c)
   const { sessionId, title } = await c.req.json()
-  updateAgentSessionMeta(sessionId, { title })
+  updateAgentSessionMeta(sessionId, { title }, scope)
   return c.json({ ok: true })
 })
 
 /** POST /api/agent:update-session-model → { ok: true } */
 agent.post(`/${AGENT_IPC_CHANNELS.UPDATE_SESSION_MODEL}`, async (c) => {
+  const scope = getUserScope(c)
   const { sessionId, model } = await c.req.json()
-  updateAgentSessionMeta(sessionId, { modelId: model })
+  updateAgentSessionMeta(sessionId, { modelId: model }, scope)
   return c.json({ ok: true })
 })
 
 /** POST /api/agent:toggle-pin → AgentSessionMeta */
 agent.post(`/${AGENT_IPC_CHANNELS.TOGGLE_PIN}`, async (c) => {
+  const scope = getUserScope(c)
   const { id } = await c.req.json()
-  const meta = getAgentSessionMeta(id)
+  const meta = getAgentSessionMeta(id, scope)
   if (!meta) return c.json({ error: 'Session not found' }, 404)
-  const updated = updateAgentSessionMeta(id, { pinned: !meta.pinned })
+  const updated = updateAgentSessionMeta(id, { pinned: !meta.pinned }, scope)
   return c.json(updated)
 })
 
 /** POST /api/agent:toggle-archive → AgentSessionMeta */
 agent.post(`/${AGENT_IPC_CHANNELS.TOGGLE_ARCHIVE}`, async (c) => {
+  const scope = getUserScope(c)
   const { id } = await c.req.json()
-  const meta = getAgentSessionMeta(id)
+  const meta = getAgentSessionMeta(id, scope)
   if (!meta) return c.json({ error: 'Session not found' }, 404)
-  const updated = updateAgentSessionMeta(id, { archived: !meta.archived })
+  const updated = updateAgentSessionMeta(id, { archived: !meta.archived }, scope)
   return c.json(updated)
 })
 
 /** POST /api/agent:update-session-permission-mode → { ok: true } */
 agent.post(`/${AGENT_IPC_CHANNELS.UPDATE_SESSION_PERMISSION_MODE}`, async (c) => {
+  const scope = getUserScope(c)
   const { sessionId, mode } = await c.req.json()
-  updateAgentSessionMeta(sessionId, { permissionMode: mode })
+  updateAgentSessionMeta(sessionId, { permissionMode: mode }, scope)
   return c.json({ ok: true })
 })
 
@@ -165,7 +176,7 @@ agent.post(`/${AGENT_IPC_CHANNELS.SEND_MESSAGE}`, async (c) => {
   }
 
   // 异步执行，不等待完成（流式事件经 WS 推送）
-  orchestrator.sendMessage(input, callbacks).catch((err: unknown) => {
+  orchestrator.sendMessage(input, callbacks, getUserScope(c)).catch((err: unknown) => {
     console.error('[Agent 路由] sendMessage 失败:', err)
   })
   return c.json({ ok: true })
@@ -260,6 +271,7 @@ agent.post(`/${AGENT_IPC_CHANNELS.ASK_USER_RESPOND}`, async (c) => {
 
 /** POST /api/agent:exit-plan-mode:respond → { ok: true } */
 agent.post(`/${AGENT_IPC_CHANNELS.EXIT_PLAN_MODE_RESPOND}`, async (c) => {
+  const scope = getUserScope(c)
   const response = await c.req.json<ExitPlanModeResponse>()
   const result = exitPlanService.respondToExitPlanMode(response)
 
@@ -274,10 +286,10 @@ agent.post(`/${AGENT_IPC_CHANNELS.EXIT_PLAN_MODE_RESPOND}`, async (c) => {
 
     // 如果用户选择了新的权限模式，持久化并通知 UI
     if (targetMode) {
-      const meta = getAgentSessionMeta(sessionId)
+      const meta = getAgentSessionMeta(sessionId, scope)
       if (meta) {
         try {
-          updateAgentSessionMeta(sessionId, { permissionMode: targetMode })
+          updateAgentSessionMeta(sessionId, { permissionMode: targetMode }, scope)
         } catch (err) {
           console.warn(`[Agent 路由] ExitPlanMode 持久化权限模式失败: sessionId=${sessionId}`, err)
         }
@@ -483,12 +495,16 @@ agent.post(`/${AGENT_IPC_CHANNELS.WRITE_WORKSPACE_AUTO_MEMORY_FILE}`, async (c) 
 
 const HIDDEN_FS_ENTRIES = new Set(['.DS_Store', 'Thumbs.db'])
 
-/** 安全校验：路径必须在 agent-workspaces 目录下 */
-function assertWorkspacePath(safePath: string): void {
-  const workspacesRoot = resolve(getAgentWorkspacesDir())
-  if (!safePath.startsWith(workspacesRoot)) {
-    throw new Error('访问路径超出 Agent 工作区范围')
+/** 安全校验：路径必须在全局工作区或用户级会话工作区目录下 */
+function assertWorkspacePath(safePath: string, scope?: UserScope): void {
+  const globalRoot = resolve(getAgentWorkspacesDir())
+  if (safePath.startsWith(globalRoot)) return
+  // 用户级会话工作区（Web 多用户隔离）
+  if (scope) {
+    const userRoot = resolve(getUserSessionWorkspacesDir(scope))
+    if (safePath.startsWith(userRoot)) return
   }
+  throw new Error('访问路径超出 Agent 工作区范围')
 }
 
 /** POST /api/agent:get-session-path → string | null */
@@ -496,14 +512,14 @@ agent.post(`/${AGENT_IPC_CHANNELS.GET_SESSION_PATH}`, async (c) => {
   const { workspaceId, sessionId } = await c.req.json()
   const ws = getAgentWorkspace(workspaceId)
   if (!ws) return c.json(null)
-  return c.json(getAgentSessionWorkspacePath(ws.slug, sessionId))
+  return c.json(getAgentSessionWorkspacePath(ws.slug, sessionId, getUserScope(c)))
 })
 
 /** POST /api/agent:list-directory → FileEntry[] */
 agent.post(`/${AGENT_IPC_CHANNELS.LIST_DIRECTORY}`, async (c) => {
   const { dirPath } = await c.req.json()
   const safePath = resolve(dirPath)
-  assertWorkspacePath(safePath)
+  assertWorkspacePath(safePath, getUserScope(c))
 
   if (!existsSync(safePath)) return c.json([])
 
@@ -533,7 +549,7 @@ agent.post(`/${AGENT_IPC_CHANNELS.LIST_DIRECTORY}`, async (c) => {
 agent.post(`/${AGENT_IPC_CHANNELS.DELETE_FILE}`, async (c) => {
   const { filePath } = await c.req.json()
   const safePath = resolve(filePath)
-  assertWorkspacePath(safePath)
+  assertWorkspacePath(safePath, getUserScope(c))
   rmSync(safePath, { recursive: true, force: true })
   return c.json({ ok: true })
 })
@@ -542,7 +558,7 @@ agent.post(`/${AGENT_IPC_CHANNELS.DELETE_FILE}`, async (c) => {
 agent.post(`/${AGENT_IPC_CHANNELS.RENAME_FILE}`, async (c) => {
   const { filePath, newName } = await c.req.json()
   const safePath = resolve(filePath)
-  assertWorkspacePath(safePath)
+  assertWorkspacePath(safePath, getUserScope(c))
   const dir = safePath.substring(0, safePath.lastIndexOf('/'))
   const newPath = join(dir, newName)
   renameSync(safePath, newPath)
@@ -554,8 +570,8 @@ agent.post(`/${AGENT_IPC_CHANNELS.MOVE_FILE}`, async (c) => {
   const { filePath, targetDir } = await c.req.json()
   const safePath = resolve(filePath)
   const safeTarget = resolve(targetDir)
-  assertWorkspacePath(safePath)
-  assertWorkspacePath(safeTarget)
+  assertWorkspacePath(safePath, getUserScope(c))
+  assertWorkspacePath(safeTarget, getUserScope(c))
   const fileName = safePath.substring(safePath.lastIndexOf('/') + 1)
   renameSync(safePath, join(safeTarget, fileName))
   return c.json({ ok: true })
@@ -756,8 +772,9 @@ function assertPathSafe(targetPath: string): void {
 
 /** POST /api/agent:attach-directory → string[] */
 agent.post(`/${AGENT_IPC_CHANNELS.ATTACH_DIRECTORY}`, async (c) => {
+  const scope = getUserScope(c)
   const input = await c.req.json<AgentAttachDirectoryInput>()
-  const meta = getAgentSessionMeta(input.sessionId)
+  const meta = getAgentSessionMeta(input.sessionId, scope)
   if (!meta) return c.json({ error: `会话不存在: ${input.sessionId}` }, 404)
 
   assertPathSafe(input.directoryPath)
@@ -769,26 +786,28 @@ agent.post(`/${AGENT_IPC_CHANNELS.ATTACH_DIRECTORY}`, async (c) => {
   if (existing.includes(input.directoryPath)) return c.json(existing)
 
   const updated = [...existing, input.directoryPath]
-  updateAgentSessionMeta(input.sessionId, { attachedDirectories: updated })
+  updateAgentSessionMeta(input.sessionId, { attachedDirectories: updated }, scope)
   return c.json(updated)
 })
 
 /** POST /api/agent:detach-directory → string[] */
 agent.post(`/${AGENT_IPC_CHANNELS.DETACH_DIRECTORY}`, async (c) => {
+  const scope = getUserScope(c)
   const input = await c.req.json<AgentAttachDirectoryInput>()
-  const meta = getAgentSessionMeta(input.sessionId)
+  const meta = getAgentSessionMeta(input.sessionId, scope)
   if (!meta) return c.json({ error: `会话不存在: ${input.sessionId}` }, 404)
 
   const existing = meta.attachedDirectories ?? []
   const updated = existing.filter((d) => d !== input.directoryPath)
-  updateAgentSessionMeta(input.sessionId, { attachedDirectories: updated })
+  updateAgentSessionMeta(input.sessionId, { attachedDirectories: updated }, scope)
   return c.json(updated)
 })
 
 /** POST /api/agent:attach-file → string[] */
 agent.post(`/${AGENT_IPC_CHANNELS.ATTACH_FILE}`, async (c) => {
+  const scope = getUserScope(c)
   const input = await c.req.json<AgentAttachFileInput>()
-  const meta = getAgentSessionMeta(input.sessionId)
+  const meta = getAgentSessionMeta(input.sessionId, scope)
   if (!meta) return c.json({ error: `会话不存在: ${input.sessionId}` }, 404)
 
   assertPathSafe(input.filePath)
@@ -803,19 +822,20 @@ agent.post(`/${AGENT_IPC_CHANNELS.ATTACH_FILE}`, async (c) => {
   if (existing.includes(safePath)) return c.json(existing)
 
   const updated = [...existing, safePath]
-  updateAgentSessionMeta(input.sessionId, { attachedFiles: updated })
+  updateAgentSessionMeta(input.sessionId, { attachedFiles: updated }, scope)
   return c.json(updated)
 })
 
 /** POST /api/agent:detach-file → string[] */
 agent.post(`/${AGENT_IPC_CHANNELS.DETACH_FILE}`, async (c) => {
+  const scope = getUserScope(c)
   const input = await c.req.json<AgentAttachFileInput>()
-  const meta = getAgentSessionMeta(input.sessionId)
+  const meta = getAgentSessionMeta(input.sessionId, scope)
   if (!meta) return c.json({ error: `会话不存在: ${input.sessionId}` }, 404)
 
   const existing = meta.attachedFiles ?? []
   const updated = existing.filter((f) => f !== input.filePath)
-  updateAgentSessionMeta(input.sessionId, { attachedFiles: updated })
+  updateAgentSessionMeta(input.sessionId, { attachedFiles: updated }, scope)
   return c.json(updated)
 })
 
@@ -872,22 +892,24 @@ agent.post(`/${AGENT_IPC_CHANNELS.GET_WORKSPACE_ATTACHED_FILES}`, async (c) => {
 
 /** POST /api/agent:fork-session → AgentSessionMeta */
 agent.post(`/${AGENT_IPC_CHANNELS.FORK_SESSION}`, async (c) => {
+  const scope = getUserScope(c)
   const input = await c.req.json<ForkSessionInput>()
-  const newMeta = await forkAgentSession(input)
+  const newMeta = await forkAgentSession(input, scope)
   return c.json(newMeta)
 })
 
 /** POST /api/agent:rewind-session → RewindSessionResult */
 agent.post(`/${AGENT_IPC_CHANNELS.REWIND_SESSION}`, async (c) => {
   const input = await c.req.json<RewindSessionInput>()
-  const result = await orchestrator.rewindSession(input.sessionId, input.assistantMessageUuid)
+  const result = await orchestrator.rewindSession(input.sessionId, input.assistantMessageUuid, getUserScope(c))
   return c.json(result)
 })
 
 /** POST /api/agent:search-messages → AgentMessageSearchResult[] */
 agent.post(`/${AGENT_IPC_CHANNELS.SEARCH_MESSAGES}`, async (c) => {
+  const scope = getUserScope(c)
   const { query } = await c.req.json<{ query: string }>()
-  return c.json(await searchAgentSessionMessages(query))
+  return c.json(await searchAgentSessionMessages(query, scope))
 })
 
 /** POST /api/agent:queue-message → string (uuid) */
@@ -903,6 +925,7 @@ agent.post(`/${AGENT_IPC_CHANNELS.QUEUE_MESSAGE}`, async (c) => {
     input.mentionedSkills,
     input.mentionedMcpServers,
     input.mentionedSessionIds,
+    getUserScope(c),
   )
   return c.json(uuid)
 })
@@ -911,8 +934,9 @@ agent.post(`/${AGENT_IPC_CHANNELS.QUEUE_MESSAGE}`, async (c) => {
 
 /** POST /api/agent:update-session-agent-runtime → AgentSessionMeta（降级为 no-op） */
 agent.post(`/${AGENT_IPC_CHANNELS.UPDATE_SESSION_AGENT_RUNTIME}`, async (c) => {
+  const scope = getUserScope(c)
   const { sessionId } = await c.req.json<{ sessionId: string; runtime: string }>()
-  const meta = getAgentSessionMeta(sessionId)
+  const meta = getAgentSessionMeta(sessionId, scope)
   if (!meta) return c.json({ error: `Agent 会话不存在: ${sessionId}` }, 404)
   // Pi 为唯一 runtime，返回当前元数据即可
   return c.json(meta)
@@ -920,50 +944,52 @@ agent.post(`/${AGENT_IPC_CHANNELS.UPDATE_SESSION_AGENT_RUNTIME}`, async (c) => {
 
 /** POST /api/agent:update-session-codex-fast-mode → AgentSessionMeta */
 agent.post(`/${AGENT_IPC_CHANNELS.UPDATE_SESSION_CODEX_FAST_MODE}`, async (c) => {
+  const scope = getUserScope(c)
   const { sessionId, enabled } = await c.req.json<{ sessionId: string; enabled: boolean }>()
   if (typeof enabled !== 'boolean') {
     return c.json({ error: `无效的 Codex Fast Mode 状态: ${String(enabled)}` }, 400)
   }
-  const meta = getAgentSessionMeta(sessionId)
+  const meta = getAgentSessionMeta(sessionId, scope)
   if (!meta) return c.json({ error: `Agent 会话不存在: ${sessionId}` }, 404)
   if (orchestrator.isActive(sessionId)) {
     return c.json({ error: 'Agent 正在运行，完成后再切换快速模式' }, 409)
   }
-  return c.json(updateAgentSessionMeta(sessionId, { codexFastMode: enabled }))
+  return c.json(updateAgentSessionMeta(sessionId, { codexFastMode: enabled }, scope))
 })
 
 /** POST /api/agent:update-session-openai-reasoning → AgentSessionMeta */
 agent.post(`/${AGENT_IPC_CHANNELS.UPDATE_SESSION_OPENAI_REASONING}`, async (c) => {
+  const scope = getUserScope(c)
   const { sessionId, thinkingLevel } = await c.req.json<{ sessionId: string; thinkingLevel: AgentThinkingLevel }>()
   const validLevels: AgentThinkingLevel[] = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh']
   if (!validLevels.includes(thinkingLevel)) {
     return c.json({ error: `无效的 Codex 思考深度: ${String(thinkingLevel)}` }, 400)
   }
-  const meta = getAgentSessionMeta(sessionId)
+  const meta = getAgentSessionMeta(sessionId, scope)
   if (!meta) return c.json({ error: `Agent 会话不存在: ${sessionId}` }, 404)
   if (orchestrator.isActive(sessionId)) {
     return c.json({ error: 'Agent 正在运行，完成后再切换思考深度' }, 409)
   }
-  return c.json(updateAgentSessionMeta(sessionId, { openAIThinkingLevel: thinkingLevel }))
+  return c.json(updateAgentSessionMeta(sessionId, { openAIThinkingLevel: thinkingLevel }, scope))
 })
 
 // ===== 迭代 5：挂载文件操作 =====
 
 /** 路径安全校验：确保路径在已授权目录内 */
-function assertAttachedPathAllowed(targetPath: string, access?: FileAccessOptions): void {
+function assertAttachedPathAllowed(targetPath: string, access?: FileAccessOptions, scope?: UserScope): void {
   const resolved = resolve(targetPath)
   const allowedDirs: string[] = []
   const allowedFiles: string[] = []
 
   // 收集会话级挂载
   if (access?.sessionId) {
-    const meta = getAgentSessionMeta(access.sessionId)
+    const meta = getAgentSessionMeta(access.sessionId, scope)
     if (meta?.attachedDirectories) allowedDirs.push(...meta.attachedDirectories)
     if (meta?.attachedFiles) allowedFiles.push(...meta.attachedFiles)
     // 也允许访问会话工作目录
     if (meta?.workspaceId) {
       const ws = getAgentWorkspace(meta.workspaceId)
-      if (ws) allowedDirs.push(getAgentSessionWorkspacePath(ws.slug, access.sessionId))
+      if (ws) allowedDirs.push(getAgentSessionWorkspacePath(ws.slug, access.sessionId, scope))
     }
   }
 
@@ -989,9 +1015,10 @@ function assertAttachedPathAllowed(targetPath: string, access?: FileAccessOption
 
 /** POST /api/agent:list-attached-directory → FileEntry[] */
 agent.post(`/${AGENT_IPC_CHANNELS.LIST_ATTACHED_DIRECTORY}`, async (c) => {
+  const scope = getUserScope(c)
   const { dirPath, access } = await c.req.json<{ dirPath: string; access?: FileAccessOptions }>()
   const safePath = resolve(dirPath)
-  assertAttachedPathAllowed(safePath, access)
+  assertAttachedPathAllowed(safePath, access, scope)
 
   if (!existsSync(safePath)) return c.json([])
 
@@ -1018,6 +1045,7 @@ agent.post(`/${AGENT_IPC_CHANNELS.LIST_ATTACHED_DIRECTORY}`, async (c) => {
 
 /** POST /api/agent:read-attached-file → string（base64） */
 agent.post(`/${AGENT_IPC_CHANNELS.READ_ATTACHED_FILE}`, async (c) => {
+  const scope = getUserScope(c)
   const { filePath, sessionId, workspaceSlug } = await c.req.json<{
     filePath: string
     sessionId?: string
@@ -1029,7 +1057,7 @@ agent.post(`/${AGENT_IPC_CHANNELS.READ_ATTACHED_FILE}`, async (c) => {
   }
 
   const safePath = resolve(filePath)
-  assertAttachedPathAllowed(safePath, { sessionId, workspaceSlug })
+  assertAttachedPathAllowed(safePath, { sessionId, workspaceSlug }, scope)
 
   const MAX_FILE_SIZE = 20 * 1024 * 1024 // 20 MB
   const fileStat = statSync(safePath)
@@ -1043,6 +1071,7 @@ agent.post(`/${AGENT_IPC_CHANNELS.READ_ATTACHED_FILE}`, async (c) => {
 
 /** POST /api/agent:rename-attached-file → { ok: true } */
 agent.post(`/${AGENT_IPC_CHANNELS.RENAME_ATTACHED_FILE}`, async (c) => {
+  const scope = getUserScope(c)
   const { filePath, newName, access } = await c.req.json<{
     filePath: string
     newName: string
@@ -1054,7 +1083,7 @@ agent.post(`/${AGENT_IPC_CHANNELS.RENAME_ATTACHED_FILE}`, async (c) => {
   }
 
   const safePath = resolve(filePath)
-  assertAttachedPathAllowed(safePath, access)
+  assertAttachedPathAllowed(safePath, access, scope)
   const newPath = join(dirname(safePath), newName)
   renameSync(safePath, newPath)
   return c.json({ ok: true })
@@ -1062,6 +1091,7 @@ agent.post(`/${AGENT_IPC_CHANNELS.RENAME_ATTACHED_FILE}`, async (c) => {
 
 /** POST /api/agent:move-attached-file → { ok: true } */
 agent.post(`/${AGENT_IPC_CHANNELS.MOVE_ATTACHED_FILE}`, async (c) => {
+  const scope = getUserScope(c)
   const { filePath, targetDir, access } = await c.req.json<{
     filePath: string
     targetDir: string
@@ -1070,8 +1100,8 @@ agent.post(`/${AGENT_IPC_CHANNELS.MOVE_ATTACHED_FILE}`, async (c) => {
 
   const safePath = resolve(filePath)
   const safeTarget = resolve(targetDir)
-  assertAttachedPathAllowed(safePath, access)
-  assertAttachedPathAllowed(safeTarget, access)
+  assertAttachedPathAllowed(safePath, access, scope)
+  assertAttachedPathAllowed(safeTarget, access, scope)
   renameSync(safePath, join(safeTarget, basename(safePath)))
   return c.json({ ok: true })
 })
@@ -1100,31 +1130,35 @@ agent.post(`/${AGENT_IPC_CHANNELS.REMOVE_WORKTREE_REPO}`, async (c) => {
 
 /** POST /api/agent:migrate-chat-to-agent → { ok: true } */
 agent.post(`/${AGENT_IPC_CHANNELS.MIGRATE_CHAT_TO_AGENT}`, async (c) => {
+  const scope = getUserScope(c)
   const { conversationId, agentSessionId } = await c.req.json<{ conversationId: string; agentSessionId: string }>()
-  migrateChatToAgentSession(conversationId, agentSessionId)
+  migrateChatToAgentSession(conversationId, agentSessionId, scope)
   return c.json({ ok: true })
 })
 
 /** POST /api/agent:confirm-working-done → AgentSessionMeta */
 agent.post(`/${AGENT_IPC_CHANNELS.CLEAR_COMPLETION_STATE}`, async (c) => {
+  const scope = getUserScope(c)
   const { id } = await c.req.json<{ id: string }>()
-  const meta = getAgentSessionMeta(id)
+  const meta = getAgentSessionMeta(id, scope)
   if (!meta) return c.json({ error: `Agent 会话不存在: ${id}` }, 404)
   const updates: Partial<import('@proma/shared').AgentSessionMeta> = {}
   if (meta.manualWorking) updates.manualWorking = false
   if (meta.completedButUnconfirmed) updates.completedButUnconfirmed = false
   if (Object.keys(updates).length === 0) return c.json(meta)
-  return c.json(updateAgentSessionMeta(id, updates))
+  return c.json(updateAgentSessionMeta(id, updates, scope))
 })
 
 /** POST /api/agent:search-session-references → AgentSessionReferenceSearchResult[] */
 agent.post(`/${AGENT_IPC_CHANNELS.SEARCH_SESSION_REFERENCES}`, async (c) => {
+  const scope = getUserScope(c)
   const input = await c.req.json<AgentSessionReferenceSearchInput>()
-  return c.json(searchAgentSessionReferences(input))
+  return c.json(searchAgentSessionReferences(input, scope))
 })
 
 /** POST /api/agent:move-session-to-workspace → AgentSessionMeta */
 agent.post(`/${AGENT_IPC_CHANNELS.MOVE_SESSION_TO_WORKSPACE}`, async (c) => {
+  const scope = getUserScope(c)
   const input = await c.req.json<MoveSessionToWorkspaceInput>()
   if (orchestrator.isActive(input.sessionId)) {
     // 短暂等待后重试一次（渲染进程 running 状态可能比主进程清理更早变为 false）
@@ -1133,7 +1167,7 @@ agent.post(`/${AGENT_IPC_CHANNELS.MOVE_SESSION_TO_WORKSPACE}`, async (c) => {
       return c.json({ error: '会话正在运行中，请停止后再迁移' }, 409)
     }
   }
-  return c.json(moveSessionToWorkspace(input.sessionId, input.targetWorkspaceId))
+  return c.json(moveSessionToWorkspace(input.sessionId, input.targetWorkspaceId, scope))
 })
 
 /** 最大附件大小（100MB） */
@@ -1142,7 +1176,7 @@ const MAX_ATTACHMENT_SIZE = 100 * 1024 * 1024
 /** POST /api/agent:save-files-to-session → AgentSavedFile[] */
 agent.post(`/${AGENT_IPC_CHANNELS.SAVE_FILES_TO_SESSION}`, async (c) => {
   const input = await c.req.json<AgentSaveFilesInput>()
-  const sessionDir = getAgentSessionWorkspacePath(input.workspaceSlug, input.sessionId)
+  const sessionDir = getAgentSessionWorkspacePath(input.workspaceSlug, input.sessionId, getUserScope(c))
   const results: AgentSavedFile[] = []
   const usedPaths = new Set<string>()
 

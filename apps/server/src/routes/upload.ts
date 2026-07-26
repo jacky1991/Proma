@@ -13,6 +13,7 @@ import { join, extname } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { getConversationAttachmentsDir } from '@proma/server-core/config-paths'
 import { getMimeType } from '@proma/server-core/attachment-service'
+import { getUserScope } from '../utils/user-scope'
 
 const upload = new Hono()
 
@@ -45,6 +46,7 @@ function isAllowedMime(mime: string): boolean {
  * Response: { id, filename, mediaType, localPath, size }
  */
 upload.post('/upload', async (c) => {
+  const scope = getUserScope(c)
   const contentType = c.req.header('content-type') ?? ''
   if (!contentType.includes('multipart/form-data')) {
     return c.json({ error: '需要 multipart/form-data 格式' }, 400)
@@ -78,8 +80,8 @@ upload.post('/upload', async (c) => {
     return c.json({ error: `不支持的文件类型: ${mimeType}` }, 415)
   }
 
-  // 存储到 ~/.proma/attachments/{conversationId}/{uuid}.ext
-  const dir = getConversationAttachmentsDir(conversationId)
+  // 存储到用户私有附件目录（Web 多用户隔离）
+  const dir = getConversationAttachmentsDir(conversationId, scope)
   const id = randomUUID()
   const ext = extname(file.name) || '.bin'
   const storedFilename = `${id}${ext}`
@@ -106,6 +108,7 @@ upload.post('/upload', async (c) => {
  * 返回附件文件内容。图片 inline 预览，其他类型触发下载。
  */
 upload.get('/attachments/:conversationId/:filename', (c) => {
+  const scope = getUserScope(c)
   const { conversationId, filename } = c.req.param()
 
   // 安全校验：防止路径穿越
@@ -113,7 +116,7 @@ upload.get('/attachments/:conversationId/:filename', (c) => {
     return c.json({ error: '非法路径' }, 400)
   }
 
-  const dir = getConversationAttachmentsDir(conversationId)
+  const dir = getConversationAttachmentsDir(conversationId, scope)
   const fullPath = join(dir, filename)
 
   if (!existsSync(fullPath)) {
@@ -139,13 +142,14 @@ upload.get('/attachments/:conversationId/:filename', (c) => {
  * 删除指定附件文件。
  */
 upload.delete('/attachments/:conversationId/:filename', (c) => {
+  const scope = getUserScope(c)
   const { conversationId, filename } = c.req.param()
 
   if (conversationId.includes('..') || filename.includes('..') || filename.includes('/')) {
     return c.json({ error: '非法路径' }, 400)
   }
 
-  const dir = getConversationAttachmentsDir(conversationId)
+  const dir = getConversationAttachmentsDir(conversationId, scope)
   const fullPath = join(dir, filename)
 
   if (!existsSync(fullPath)) {

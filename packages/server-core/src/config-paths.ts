@@ -11,6 +11,21 @@ import { homedir } from 'node:os'
 import { getEnvProbe } from './config'
 
 /**
+ * 用户作用域
+ *
+ * Web 多用户场景下标识数据归属的用户，
+ * 用于将用户私有数据隔离到独立目录。
+ */
+export interface UserScope {
+  userId: string
+  /** 可选覆盖数据根目录（测试用） */
+  dataRoot?: string
+}
+
+/** 默认用户作用域（单用户 / 兼容场景） */
+export const DEFAULT_USER_SCOPE: UserScope = { userId: 'default' }
+
+/**
  * 获取配置目录名称
  *
  * 开发模式下返回 '.proma-dev'，正式版本返回 '.proma'。
@@ -57,21 +72,88 @@ export function getConfigDir(): string {
 }
 
 /**
+ * Web 数据根目录覆盖值
+ *
+ * 由 Web 服务端 bootstrap 通过 setDataRoot() 设置；
+ * Electron 端不设置，保持使用 getConfigDir()。
+ */
+let _dataRootOverride: string | undefined
+
+/**
+ * 设置 Web 数据根目录
+ *
+ * Web 服务端启动时调用，将数据根指向独立目录（如 ~/.proma-web/），
+ * 与桌面端 ~/.proma/ 隔离。
+ *
+ * @param path 数据根目录绝对路径
+ */
+export function setDataRoot(path: string): void {
+  _dataRootOverride = path
+  console.log('[配置] Web 数据根目录已设置:', path)
+}
+
+/**
+ * 获取数据根目录
+ *
+ * 优先级：
+ * 1. setDataRoot() 设置的覆盖值
+ * 2. PROMA_DATA_ROOT 环境变量
+ * 3. getConfigDir()（兼容：默认仍为 ~/.proma/，Electron 不受影响）
+ */
+export function getDataRoot(): string {
+  if (_dataRootOverride) return _dataRootOverride
+  if (process.env.PROMA_DATA_ROOT) return process.env.PROMA_DATA_ROOT
+  return getConfigDir()
+}
+
+/**
+ * 获取指定用户的数据目录
+ *
+ * Web 多用户场景下，每个用户的私有数据隔离在此目录下。
+ * 如果目录不存在则自动创建。
+ *
+ * @param scope 用户作用域
+ * @returns {dataRoot}/users/{userId}/
+ */
+export function getUserDataDir(scope: UserScope): string {
+  const root = scope.dataRoot ?? getDataRoot()
+  const dir = join(root, 'users', scope.userId)
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true })
+  }
+  return dir
+}
+
+/**
+ * 获取用户级会话工作区根目录
+ *
+ * Web 多用户场景下，每个用户的 Agent 会话工作目录隔离在此目录下。
+ *
+ * @param scope 用户作用域
+ * @returns {dataRoot}/users/{userId}/agent-workspaces/
+ */
+export function getUserSessionWorkspacesDir(scope: UserScope): string {
+  return join(getUserDataDir(scope), 'agent-workspaces')
+}
+
+/**
  * 获取渠道配置文件路径
  *
  * @returns ~/.proma/channels.json
  */
 export function getChannelsPath(): string {
-  return join(getConfigDir(), 'channels.json')
+  return join(getDataRoot(), 'channels.json')
 }
 
 /**
  * 获取对话索引文件路径
  *
- * @returns ~/.proma/conversations.json
+ * @param scope 可选用户作用域；传入时定位到该用户私有目录
+ * @returns 无 scope: ~/.proma/conversations.json；有 scope: {dataRoot}/users/{userId}/conversations.json
  */
-export function getConversationsIndexPath(): string {
-  return join(getConfigDir(), 'conversations.json')
+export function getConversationsIndexPath(scope?: UserScope): string {
+  const base = scope ? getUserDataDir(scope) : getConfigDir()
+  return join(base, 'conversations.json')
 }
 
 /**
@@ -79,10 +161,12 @@ export function getConversationsIndexPath(): string {
  *
  * 如果目录不存在则自动创建。
  *
- * @returns ~/.proma/conversations/
+ * @param scope 可选用户作用域；传入时定位到该用户私有目录
+ * @returns 无 scope: ~/.proma/conversations/；有 scope: {dataRoot}/users/{userId}/conversations/
  */
-export function getConversationsDir(): string {
-  const dir = join(getConfigDir(), 'conversations')
+export function getConversationsDir(scope?: UserScope): string {
+  const base = scope ? getUserDataDir(scope) : getConfigDir()
+  const dir = join(base, 'conversations')
 
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true })
@@ -96,10 +180,11 @@ export function getConversationsDir(): string {
  * 获取指定对话的消息文件路径
  *
  * @param id 对话 ID
- * @returns ~/.proma/conversations/{id}.jsonl
+ * @param scope 可选用户作用域；传入时定位到该用户私有目录
+ * @returns 无 scope: ~/.proma/conversations/{id}.jsonl；有 scope: {dataRoot}/users/{userId}/conversations/{id}.jsonl
  */
-export function getConversationMessagesPath(id: string): string {
-  return join(getConversationsDir(), `${id}.jsonl`)
+export function getConversationMessagesPath(id: string, scope?: UserScope): string {
+  return join(getConversationsDir(scope), `${id}.jsonl`)
 }
 
 /**
@@ -107,10 +192,12 @@ export function getConversationMessagesPath(id: string): string {
  *
  * 如果目录不存在则自动创建。
  *
- * @returns ~/.proma/attachments/
+ * @param scope 可选用户作用域；传入时定位到该用户私有目录
+ * @returns 无 scope: ~/.proma/attachments/；有 scope: {dataRoot}/users/{userId}/attachments/
  */
-export function getAttachmentsDir(): string {
-  const dir = join(getConfigDir(), 'attachments')
+export function getAttachmentsDir(scope?: UserScope): string {
+  const base = scope ? getUserDataDir(scope) : getConfigDir()
+  const dir = join(base, 'attachments')
 
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true })
@@ -128,8 +215,8 @@ export function getAttachmentsDir(): string {
  * @param conversationId 对话 ID
  * @returns ~/.proma/attachments/{conversationId}/
  */
-export function getConversationAttachmentsDir(conversationId: string): string {
-  const dir = join(getAttachmentsDir(), conversationId)
+export function getConversationAttachmentsDir(conversationId: string, scope?: UserScope): string {
+  const dir = join(getAttachmentsDir(scope), conversationId)
 
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true })
@@ -144,17 +231,19 @@ export function getConversationAttachmentsDir(conversationId: string): string {
  * @param localPath 相对路径 {conversationId}/{uuid}.ext
  * @returns 完整路径 ~/.proma/attachments/{conversationId}/{uuid}.ext
  */
-export function resolveAttachmentPath(localPath: string): string {
-  return join(getAttachmentsDir(), localPath)
+export function resolveAttachmentPath(localPath: string, scope?: UserScope): string {
+  return join(getAttachmentsDir(scope), localPath)
 }
 
 /**
  * 获取应用设置文件路径
  *
- * @returns ~/.proma/settings.json
+ * @param scope 可选用户作用域；传入时定位到该用户私有目录
+ * @returns 无 scope: ~/.proma/settings.json；有 scope: {dataRoot}/users/{userId}/settings.json
  */
-export function getSettingsPath(): string {
-  return join(getConfigDir(), 'settings.json')
+export function getSettingsPath(scope?: UserScope): string {
+  const base = scope ? getUserDataDir(scope) : getConfigDir()
+  return join(base, 'settings.json')
 }
 
 /**
@@ -163,16 +252,18 @@ export function getSettingsPath(): string {
  * @returns ~/.proma/default-apps.json
  */
 export function getDefaultAppsCachePath(): string {
-  return join(getConfigDir(), 'default-apps.json')
+  return join(getDataRoot(), 'default-apps.json')
 }
 
 /**
  * 获取用户档案文件路径
  *
- * @returns ~/.proma/user-profile.json
+ * @param scope 可选用户作用域；传入时定位到该用户私有目录
+ * @returns 无 scope: ~/.proma/user-profile.json；有 scope: {dataRoot}/users/{userId}/user-profile.json
  */
-export function getUserProfilePath(): string {
-  return join(getConfigDir(), 'user-profile.json')
+export function getUserProfilePath(scope?: UserScope): string {
+  const base = scope ? getUserDataDir(scope) : getConfigDir()
+  return join(base, 'user-profile.json')
 }
 
 /**
@@ -181,7 +272,7 @@ export function getUserProfilePath(): string {
  * @returns ~/.proma/proxy-settings.json
  */
 export function getProxySettingsPath(): string {
-  return join(getConfigDir(), 'proxy-settings.json')
+  return join(getDataRoot(), 'proxy-settings.json')
 }
 
 /**
@@ -190,7 +281,7 @@ export function getProxySettingsPath(): string {
  * @returns ~/.proma/system-prompts.json
  */
 export function getSystemPromptsPath(): string {
-  return join(getConfigDir(), 'system-prompts.json')
+  return join(getDataRoot(), 'system-prompts.json')
 }
 
 /**
@@ -199,16 +290,18 @@ export function getSystemPromptsPath(): string {
  * @returns ~/.proma/chat-tools.json
  */
 export function getChatToolsConfigPath(): string {
-  return join(getConfigDir(), 'chat-tools.json')
+  return join(getDataRoot(), 'chat-tools.json')
 }
 
 /**
  * 获取 Agent 会话索引文件路径
  *
- * @returns ~/.proma/agent-sessions.json
+ * @param scope 可选用户作用域；传入时定位到该用户私有目录
+ * @returns 无 scope: ~/.proma/agent-sessions.json；有 scope: {dataRoot}/users/{userId}/agent-sessions.json
  */
-export function getAgentSessionsIndexPath(): string {
-  return join(getConfigDir(), 'agent-sessions.json')
+export function getAgentSessionsIndexPath(scope?: UserScope): string {
+  const base = scope ? getUserDataDir(scope) : getConfigDir()
+  return join(base, 'agent-sessions.json')
 }
 
 /**
@@ -216,10 +309,12 @@ export function getAgentSessionsIndexPath(): string {
  *
  * 如果目录不存在则自动创建。
  *
- * @returns ~/.proma/agent-sessions/
+ * @param scope 可选用户作用域；传入时定位到该用户私有目录
+ * @returns 无 scope: ~/.proma/agent-sessions/；有 scope: {dataRoot}/users/{userId}/agent-sessions/
  */
-export function getAgentSessionsDir(): string {
-  const dir = join(getConfigDir(), 'agent-sessions')
+export function getAgentSessionsDir(scope?: UserScope): string {
+  const base = scope ? getUserDataDir(scope) : getConfigDir()
+  const dir = join(base, 'agent-sessions')
 
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true })
@@ -233,10 +328,11 @@ export function getAgentSessionsDir(): string {
  * 获取指定 Agent 会话的消息文件路径
  *
  * @param id 会话 ID
- * @returns ~/.proma/agent-sessions/{id}.jsonl
+ * @param scope 可选用户作用域；传入时定位到该用户私有目录
+ * @returns 无 scope: ~/.proma/agent-sessions/{id}.jsonl；有 scope: {dataRoot}/users/{userId}/agent-sessions/{id}.jsonl
  */
-export function getAgentSessionMessagesPath(id: string): string {
-  return join(getAgentSessionsDir(), `${id}.jsonl`)
+export function getAgentSessionMessagesPath(id: string, scope?: UserScope): string {
+  return join(getAgentSessionsDir(scope), `${id}.jsonl`)
 }
 
 /**
@@ -245,7 +341,7 @@ export function getAgentSessionMessagesPath(id: string): string {
  * @returns ~/.proma/agent-workspaces.json
  */
 export function getAgentWorkspacesIndexPath(): string {
-  return join(getConfigDir(), 'agent-workspaces.json')
+  return join(getDataRoot(), 'agent-workspaces.json')
 }
 
 /**
@@ -256,7 +352,7 @@ export function getAgentWorkspacesIndexPath(): string {
  * @returns ~/.proma/agent-workspaces/
  */
 export function getAgentWorkspacesDir(): string {
-  const dir = join(getConfigDir(), 'agent-workspaces')
+  const dir = join(getDataRoot(), 'agent-workspaces')
 
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true })
@@ -342,7 +438,7 @@ export function getWorkspaceFilesDir(slug: string): string {
  * @returns ~/.proma/agent-workspaces/{slug}/workspace-files/
  */
 export function resolveWorkspaceFilesDir(slug: string): string {
-  return join(getConfigDir(), 'agent-workspaces', slug, 'workspace-files')
+  return join(getDataRoot(), 'agent-workspaces', slug, 'workspace-files')
 }
 
 /**
@@ -353,10 +449,14 @@ export function resolveWorkspaceFilesDir(slug: string): string {
  *
  * @param slug 工作区 slug
  * @param sessionId 会话 ID
- * @returns ~/.proma/agent-workspaces/{slug}/{sessionId}/
+ * @param scope 可选用户作用域；传入时定位到该用户私有目录
+ * @returns 无 scope: ~/.proma/agent-workspaces/{slug}/{sessionId}/；有 scope: {dataRoot}/users/{userId}/agent-workspaces/{slug}/{sessionId}/
  */
-export function resolveAgentSessionWorkspacePath(slug: string, sessionId: string): string {
-  return join(getConfigDir(), 'agent-workspaces', slug, sessionId)
+export function resolveAgentSessionWorkspacePath(slug: string, sessionId: string, scope?: UserScope): string {
+  if (scope) {
+    return join(getUserSessionWorkspacesDir(scope), slug, sessionId)
+  }
+  return join(getDataRoot(), 'agent-workspaces', slug, sessionId)
 }
 
 /**
@@ -386,7 +486,7 @@ export function getInactiveSkillsDir(slug: string): string {
  * @returns ~/.proma/default-skills/
  */
 export function getDefaultSkillsDir(): string {
-  const dir = join(getConfigDir(), 'default-skills')
+  const dir = join(getDataRoot(), 'default-skills')
 
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true })
@@ -540,10 +640,14 @@ export function getFeishuBotMetadataPath(botId: string): string {
  *
  * @param workspaceSlug 工作区 slug
  * @param sessionId 会话 ID
- * @returns ~/.proma/agent-workspaces/{slug}/{sessionId}/
+ * @param scope 可选用户作用域；传入时定位到该用户私有目录
+ * @returns 无 scope: ~/.proma/agent-workspaces/{slug}/{sessionId}/；有 scope: {dataRoot}/users/{userId}/agent-workspaces/{slug}/{sessionId}/
  */
-export function getAgentSessionWorkspacePath(workspaceSlug: string, sessionId: string): string {
-  const dir = join(getAgentWorkspacePath(workspaceSlug), sessionId)
+export function getAgentSessionWorkspacePath(workspaceSlug: string, sessionId: string, scope?: UserScope): string {
+  const base = scope
+    ? join(getUserSessionWorkspacesDir(scope), workspaceSlug)
+    : getAgentWorkspacePath(workspaceSlug)
+  const dir = join(base, sessionId)
 
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true })
@@ -564,7 +668,7 @@ export function getAgentSessionWorkspacePath(workspaceSlug: string, sessionId: s
  * @returns ~/.proma/sdk-config/
  */
 export function getSdkConfigDir(): string {
-  const dir = join(getConfigDir(), 'sdk-config')
+  const dir = join(getDataRoot(), 'sdk-config')
 
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true })
@@ -577,10 +681,12 @@ export function getSdkConfigDir(): string {
 /**
  * 获取 Scratch Pad 文件路径
  *
- * @returns ~/.proma/scratch-pad.md
+ * @param scope 可选用户作用域；传入时定位到该用户私有目录
+ * @returns 无 scope: ~/.proma/scratch-pad.md；有 scope: {dataRoot}/users/{userId}/scratch-pad.md
  */
-export function getScratchPadPath(): string {
-  return join(getConfigDir(), 'scratch-pad.md')
+export function getScratchPadPath(scope?: UserScope): string {
+  const base = scope ? getUserDataDir(scope) : getConfigDir()
+  return join(base, 'scratch-pad.md')
 }
 
 /**
@@ -589,5 +695,5 @@ export function getScratchPadPath(): string {
  * @returns ~/.proma/automations.json
  */
 export function getAutomationsPath(): string {
-  return join(getConfigDir(), 'automations.json')
+  return join(getDataRoot(), 'automations.json')
 }

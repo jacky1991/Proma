@@ -53,3 +53,6 @@ export * from './wechat'
 
 // 定时任务（Automation）相关类型
 export * from './automation'
+
+// Web 端认证与用户管理相关类型
+export * from './auth'

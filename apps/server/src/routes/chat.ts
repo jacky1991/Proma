@@ -38,6 +38,7 @@ import {
   type ChatStreamEvent,
 } from '@proma/server-core/chat-service'
 import { streamSink } from '../engine'
+import { getUserScope } from '../utils/user-scope'
 
 const chat = new Hono()
 
@@ -58,71 +59,82 @@ function chatStreamEmitter(event: ChatStreamEvent): void {
 
 /** POST /api/chat:list-conversations → ConversationMeta[] */
 chat.post(`/${CHAT_IPC_CHANNELS.LIST_CONVERSATIONS}`, (c) => {
-  return c.json(listConversations())
+  const scope = getUserScope(c)
+  return c.json(listConversations(scope))
 })
 
 /** POST /api/chat:create-conversation → ConversationMeta */
 chat.post(`/${CHAT_IPC_CHANNELS.CREATE_CONVERSATION}`, async (c) => {
+  const scope = getUserScope(c)
   const { title, modelId, channelId } = await c.req.json()
-  return c.json(createConversation(title, modelId, channelId))
+  return c.json(createConversation(title, modelId, channelId, scope))
 })
 
 /** POST /api/chat:get-messages → ChatMessage[] */
 chat.post(`/${CHAT_IPC_CHANNELS.GET_MESSAGES}`, async (c) => {
+  const scope = getUserScope(c)
   const { id } = await c.req.json()
-  return c.json(getConversationMessages(id))
+  return c.json(getConversationMessages(id, scope))
 })
 
 /** POST /api/chat:get-recent-messages → RecentMessagesResult */
 chat.post(`/${CHAT_IPC_CHANNELS.GET_RECENT_MESSAGES}`, async (c) => {
+  const scope = getUserScope(c)
   const { id, limit } = await c.req.json()
-  return c.json(getRecentMessages(id, limit))
+  return c.json(getRecentMessages(id, limit, scope))
 })
 
 /** POST /api/chat:update-title → ConversationMeta */
 chat.post(`/${CHAT_IPC_CHANNELS.UPDATE_TITLE}`, async (c) => {
+  const scope = getUserScope(c)
   const { id, title } = await c.req.json()
-  return c.json(updateConversationMeta(id, { title }))
+  return c.json(updateConversationMeta(id, { title }, scope))
 })
 
 /** POST /api/chat:delete-conversation → { ok: true } */
 chat.post(`/${CHAT_IPC_CHANNELS.DELETE_CONVERSATION}`, async (c) => {
+  const scope = getUserScope(c)
   const { id } = await c.req.json()
-  deleteConversation(id)
+  deleteConversation(id, scope)
   return c.json({ ok: true })
 })
 
 /** POST /api/chat:update-conversation-model → ConversationMeta */
 chat.post(`/${CHAT_IPC_CHANNELS.UPDATE_MODEL}`, async (c) => {
+  const scope = getUserScope(c)
   const { id, modelId, channelId } = await c.req.json()
-  return c.json(updateConversationMeta(id, { modelId, channelId }))
+  return c.json(updateConversationMeta(id, { modelId, channelId }, scope))
 })
 
 /** POST /api/chat:toggle-pin → ConversationMeta */
 chat.post(`/${CHAT_IPC_CHANNELS.TOGGLE_PIN}`, async (c) => {
+  const scope = getUserScope(c)
   const { id } = await c.req.json()
-  const conversations = listConversations()
+  const conversations = listConversations(scope)
   const conv = conversations.find((cv) => cv.id === id)
   if (!conv) return c.json({ error: 'Conversation not found' }, 404)
-  return c.json(updateConversationMeta(id, { pinned: !conv.pinned }))
+  return c.json(updateConversationMeta(id, { pinned: !conv.pinned }, scope))
 })
 
 /** POST /api/chat:delete-message → ChatMessage[] */
 chat.post(`/${CHAT_IPC_CHANNELS.DELETE_MESSAGE}`, async (c) => {
+  const scope = getUserScope(c)
   const { conversationId, messageId } = await c.req.json()
-  return c.json(deleteMessage(conversationId, messageId))
+  return c.json(deleteMessage(conversationId, messageId, scope))
 })
 
 /** POST /api/chat:truncate-messages-from → ChatMessage[] */
 chat.post(`/${CHAT_IPC_CHANNELS.TRUNCATE_MESSAGES_FROM}`, async (c) => {
+  const scope = getUserScope(c)
   const { conversationId, messageId } = await c.req.json()
-  return c.json(truncateMessagesFrom(conversationId, messageId))
+  return c.json(truncateMessagesFrom(conversationId, messageId, undefined, scope))
 })
 
 /** POST /api/chat:update-context-dividers → ConversationMeta */
 chat.post(`/${CHAT_IPC_CHANNELS.UPDATE_CONTEXT_DIVIDERS}`, async (c) => {
+  const scope = getUserScope(c)
   const { conversationId, dividers } = await c.req.json()
-  return c.json(updateContextDividers(conversationId, dividers))
+  return c.json(updateContextDividers(conversationId, dividers, scope))
 })
 
 // ===== 消息发送 & 控制 =====
@@ -155,20 +167,23 @@ chat.post(`/${CHAT_IPC_CHANNELS.GENERATE_TITLE}`, async (c) => {
 
 /** POST /api/chat:save-attachment → AttachmentSaveResult */
 chat.post(`/${CHAT_IPC_CHANNELS.SAVE_ATTACHMENT}`, async (c) => {
+  const scope = getUserScope(c)
   const input = await c.req.json<AttachmentSaveInput>()
-  return c.json(saveAttachment(input))
+  return c.json(saveAttachment(input, scope))
 })
 
 /** POST /api/chat:read-attachment → string (base64) */
 chat.post(`/${CHAT_IPC_CHANNELS.READ_ATTACHMENT}`, async (c) => {
+  const scope = getUserScope(c)
   const { localPath } = await c.req.json<{ localPath: string }>()
-  return c.json(readAttachmentAsBase64(localPath))
+  return c.json(readAttachmentAsBase64(localPath, scope))
 })
 
 /** POST /api/chat:delete-attachment → { ok: true } */
 chat.post(`/${CHAT_IPC_CHANNELS.DELETE_ATTACHMENT}`, async (c) => {
+  const scope = getUserScope(c)
   const { localPath } = await c.req.json<{ localPath: string }>()
-  deleteAttachment(localPath)
+  deleteAttachment(localPath, scope)
   return c.json({ ok: true })
 })
 
@@ -183,8 +198,9 @@ chat.post(`/${CHAT_IPC_CHANNELS.EXTRACT_ATTACHMENT_TEXT}`, async (c) => {
 
 /** POST /api/chat:toggle-archive → ConversationMeta */
 chat.post(`/${CHAT_IPC_CHANNELS.TOGGLE_ARCHIVE}`, async (c) => {
+  const scope = getUserScope(c)
   const { id } = await c.req.json<{ id: string }>()
-  const conversations = listConversations()
+  const conversations = listConversations(scope)
   const current = conversations.find((cv) => cv.id === id)
   if (!current) return c.json({ error: '对话不存在' }, 404)
   const newArchived = !current.archived
@@ -193,13 +209,14 @@ chat.post(`/${CHAT_IPC_CHANNELS.TOGGLE_ARCHIVE}`, async (c) => {
   if (newArchived && current.pinned) {
     updates.pinned = false
   }
-  return c.json(updateConversationMeta(id, updates))
+  return c.json(updateConversationMeta(id, updates, scope))
 })
 
 /** POST /api/chat:search-messages → MessageSearchResult[] */
 chat.post(`/${CHAT_IPC_CHANNELS.SEARCH_MESSAGES}`, async (c) => {
+  const scope = getUserScope(c)
   const { query } = await c.req.json<{ query: string }>()
-  return c.json(await searchConversationMessages(query))
+  return c.json(await searchConversationMessages(query, scope))
 })
 
 /** POST /api/chat:get-tutorial-content → string | null */
@@ -209,7 +226,8 @@ chat.post(`/${CHAT_IPC_CHANNELS.GET_TUTORIAL_CONTENT}`, (c) => {
 
 /** POST /api/chat:create-welcome-conversation → ConversationMeta | null */
 chat.post(`/${CHAT_IPC_CHANNELS.CREATE_WELCOME_CONVERSATION}`, (c) => {
-  return c.json(createWelcomeConversation())
+  const scope = getUserScope(c)
+  return c.json(createWelcomeConversation(scope))
 })
 
 export { chat }

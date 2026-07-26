@@ -15,9 +15,11 @@ import { extname, join, isAbsolute, normalize } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import {
   getConfigDir,
+  getUserDataDir,
   getConversationAttachmentsDir,
   resolveAttachmentPath,
 } from './config-paths'
+import type { UserScope } from './config-paths'
 import type {
   FileAttachment,
   AttachmentSaveInput,
@@ -111,7 +113,7 @@ export function getMimeType(ext: string): string {
  * @param input 保存附件参数
  * @returns 保存结果，包含附件元信息
  */
-export function saveAttachment(input: AttachmentSaveInput): AttachmentSaveResult {
+export function saveAttachment(input: AttachmentSaveInput, scope?: UserScope): AttachmentSaveResult {
   const { conversationId, filename, mediaType, data } = input
 
   // 防御性检查：base64 数据量不应超过 100MB 限制
@@ -121,7 +123,7 @@ export function saveAttachment(input: AttachmentSaveInput): AttachmentSaveResult
   }
 
   // 确保目录存在
-  const dir = getConversationAttachmentsDir(conversationId)
+  const dir = getConversationAttachmentsDir(conversationId, scope)
 
   // 生成唯一文件名
   const ext = extname(filename) || '.bin'
@@ -156,19 +158,19 @@ export function saveAttachment(input: AttachmentSaveInput): AttachmentSaveResult
  * @param localPath 相对路径或绝对路径
  * @returns base64 编码的文件数据
  */
-export function readAttachmentAsBase64(localPath: string): string {
+export function readAttachmentAsBase64(localPath: string, scope?: UserScope): string {
   let fullPath: string
 
   if (isAbsolute(localPath)) {
-    // 绝对路径：验证在 ~/.proma/ 目录下，防止路径穿越
-    const configDir = getConfigDir()
+    // 绝对路径：验证在数据根目录下，防止路径穿越
+    const baseDir = scope ? getUserDataDir(scope) : getConfigDir()
     const normalized = normalize(localPath)
-    if (!normalized.startsWith(configDir)) {
+    if (!normalized.startsWith(baseDir)) {
       throw new Error(`附件路径不在安全目录内: ${localPath}`)
     }
     fullPath = normalized
   } else {
-    fullPath = resolveAttachmentPath(localPath)
+    fullPath = resolveAttachmentPath(localPath, scope)
   }
 
   if (!existsSync(fullPath)) {
@@ -184,8 +186,8 @@ export function readAttachmentAsBase64(localPath: string): string {
  *
  * @param localPath 相对路径 {conversationId}/{uuid}.ext
  */
-export function deleteAttachment(localPath: string): void {
-  const fullPath = resolveAttachmentPath(localPath)
+export function deleteAttachment(localPath: string, scope?: UserScope): void {
+  const fullPath = resolveAttachmentPath(localPath, scope)
 
   if (existsSync(fullPath)) {
     try {
@@ -204,8 +206,8 @@ export function deleteAttachment(localPath: string): void {
  *
  * @param conversationId 对话 ID
  */
-export function deleteConversationAttachments(conversationId: string): void {
-  const dir = join(resolveAttachmentPath(''), conversationId)
+export function deleteConversationAttachments(conversationId: string, scope?: UserScope): void {
+  const dir = join(resolveAttachmentPath('', scope), conversationId)
 
   if (existsSync(dir)) {
     try {

@@ -1,5 +1,7 @@
+import { join } from 'node:path'
 import { getAgentSessionMeta, getAgentSessionSDKMessages } from './agent-session-manager'
-import { getBundledCliPath, getConfigDirName } from './config-paths'
+import { getBundledCliPath, getAgentSessionsDir } from './config-paths'
+import type { UserScope } from './config-paths'
 
 /** 最大回填消息条数 */
 export const MAX_CONTEXT_MESSAGES = 20
@@ -12,8 +14,8 @@ interface SessionPromptHint {
   workspaceSlug?: string
 }
 
-function getSessionHistoryPath(sessionId: string): string {
-  return `~/${getConfigDirName()}/agent-sessions/${sessionId}.jsonl`
+function getSessionHistoryPath(sessionId: string, scope?: UserScope): string {
+  return join(getAgentSessionsDir(scope), `${sessionId}.jsonl`)
 }
 
 function canUseSessionCleaner(): boolean {
@@ -45,8 +47,8 @@ function buildSessionCliAccessGuide(sessionId: string, historyPath: string, work
   ].join('\n')
 }
 
-function buildCurrentSessionHistoryInstruction(sessionId: string, workspaceSlug?: string): string {
-  const historyPath = getSessionHistoryPath(sessionId)
+function buildCurrentSessionHistoryInstruction(sessionId: string, workspaceSlug?: string, scope?: UserScope): string {
+  const historyPath = getSessionHistoryPath(sessionId, scope)
   if (canUseSessionCleaner()) {
     return buildSessionCliAccessGuide(sessionId, historyPath, workspaceSlug)
   }
@@ -91,8 +93,8 @@ function extractSDKToolSummary(content: Array<{ type: string; name?: string; inp
  * 当 resume 不可用时，将最近消息拼接为上下文注入 prompt，
  * 让新 SDK 会话保留对话记忆。包含文本内容和工具活动摘要。
  */
-export function buildContextPrompt(sessionId: string, currentUserMessage: string, sessionHint?: SessionPromptHint): string {
-  const allMessages = getAgentSessionSDKMessages(sessionId)
+export function buildContextPrompt(sessionId: string, currentUserMessage: string, sessionHint?: SessionPromptHint, scope?: UserScope): string {
+  const allMessages = getAgentSessionSDKMessages(sessionId, scope)
   if (allMessages.length === 0) return currentUserMessage
 
   // 排除最后一条（当前用户消息，刚刚才 append 的）
@@ -132,9 +134,9 @@ export function buildContextPrompt(sessionId: string, currentUserMessage: string
   // 避免「从零重新执行整个任务」（#903）。
   const sessionInfoBlock = sessionHint
     ? `\n<session_info>\nSession ID: ${sessionId}\nSession CWD: ${sessionHint.agentCwd}\n` +
-      `History path: ${getSessionHistoryPath(sessionId)}\n` +
+      `History path: ${getSessionHistoryPath(sessionId, scope)}\n` +
       `重要：上方仅为最近 ${MAX_CONTEXT_MESSAGES} 条对话摘要，可能不完整。在继续之前，` +
-      `${buildCurrentSessionHistoryInstruction(sessionId, sessionHint.workspaceSlug)}\n` +
+      `${buildCurrentSessionHistoryInstruction(sessionId, sessionHint.workspaceSlug, scope)}\n` +
       `恢复时先确认「已经完成了哪些工作、进行到哪一步」，然后从中断处继续，切勿重复执行已完成的步骤。\n</session_info>\n`
     : ''
 
@@ -153,10 +155,11 @@ export function buildRecoveryPrompt(
   sessionId: string,
   currentUserMessage: string,
   sessionHint: SessionPromptHint,
+  scope?: UserScope,
 ): string {
-  const meta = getAgentSessionMeta(sessionId)
+  const meta = getAgentSessionMeta(sessionId, scope)
   const title = meta ? escapeContextAttr(meta.title) : sessionId
-  const historyPath = getSessionHistoryPath(sessionId)
+  const historyPath = getSessionHistoryPath(sessionId, scope)
 
   const recoveryBlock =
     `<session_recovery>\n` +
@@ -165,7 +168,7 @@ export function buildRecoveryPrompt(
     `<session id="${sessionId}" title="${title}" cwd="${sessionHint.agentCwd}">\n` +
     `History path: ${historyPath}\n` +
     `</session>\n` +
-    `${buildCurrentSessionHistoryInstruction(sessionId, sessionHint.workspaceSlug)}\n` +
+    `${buildCurrentSessionHistoryInstruction(sessionId, sessionHint.workspaceSlug, scope)}\n` +
     `</session_recovery>`
 
   console.log(`[Agent 编排] buildRecoveryPrompt: 注入 session 自引用 → ${historyPath}`)
@@ -185,22 +188,23 @@ export function buildReferencedSessionsPrompt(
   mentionedSessionIds?: string[],
   workspaceId?: string,
   workspaceSlug?: string,
+  scope?: UserScope,
 ): string {
   const uniqueIds = [...new Set((mentionedSessionIds ?? []).filter(Boolean))]
   if (uniqueIds.length === 0) return ''
 
-  const currentWorkspaceId = workspaceId ?? getAgentSessionMeta(currentSessionId)?.workspaceId
+  const currentWorkspaceId = workspaceId ?? getAgentSessionMeta(currentSessionId, scope)?.workspaceId
   const sessionBlocks: string[] = []
 
   for (const referencedSessionId of uniqueIds) {
     if (referencedSessionId === currentSessionId) continue
 
-    const meta = getAgentSessionMeta(referencedSessionId)
+    const meta = getAgentSessionMeta(referencedSessionId, scope)
     if (!meta || meta.archived) continue
     if (currentWorkspaceId && meta.workspaceId !== currentWorkspaceId) continue
 
     const title = escapeContextAttr(meta.title)
-    const historyPath = getSessionHistoryPath(referencedSessionId)
+    const historyPath = getSessionHistoryPath(referencedSessionId, scope)
     sessionBlocks.push(
       `<session id="${referencedSessionId}" title="${title}" updatedAt="${meta.updatedAt}">\n` +
       `CLI target: ${referencedSessionId}\n` +

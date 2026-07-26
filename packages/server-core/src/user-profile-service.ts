@@ -7,6 +7,7 @@
 
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { getUserProfilePath } from './config-paths'
+import type { UserScope } from './config-paths'
 
 /** 默认用户头像 emoji */
 export const DEFAULT_USER_AVATAR = '🧑‍💻'
@@ -27,8 +28,8 @@ export interface UserProfile {
  *
  * 如果文件不存在，返回默认档案。
  */
-export function getUserProfile(): UserProfile {
-  const filePath = getUserProfilePath()
+export function getUserProfile(scope?: UserScope): UserProfile {
+  const filePath = getUserProfilePath(scope)
 
   if (!existsSync(filePath)) {
     return {
@@ -58,14 +59,14 @@ export function getUserProfile(): UserProfile {
  *
  * 合并更新字段并写入文件。
  */
-export function updateUserProfile(updates: Partial<UserProfile>): UserProfile {
-  const current = getUserProfile()
+export function updateUserProfile(updates: Partial<UserProfile>, scope?: UserScope): UserProfile {
+  const current = getUserProfile(scope)
   const updated: UserProfile = {
     ...current,
     ...updates,
   }
 
-  const filePath = getUserProfilePath()
+  const filePath = getUserProfilePath(scope)
 
   try {
     writeFileSync(filePath, JSON.stringify(updated, null, 2), 'utf-8')

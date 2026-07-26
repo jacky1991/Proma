@@ -13,12 +13,14 @@ import { promises as fsPromises } from 'node:fs'
 import { join, basename, relative, isAbsolute } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
-  getConfigDir,
+  getDataRoot,
   getAgentSessionsDir,
   getSdkConfigDir,
   getAgentWorkspacesDir,
   getAttachmentsDir,
   getConversationsDir,
+  getUserSessionWorkspacesDir,
+  type UserScope,
 } from './config-paths'
 import { listAgentSessions } from './agent-session-manager'
 import { listAgentWorkspaces } from './agent-workspace-manager'
@@ -98,10 +100,10 @@ function isWorkspaceMetadataDir(entryName: string): boolean {
 }
 
 function displayStoragePath(filePath: string): string {
-  const configDir = getConfigDir()
-  const rel = relative(configDir, filePath)
+  const root = getDataRoot()
+  const rel = relative(root, filePath)
   if (!rel.startsWith('..') && !isAbsolute(rel)) {
-    return `~/${basename(configDir)}/${rel.split(/[\\/]/).join('/')}`
+    return `~/${basename(root)}/${rel.split(/[\\/]/).join('/')}`
   }
   return filePath
 }
@@ -203,13 +205,13 @@ async function cleanupOrphanSessionWorkspaceDir(sessionDir: string): Promise<num
 
 // ─── 统计 ───
 
-function getActiveSessionIds(): Set<string> {
-  return new Set(listAgentSessions().map((s) => s.id))
+function getActiveSessionIds(scope?: UserScope): Set<string> {
+  return new Set(listAgentSessions(scope).map((s) => s.id))
 }
 
-function getActiveSdkSessionIds(): Set<string> {
+function getActiveSdkSessionIds(scope?: UserScope): Set<string> {
   const ids = new Set<string>()
-  for (const s of listAgentSessions()) {
+  for (const s of listAgentSessions(scope)) {
     if (s.sdkSessionId) ids.add(s.sdkSessionId)
     if (s.forkSourceSdkSessionId) ids.add(s.forkSourceSdkSessionId)
   }
@@ -220,9 +222,9 @@ function getActiveWorkspaceSlugs(): Set<string> {
   return new Set(listAgentWorkspaces().map((w) => w.slug))
 }
 
-async function calcAgentSessionsCategory(): Promise<StorageCategory> {
-  const dir = getAgentSessionsDir()
-  const activeIds = getActiveSessionIds()
+async function calcAgentSessionsCategory(scope?: UserScope): Promise<StorageCategory> {
+  const dir = getAgentSessionsDir(scope)
+  const activeIds = getActiveSessionIds(scope)
   let bytes = 0, count = 0, orphanBytes = 0, orphanCount = 0
   const orphanItems: StorageOrphanItem[] = []
   let orphanItemsTruncated = false
@@ -263,9 +265,9 @@ async function calcAgentSessionsCategory(): Promise<StorageCategory> {
   }
 }
 
-async function calcSdkConfigCategory(): Promise<StorageCategory> {
+async function calcSdkConfigCategory(scope?: UserScope): Promise<StorageCategory> {
   const sdkDir = getSdkConfigDir()
-  const activeSdkIds = getActiveSdkSessionIds()
+  const activeSdkIds = getActiveSdkSessionIds(scope)
   let bytes = 0, count = 0, orphanBytes = 0, orphanCount = 0
   const orphanItems: StorageOrphanItem[] = []
   let orphanItemsTruncated = false
@@ -362,9 +364,9 @@ async function calcSdkConfigCategory(): Promise<StorageCategory> {
   }
 }
 
-async function calcWorkspacesCategory(): Promise<StorageCategory> {
+async function calcWorkspacesCategory(scope?: UserScope): Promise<StorageCategory> {
   const wsDir = getAgentWorkspacesDir()
-  const activeIds = getActiveSessionIds()
+  const activeIds = getActiveSessionIds(scope)
   const activeSlugs = getActiveWorkspaceSlugs()
   let bytes = 0, count = 0, orphanBytes = 0, orphanCount = 0
   const orphanItems: StorageOrphanItem[] = []
@@ -418,6 +420,45 @@ async function calcWorkspacesCategory(): Promise<StorageCategory> {
     } catch { /* 跳过 */ }
   }
 
+  // 扫描用户级会话工作目录（迁移后新数据位于 {dataRoot}/users/{userId}/agent-workspaces/{slug}/{sessionId}/）
+  if (scope) {
+    const userWsDir = getUserSessionWorkspacesDir(scope)
+    if (existsSync(userWsDir)) {
+      try {
+        const slugs = await fsPromises.readdir(userWsDir)
+        for (const slug of slugs) {
+          const slugDir = join(userWsDir, slug)
+          try {
+            if (!(await fsPromises.lstat(slugDir)).isDirectory()) continue
+            const entries = await fsPromises.readdir(slugDir)
+            for (const entry of entries) {
+              const entryPath = join(slugDir, entry)
+              try {
+                if (!(await fsPromises.lstat(entryPath)).isDirectory()) continue
+                const sub = await getDirSize(entryPath)
+                bytes += sub.bytes
+                count += sub.count
+                if (!activeIds.has(entry)) {
+                  const cleanable = await getDirSize(entryPath, { skipTopLevelDirs: PRESERVED_ORPHAN_SESSION_DIRS })
+                  if (cleanable.count > 0) {
+                    orphanBytes += cleanable.bytes
+                    orphanCount++
+                    orphanItemsTruncated = addOrphanItem(orphanItems, {
+                      kind: 'directory',
+                      path: displayStoragePath(entryPath),
+                      bytes: cleanable.bytes,
+                      count: cleanable.count,
+                    }) || orphanItemsTruncated
+                  }
+                }
+              } catch { /* 跳过 */ }
+            }
+          } catch { /* 跳过 */ }
+        }
+      } catch { /* 跳过 */ }
+    }
+  }
+
   return {
     label: '工作区文件',
     key: 'workspaces',
@@ -428,8 +469,8 @@ async function calcWorkspacesCategory(): Promise<StorageCategory> {
   }
 }
 
-async function calcConversationsCategory(): Promise<StorageCategory> {
-  const dir = getConversationsDir()
+async function calcConversationsCategory(scope?: UserScope): Promise<StorageCategory> {
+  const dir = getConversationsDir(scope)
   const { bytes, count } = await getDirSize(dir)
   return {
     label: '对话记录',
@@ -441,8 +482,8 @@ async function calcConversationsCategory(): Promise<StorageCategory> {
   }
 }
 
-async function calcAttachmentsCategory(): Promise<StorageCategory> {
-  const dir = getAttachmentsDir()
+async function calcAttachmentsCategory(scope?: UserScope): Promise<StorageCategory> {
+  const dir = getAttachmentsDir(scope)
   const { bytes, count } = await getDirSize(dir)
   return {
     label: '附件文件',
@@ -472,13 +513,13 @@ async function calcTempFilesCategory(): Promise<StorageCategory> {
   }
 }
 
-export async function calculateStorageStats(): Promise<StorageStats> {
+export async function calculateStorageStats(scope?: UserScope): Promise<StorageStats> {
   const categories = await Promise.all([
-    calcAgentSessionsCategory(),
-    calcSdkConfigCategory(),
-    calcWorkspacesCategory(),
-    calcConversationsCategory(),
-    calcAttachmentsCategory(),
+    calcAgentSessionsCategory(scope),
+    calcSdkConfigCategory(scope),
+    calcWorkspacesCategory(scope),
+    calcConversationsCategory(scope),
+    calcAttachmentsCategory(scope),
     calcTempFilesCategory(),
   ])
   return {
@@ -526,9 +567,9 @@ export async function cleanupTempFiles(): Promise<CleanupResult> {
   return { freedBytes, deletedCount, errors }
 }
 
-async function cleanupOrphanAgentSessions(): Promise<CleanupResult> {
-  const dir = getAgentSessionsDir()
-  const activeIds = getActiveSessionIds()
+async function cleanupOrphanAgentSessions(scope?: UserScope): Promise<CleanupResult> {
+  const dir = getAgentSessionsDir(scope)
+  const activeIds = getActiveSessionIds(scope)
   let freedBytes = 0, deletedCount = 0
   const errors: string[] = []
 
@@ -550,9 +591,9 @@ async function cleanupOrphanAgentSessions(): Promise<CleanupResult> {
   return { freedBytes, deletedCount, errors }
 }
 
-async function cleanupOrphanSdkConfig(): Promise<CleanupResult> {
+async function cleanupOrphanSdkConfig(scope?: UserScope): Promise<CleanupResult> {
   const sdkDir = getSdkConfigDir()
-  const activeSdkIds = getActiveSdkSessionIds()
+  const activeSdkIds = getActiveSdkSessionIds(scope)
   let freedBytes = 0, deletedCount = 0
   const errors: string[] = []
 
@@ -604,9 +645,9 @@ async function cleanupOrphanSdkConfig(): Promise<CleanupResult> {
   return { freedBytes, deletedCount, errors }
 }
 
-async function cleanupOrphanWorkspaces(): Promise<CleanupResult> {
+async function cleanupOrphanWorkspaces(scope?: UserScope): Promise<CleanupResult> {
   const wsDir = getAgentWorkspacesDir()
-  const activeIds = getActiveSessionIds()
+  const activeIds = getActiveSessionIds(scope)
   const activeSlugs = getActiveWorkspaceSlugs()
   let freedBytes = 0, deletedCount = 0
   const errors: string[] = []
@@ -636,12 +677,40 @@ async function cleanupOrphanWorkspaces(): Promise<CleanupResult> {
     errors.push(`清理孤儿工作区目录失败: ${e}`)
   }
 
+  // 清理用户级会话工作目录中的孤儿（迁移后新数据位于用户级目录）
+  if (scope) {
+    const userWsDir = getUserSessionWorkspacesDir(scope)
+    if (existsSync(userWsDir)) {
+      try {
+        const slugs = await fsPromises.readdir(userWsDir)
+        for (const slug of slugs) {
+          const slugDir = join(userWsDir, slug)
+          try {
+            if (!(await fsPromises.lstat(slugDir)).isDirectory()) continue
+            const entries = await fsPromises.readdir(slugDir)
+            for (const entry of entries) {
+              const entryPath = join(slugDir, entry)
+              try {
+                if (!(await fsPromises.lstat(entryPath)).isDirectory()) continue
+                if (activeIds.has(entry)) continue
+                const freed = await cleanupOrphanSessionWorkspaceDir(entryPath)
+                if (freed > 0) { freedBytes += freed; deletedCount++ }
+              } catch { /* 跳过 */ }
+            }
+          } catch { /* 跳过 */ }
+        }
+      } catch (e) {
+        errors.push(`清理用户会话工作目录失败: ${e}`)
+      }
+    }
+  }
+
   return { freedBytes, deletedCount, errors }
 }
 
-function cleanupArchivedSessions(beforeDays: number): CleanupResult {
+function cleanupArchivedSessions(beforeDays: number, scope?: UserScope): CleanupResult {
   const cutoff = Date.now() - beforeDays * 24 * 60 * 60 * 1000
-  const sessions = listAgentSessions()
+  const sessions = listAgentSessions(scope)
   const sdkDir = getSdkConfigDir()
   let freedBytes = 0, deletedCount = 0
   const errors: string[] = []
@@ -649,7 +718,7 @@ function cleanupArchivedSessions(beforeDays: number): CleanupResult {
   for (const session of sessions) {
     if (!session.archived || session.updatedAt > cutoff) continue
 
-    const msgPath = join(getAgentSessionsDir(), `${session.id}.jsonl`)
+    const msgPath = join(getAgentSessionsDir(scope), `${session.id}.jsonl`)
     if (existsSync(msgPath)) {
       const freed = safeUnlink(msgPath)
       if (freed > 0) { freedBytes += freed; deletedCount++ }
@@ -672,7 +741,7 @@ function cleanupArchivedSessions(beforeDays: number): CleanupResult {
   return { freedBytes, deletedCount, errors }
 }
 
-export async function cleanupStorage(options: CleanupOptions): Promise<CleanupResult> {
+export async function cleanupStorage(options: CleanupOptions, scope?: UserScope): Promise<CleanupResult> {
   let totalFreed = 0, totalDeleted = 0
   const allErrors: string[] = []
 
@@ -690,13 +759,13 @@ export async function cleanupStorage(options: CleanupOptions): Promise<CleanupRe
 
     if (options.orphansOnly) {
       switch (cat) {
-        case 'agent-sessions': merge(await cleanupOrphanAgentSessions()); break
-        case 'sdk-config': merge(await cleanupOrphanSdkConfig()); break
-        case 'workspaces': merge(await cleanupOrphanWorkspaces()); break
+        case 'agent-sessions': merge(await cleanupOrphanAgentSessions(scope)); break
+        case 'sdk-config': merge(await cleanupOrphanSdkConfig(scope)); break
+        case 'workspaces': merge(await cleanupOrphanWorkspaces(scope)); break
       }
     } else if (options.archivedBeforeDays > 0) {
       if (cat === 'agent-sessions' || cat === 'sdk-config') {
-        merge(cleanupArchivedSessions(options.archivedBeforeDays))
+        merge(cleanupArchivedSessions(options.archivedBeforeDays, scope))
       }
     }
   }

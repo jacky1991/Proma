@@ -1,4 +1,5 @@
 import type { ShimConfig } from './http-client'
+import { getAccessToken } from './auth-store.ts'
 
 /**
  * WebSocket 订阅客户端（生产级）
@@ -11,6 +12,8 @@ import type { ShimConfig } from './http-client'
  *
  * M2 单用户：启动时订阅 '*' 接收所有会话事件，按 channel 分发到 renderer 回调。
  * 对 renderer 透明：onXxx(cb) 接口不变，内部处理重连 / 补偿。
+ *
+ * 认证：WS 握手无法携带自定义 header，通过 ?token=<accessToken> 查询参数传递 JWT。
  */
 
 export type Unsubscribe = () => void
@@ -28,12 +31,25 @@ const RECONNECT_MAX_DELAY = 30000
 
 /**
  * 将相对或绝对 wsBase 解析为浏览器可用的绝对 WebSocket URL。
+ * 若存在 access token，以 ?token=<accessToken> 形式附加到 URL（WS 握手不支持自定义 header）。
  */
 function resolveWsUrl(config: ShimConfig): string {
-  if (config.wsBase?.startsWith('ws')) return config.wsBase
-  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
-  const path = config.wsBase ?? '/ws'
-  return `${proto}//${location.host}${path}`
+  let base: string
+  if (config.wsBase?.startsWith('ws')) {
+    base = config.wsBase
+  } else {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const path = config.wsBase ?? '/ws'
+    base = `${proto}//${location.host}${path}`
+  }
+
+  // 附加 JWT token（WS 握手无法携带自定义 header）
+  const token = getAccessToken()
+  if (token) {
+    const separator = base.includes('?') ? '&' : '?'
+    return `${base}${separator}token=${encodeURIComponent(token)}`
+  }
+  return base
 }
 
 export function createWsClient(config: ShimConfig): WsClient {

@@ -11,19 +11,22 @@ import {
   cleanupTempFiles,
   type CleanupOptions,
 } from '@proma/server-core/storage-service'
+import { getUserScope } from '../utils/user-scope'
 
 const storage = new Hono()
 
 /** POST /api/storage:get-stats → StorageStats */
 storage.post('/storage:get-stats', async (c) => {
-  const stats = await calculateStorageStats()
+  const scope = getUserScope(c)
+  const stats = await calculateStorageStats(scope)
   return c.json(stats)
 })
 
 /** POST /api/storage:cleanup → CleanupResult */
 storage.post('/storage:cleanup', async (c) => {
+  const scope = getUserScope(c)
   const options = await c.req.json<CleanupOptions>()
-  const result = await cleanupStorage(options)
+  const result = await cleanupStorage(options, scope)
   return c.json(result)
 })
 

@@ -13,6 +13,7 @@
 import { readFileSync } from 'node:fs'
 import { extname } from 'node:path'
 import { resolveAttachmentPath } from './config-paths'
+import type { UserScope } from './config-paths'
 
 // ===== 文件类型分类 =====
 
@@ -457,7 +458,7 @@ async function extractPdfWithPdfJs(buffer: Buffer): Promise<string> {
  * @param localPath 附件相对路径
  * @returns 提取的纯文本内容
  */
-export async function extractTextFromAttachment(localPath: string): Promise<string> {
-  const fullPath = resolveAttachmentPath(localPath)
+export async function extractTextFromAttachment(localPath: string, scope?: UserScope): Promise<string> {
+  const fullPath = resolveAttachmentPath(localPath, scope)
   return extractTextFromFile(fullPath)
 }

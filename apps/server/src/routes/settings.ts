@@ -10,6 +10,7 @@ import { dirname } from 'node:path'
 import { getSettings, updateSettings } from '@proma/server-core/settings-service'
 import { getUserProfile, updateUserProfile } from '@proma/server-core/user-profile-service'
 import { getScratchPadPath } from '@proma/server-core/config-paths'
+import { getUserScope } from '../utils/user-scope'
 import {
   getProxySettings,
   saveProxySettings,
@@ -28,25 +29,29 @@ const settings = new Hono()
 
 /** POST /api/settings:get → AppSettings */
 settings.post('/settings:get', (c) => {
-  return c.json(getSettings())
+  const scope = getUserScope(c)
+  return c.json(getSettings(scope))
 })
 
 /** POST /api/settings:update → AppSettings */
 settings.post('/settings:update', async (c) => {
+  const scope = getUserScope(c)
   const updates = await c.req.json()
-  const updated = updateSettings(updates)
+  const updated = updateSettings(updates, scope)
   return c.json(updated)
 })
 
 /** POST /api/user-profile:get → UserProfile */
 settings.post('/user-profile:get', (c) => {
-  return c.json(getUserProfile())
+  const scope = getUserScope(c)
+  return c.json(getUserProfile(scope))
 })
 
 /** POST /api/user-profile:update → UserProfile */
 settings.post('/user-profile:update', async (c) => {
+  const scope = getUserScope(c)
   const updates = await c.req.json()
-  const updated = updateUserProfile(updates)
+  const updated = updateUserProfile(updates, scope)
   return c.json(updated)
 })
 
@@ -54,7 +59,8 @@ settings.post('/user-profile:update', async (c) => {
 
 /** POST /api/scratch-pad:load → string（Markdown 内容） */
 settings.post('/scratch-pad:load', (c) => {
-  const path = getScratchPadPath()
+  const scope = getUserScope(c)
+  const path = getScratchPadPath(scope)
   try {
     if (!existsSync(path)) return c.json('')
     const content = readFileSync(path, 'utf-8')
@@ -67,8 +73,9 @@ settings.post('/scratch-pad:load', (c) => {
 
 /** POST /api/scratch-pad:save → boolean */
 settings.post('/scratch-pad:save', async (c) => {
+  const scope = getUserScope(c)
   const { content } = await c.req.json<{ content: string }>()
-  const path = getScratchPadPath()
+  const path = getScratchPadPath(scope)
   try {
     const dir = dirname(path)
     if (!existsSync(dir)) {

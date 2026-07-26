@@ -22,6 +22,7 @@ import {
   getAgentWorkspacePath,
   getSdkConfigDir,
 } from './config-paths'
+import type { UserScope } from './config-paths'
 import { getAgentWorkspace, getWorkspaceAutoMemoryDir } from './agent-workspace-manager'
 
 // 在模块加载时一次性设置 SDK 配置目录，避免在 forkSession 等异步调用中临时修改/恢复
@@ -158,14 +159,14 @@ function migrateLegacyOpenAIThinkingDefault(index: AgentSessionsIndex): boolean 
 /**
  * 读取会话索引文件
  */
-function readIndex(): AgentSessionsIndex {
-  const indexPath = getAgentSessionsIndexPath()
+function readIndex(scope?: UserScope): AgentSessionsIndex {
+  const indexPath = getAgentSessionsIndexPath(scope)
   const data = readJsonFileSafe<AgentSessionsIndex>(indexPath)
   if (data) {
     const permissionModeMigrated = migrateLegacyPermissionMode(data)
     const thinkingDefaultMigrated = migrateLegacyOpenAIThinkingDefault(data)
     if (permissionModeMigrated || thinkingDefaultMigrated) {
-      writeIndex(data)
+      writeIndex(data, scope)
       if (permissionModeMigrated) {
         console.log('[Agent 会话] 已迁移历史权限模式 auto → bypassPermissions')
       }
@@ -181,8 +182,8 @@ function readIndex(): AgentSessionsIndex {
 /**
  * 写入会话索引文件
  */
-function writeIndex(index: AgentSessionsIndex): void {
-  const indexPath = getAgentSessionsIndexPath()
+function writeIndex(index: AgentSessionsIndex, scope?: UserScope): void {
+  const indexPath = getAgentSessionsIndexPath(scope)
 
   try {
     writeJsonFileAtomic(indexPath, index)
@@ -195,16 +196,16 @@ function writeIndex(index: AgentSessionsIndex): void {
 /**
  * 获取所有会话（按 updatedAt 降序）
  */
-export function listAgentSessions(): AgentSessionMeta[] {
-  const index = readIndex()
+export function listAgentSessions(scope?: UserScope): AgentSessionMeta[] {
+  const index = readIndex(scope)
   return index.sessions.sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
 /**
  * 获取单个会话的元数据
  */
-export function getAgentSessionMeta(id: string): AgentSessionMeta | undefined {
-  const index = readIndex()
+export function getAgentSessionMeta(id: string, scope?: UserScope): AgentSessionMeta | undefined {
+  const index = readIndex(scope)
   return index.sessions.find((s) => s.id === id)
 }
 
@@ -217,8 +218,9 @@ export function createAgentSession(
   workspaceId?: string,
   modelId?: string,
   agentRuntime: AgentRuntime = 'pi',
+  scope?: UserScope,
 ): AgentSessionMeta {
-  const index = readIndex()
+  const index = readIndex(scope)
   const now = Date.now()
 
   const meta: AgentSessionMeta = {
@@ -235,16 +237,17 @@ export function createAgentSession(
   }
 
   index.sessions.push(meta)
-  writeIndex(index)
+  writeIndex(index, scope)
 
   // 确保消息目录存在
-  getAgentSessionsDir()
+  getAgentSessionsDir(scope)
 
   // 若有工作区，创建 session 级别子文件夹并初始化 .claude / .context
   if (workspaceId) {
     const ws = getAgentWorkspace(workspaceId)
     if (ws) {
-      const sessionDir = getAgentSessionWorkspacePath(ws.slug, meta.id)
+      // 传入 scope 以确保使用正确的用户数据根路径
+      const sessionDir = getAgentSessionWorkspacePath(ws.slug, meta.id, scope)
 
       // 初始化 .claude/settings.json（plansDirectory → .context）
       const claudeDir = join(sessionDir, '.claude')
@@ -285,8 +288,8 @@ export function createAgentSession(
 /**
  * 读取会话的所有消息
  */
-export function getAgentSessionMessages(id: string): AgentMessage[] {
-  const filePath = getAgentSessionMessagesPath(id)
+export function getAgentSessionMessages(id: string, scope?: UserScope): AgentMessage[] {
+  const filePath = getAgentSessionMessagesPath(id, scope)
 
   if (!existsSync(filePath)) {
     return []
@@ -305,21 +308,21 @@ export function getAgentSessionMessages(id: string): AgentMessage[] {
 /**
  * 追加一条消息到会话的 JSONL 文件
  */
-export function appendAgentMessage(id: string, message: AgentMessage): void {
-  const filePath = getAgentSessionMessagesPath(id)
+export function appendAgentMessage(id: string, message: AgentMessage, scope?: UserScope): void {
+  const filePath = getAgentSessionMessagesPath(id, scope)
 
   try {
     const line = JSON.stringify(message) + '\n'
     appendFileSync(filePath, line, 'utf-8')
 
     // 追加消息时更新 updatedAt，若已归档则自动恢复活跃
-    const index = readIndex()
+    const index = readIndex(scope)
     const idx = index.sessions.findIndex((s) => s.id === id)
     if (idx !== -1) {
       const session = index.sessions[idx]!
       session.updatedAt = Date.now()
       if (session.archived) session.archived = false
-      writeIndex(index)
+      writeIndex(index, scope)
     }
   } catch (error) {
     console.error(`[Agent 会话] 追加消息失败 (${id}):`, error)
@@ -338,10 +341,10 @@ const TRUNCATED_PREVIEW_LENGTH = 2000
  * 每条 SDKMessage 单独一行 JSON。读取时通过 `type` 字段区分新旧格式。
  * 超过 256K chars 的消息会被自动截断以防止存储膨胀。
  */
-export function appendSDKMessages(id: string, messages: SDKMessage[]): void {
+export function appendSDKMessages(id: string, messages: SDKMessage[], scope?: UserScope): void {
   if (messages.length === 0) return
 
-  const filePath = getAgentSessionMessagesPath(id)
+  const filePath = getAgentSessionMessagesPath(id, scope)
 
   try {
     for (const message of messages) {
@@ -407,8 +410,8 @@ function sanitizeOversizedMessage(msg: SDKMessage, originalLength: number): SDKM
  * 旧格式（有 `role` 字段）会被转换为近似的 SDKMessage。
  * 新格式（有 `type` 字段）直接返回。
  */
-export function getAgentSessionSDKMessages(id: string): SDKMessage[] {
-  const filePath = getAgentSessionMessagesPath(id)
+export function getAgentSessionSDKMessages(id: string, scope?: UserScope): SDKMessage[] {
+  const filePath = getAgentSessionMessagesPath(id, scope)
 
   if (!existsSync(filePath)) {
     return []
@@ -434,8 +437,9 @@ export function getAgentSessionSDKMessages(id: string): SDKMessage[] {
 export function updateAgentSessionMeta(
   id: string,
   updates: Partial<Pick<AgentSessionMeta, 'title' | 'channelId' | 'modelId' | 'sdkSessionId' | 'piSessionFile' | 'piEntryBindings' | 'agentRuntime' | 'codexFastMode' | 'openAIThinkingLevel' | 'workspaceId' | 'pinned' | 'archived' | 'attachedDirectories' | 'attachedFiles' | 'forkSourceDir' | 'forkSourceSdkSessionId' | 'resumeAtMessageUuid' | 'stoppedByUser' | 'permissionMode' | 'completedButUnconfirmed' | 'sourceAutomationId' | 'automationGraduated' | 'parentSessionId' | 'rootSessionId' | 'sourceDelegationId' | 'delegationRole' | 'delegationStatus' | 'delegationDepth' | 'delegationGoal'>>,
+  scope?: UserScope,
 ): AgentSessionMeta {
-  const index = readIndex()
+  const index = readIndex(scope)
   const idx = index.sessions.findIndex((s) => s.id === id)
 
   if (idx === -1) {
@@ -454,7 +458,7 @@ export function updateAgentSessionMeta(
   }
 
   index.sessions[idx] = updated
-  writeIndex(index)
+  writeIndex(index, scope)
 
   console.log(`[Agent 会话] 已更新会话: ${updated.title} (${updated.id})`)
   return updated
@@ -463,8 +467,8 @@ export function updateAgentSessionMeta(
 /**
  * 删除会话
  */
-export function deleteAgentSession(id: string): void {
-  const index = readIndex()
+export function deleteAgentSession(id: string, scope?: UserScope): void {
+  const index = readIndex(scope)
   const idx = index.sessions.findIndex((s) => s.id === id)
 
   if (idx === -1) {
@@ -473,10 +477,10 @@ export function deleteAgentSession(id: string): void {
   }
 
   const removed = index.sessions.splice(idx, 1)[0]!
-  writeIndex(index)
+  writeIndex(index, scope)
 
   // 删除消息文件
-  const filePath = getAgentSessionMessagesPath(id)
+  const filePath = getAgentSessionMessagesPath(id, scope)
   if (existsSync(filePath)) {
     try {
       unlinkSync(filePath)
@@ -490,7 +494,8 @@ export function deleteAgentSession(id: string): void {
     const ws = getAgentWorkspace(removed.workspaceId)
     if (ws) {
       try {
-        const sessionDir = getAgentSessionWorkspacePath(ws.slug, id)
+        // 传入 scope 以确保清理正确的用户数据目录
+        const sessionDir = getAgentSessionWorkspacePath(ws.slug, id, scope)
         if (existsSync(sessionDir)) {
           rmSyncWithRetry(sessionDir, { recursive: true, force: true })
           console.log(`[Agent 会话] 已清理 session 工作目录: ${sessionDir}`)
@@ -615,8 +620,8 @@ function moveSessionWorkspaceDir(session: AgentSessionMeta, targetWorkspaceSlug:
  * 4. 更新元数据（workspaceId + 清空 sdkSessionId）
  * 5. JSONL 消息文件保持原位（全局目录）
  */
-export function moveSessionToWorkspace(sessionId: string, targetWorkspaceId: string): AgentSessionMeta {
-  const index = readIndex()
+export function moveSessionToWorkspace(sessionId: string, targetWorkspaceId: string, scope?: UserScope): AgentSessionMeta {
+  const index = readIndex(scope)
   const idx = index.sessions.findIndex((s) => s.id === sessionId)
   if (idx === -1) {
     throw new Error(`Agent 会话不存在: ${sessionId}`)
@@ -642,8 +647,8 @@ export function moveSessionToWorkspace(sessionId: string, targetWorkspaceId: str
     if (!sessionTreeIds.has(current.id) || current.workspaceId === targetWorkspaceId) continue
 
     moveSessionWorkspaceDir(current, targetWs.slug)
-    // 确保目标工作区下有 session 目录。
-    getAgentSessionWorkspacePath(targetWs.slug, current.id)
+    // 确保目标工作区下有 session 目录，传入 scope 以定位正确的用户数据根。
+    getAgentSessionWorkspacePath(targetWs.slug, current.id, scope)
 
     const updated: AgentSessionMeta = {
       ...current,
@@ -652,7 +657,7 @@ export function moveSessionToWorkspace(sessionId: string, targetWorkspaceId: str
       updatedAt: now,
     }
     index.sessions[i] = updated
-    writeIndex(index)
+    writeIndex(index, scope)
     movedCount++
     if (current.id === sessionId) {
       updatedRoot = updated
@@ -672,8 +677,8 @@ export function moveSessionToWorkspace(sessionId: string, targetWorkspaceId: str
  * 仅迁移 user 和 assistant 角色的消息文本内容，
  * 工具活动、推理、附件等 Chat 特有字段不迁移。
  */
-export function migrateChatToAgentSession(conversationId: string, agentSessionId: string): void {
-  const chatMessages = getConversationMessages(conversationId)
+export function migrateChatToAgentSession(conversationId: string, agentSessionId: string, scope?: UserScope): void {
+  const chatMessages = getConversationMessages(conversationId, scope)
 
   if (chatMessages.length === 0) {
     console.log(`[Agent 会话] Chat 对话无消息，跳过迁移 (${conversationId})`)
@@ -694,7 +699,7 @@ export function migrateChatToAgentSession(conversationId: string, agentSessionId
       model: cm.role === 'assistant' ? cm.model : undefined,
     }
 
-    appendAgentMessage(agentSessionId, agentMsg)
+    appendAgentMessage(agentSessionId, agentMsg, scope)
     count++
   }
 
@@ -715,11 +720,11 @@ export function migrateChatToAgentSession(conversationId: string, agentSessionId
  *
  * @returns 新创建的会话元数据
  */
-export async function forkAgentSession(input: ForkSessionInput): Promise<AgentSessionMeta> {
+export async function forkAgentSession(input: ForkSessionInput, scope?: UserScope): Promise<AgentSessionMeta> {
   const { sessionId, upToMessageUuid } = input
 
   // 1. 获取源会话元数据
-  const sourceMeta = getAgentSessionMeta(sessionId)
+  const sourceMeta = getAgentSessionMeta(sessionId, scope)
   if (!sourceMeta) {
     throw new Error(`源 Agent 会话不存在: ${sessionId}`)
   }
@@ -729,7 +734,7 @@ export async function forkAgentSession(input: ForkSessionInput): Promise<AgentSe
   }
 
   if (sourceMeta.agentRuntime === 'pi') {
-    return forkPiAgentSession(sourceMeta, input)
+    return forkPiAgentSession(sourceMeta, input, scope)
   }
 
   const forkModelId = input.modelId !== undefined
@@ -745,7 +750,8 @@ export async function forkAgentSession(input: ForkSessionInput): Promise<AgentSe
   if (sourceMeta.workspaceId) {
     const ws = getAgentWorkspace(sourceMeta.workspaceId)
     if (ws) {
-      sourceDir = getAgentSessionWorkspacePath(ws.slug, sessionId)
+      // 传入 scope 以确保从正确的用户数据目录读取源会话
+      sourceDir = getAgentSessionWorkspacePath(ws.slug, sessionId, scope)
     }
   }
 
@@ -758,7 +764,7 @@ export async function forkAgentSession(input: ForkSessionInput): Promise<AgentSe
   let forkSourceSdkSessionId = sourceMeta.sdkSessionId
   let effectiveUpToMessageUuid = upToMessageUuid
   if (upToMessageUuid) {
-    const forkTarget = await resolveForkTargetFromStoredMessages(sessionId, upToMessageUuid)
+    const forkTarget = await resolveForkTargetFromStoredMessages(sessionId, upToMessageUuid, scope)
     effectiveUpToMessageUuid = forkTarget.effectiveUpToMessageUuid
 
     if (forkTarget.usedSidechainFallback) {
@@ -804,13 +810,14 @@ export async function forkAgentSession(input: ForkSessionInput): Promise<AgentSe
     sourceMeta.workspaceId,
     forkModelId,
     'pi',
+    scope,
   )
 
   updateAgentSessionMeta(newMeta.id, {
     sdkSessionId: forkResult.sessionId,
     forkSourceDir: sourceDir,
     forkSourceSdkSessionId: forkSourceSdkSessionId,
-  })
+  }, scope)
   // 同步返回值（updateAgentSessionMeta 已写入磁盘，这里让调用方拿到最新值）
   newMeta.sdkSessionId = forkResult.sessionId
   newMeta.forkSourceDir = sourceDir
@@ -821,7 +828,8 @@ export async function forkAgentSession(input: ForkSessionInput): Promise<AgentSe
   if (sourceDir && sourceMeta.workspaceId) {
     const ws = getAgentWorkspace(sourceMeta.workspaceId)
     if (ws) {
-      destDir = getAgentSessionWorkspacePath(ws.slug, newMeta.id)
+      // 传入 scope 以确保 fork 目标目录位于正确的用户数据根下
+      destDir = getAgentSessionWorkspacePath(ws.slug, newMeta.id, scope)
     }
   }
 
@@ -878,7 +886,7 @@ export async function forkAgentSession(input: ForkSessionInput): Promise<AgentSe
     upToMessageUuid,
     sourceDir,
     destDir,
-  })
+  }, scope)
 
   console.log(`[Agent 会话] 分叉会话已创建（SDK 原生 fork）: ${sourceMeta.title} → ${forkTitle} (${copiedMessages} 条消息, sdkSessionId=${forkResult.sessionId})`)
   return newMeta
@@ -888,7 +896,7 @@ export async function forkAgentSession(input: ForkSessionInput): Promise<AgentSe
  * Pi 的 session 是 append-only tree。分叉必须由 SessionManager 导出目标 branch，
  * 不能只复制 Proma 的展示 JSONL，否则下一轮 resume 仍会看到被截断的上下文。
  */
-async function forkPiAgentSession(sourceMeta: AgentSessionMeta, input: ForkSessionInput): Promise<AgentSessionMeta> {
+async function forkPiAgentSession(sourceMeta: AgentSessionMeta, input: ForkSessionInput, scope?: UserScope): Promise<AgentSessionMeta> {
   const targetUuid = input.upToMessageUuid
   if (!targetUuid) throw new Error('Pi 分叉需要指定一条已完成的 assistant 消息')
   const entryId = sourceMeta.piEntryBindings?.[targetUuid]
@@ -900,14 +908,15 @@ async function forkPiAgentSession(sourceMeta: AgentSessionMeta, input: ForkSessi
   const forkModelId = input.modelId !== undefined
     ? assertEnabledModelForChannel({ channelId: sourceMeta.channelId, modelId: input.modelId, purpose: '分叉 Pi Agent 会话' })
     : sourceMeta.modelId
+  // 传入 scope 以确保 Pi fork 使用正确的用户数据目录
   const sourceDir = sourceMeta.workspaceId
     ? getAgentWorkspace(sourceMeta.workspaceId)
-      ? getAgentSessionWorkspacePath(getAgentWorkspace(sourceMeta.workspaceId)!.slug, sourceMeta.id)
+      ? getAgentSessionWorkspacePath(getAgentWorkspace(sourceMeta.workspaceId)!.slug, sourceMeta.id, scope)
       : undefined
     : undefined
-  const newMeta = createAgentSession(`${sourceMeta.title} (fork)`, sourceMeta.channelId, sourceMeta.workspaceId, forkModelId, 'pi')
+  const newMeta = createAgentSession(`${sourceMeta.title} (fork)`, sourceMeta.channelId, sourceMeta.workspaceId, forkModelId, 'pi', scope)
   const destDir = sourceMeta.workspaceId && getAgentWorkspace(sourceMeta.workspaceId)
-    ? getAgentSessionWorkspacePath(getAgentWorkspace(sourceMeta.workspaceId)!.slug, newMeta.id)
+    ? getAgentSessionWorkspacePath(getAgentWorkspace(sourceMeta.workspaceId)!.slug, newMeta.id, scope)
     : undefined
 
   try {
@@ -927,7 +936,7 @@ async function forkPiAgentSession(sourceMeta: AgentSessionMeta, input: ForkSessi
       piSessionFile,
       piEntryBindings: { ...(sourceMeta.piEntryBindings ?? {}) },
       forkSourceDir: sourceDir,
-    })
+    }, scope)
     newMeta.sdkSessionId = forkedManager.getSessionId()
     newMeta.piSessionFile = piSessionFile
     newMeta.piEntryBindings = { ...(sourceMeta.piEntryBindings ?? {}) }
@@ -939,24 +948,25 @@ async function forkPiAgentSession(sourceMeta: AgentSessionMeta, input: ForkSessi
       upToMessageUuid: targetUuid,
       sourceDir,
       destDir,
-    })
+    }, scope)
     return newMeta
   } catch (error) {
     // 尚未对外返回的新 session 可安全清理，避免留下会被侧栏打开的半成品。
-    try { deleteAgentSession(newMeta.id) } catch { /* 保留原始错误 */ }
+    try { deleteAgentSession(newMeta.id, scope) } catch { /* 保留原始错误 */ }
     throw error
   }
 }
 
 /** 将当前 Pi 会话切换到指定 assistant turn 的新 branch artifact（持久化回退）。 */
-export async function rewindPiAgentSession(sessionId: string, assistantMessageUuid: string): Promise<void> {
-  const meta = getAgentSessionMeta(sessionId)
+export async function rewindPiAgentSession(sessionId: string, assistantMessageUuid: string, scope?: UserScope): Promise<void> {
+  const meta = getAgentSessionMeta(sessionId, scope)
   if (!meta || meta.agentRuntime !== 'pi') throw new Error('不是 Pi Agent 会话')
   const entryId = meta.piEntryBindings?.[assistantMessageUuid]
   if (!entryId) throw new Error('该 Pi 历史消息尚无 entry ID 映射，无法安全回退')
   if (!meta.piSessionFile || !existsSync(meta.piSessionFile)) throw new Error('未找到 Pi session artifact，无法安全回退')
+  // 传入 scope 以确保 Pi rewind 使用正确的用户数据目录
   const cwd = meta.workspaceId && getAgentWorkspace(meta.workspaceId)
-    ? getAgentSessionWorkspacePath(getAgentWorkspace(meta.workspaceId)!.slug, meta.id)
+    ? getAgentSessionWorkspacePath(getAgentWorkspace(meta.workspaceId)!.slug, meta.id, scope)
     : process.cwd()
   const sdk = await import('@earendil-works/pi-coding-agent')
   const manager = sdk.SessionManager.open(meta.piSessionFile, join(getSdkConfigDir(), 'sessions'), cwd)
@@ -970,7 +980,7 @@ export async function rewindPiAgentSession(sessionId: string, assistantMessageUu
     sdkSessionId: rewindManager.getSessionId(),
     piSessionFile: branchFile,
     piEntryBindings: retainedBindings,
-  })
+  }, scope)
 }
 
 interface ForkStoredMessageRef {
@@ -987,8 +997,9 @@ interface ForkTargetResolution {
 async function resolveForkTargetFromStoredMessages(
   sessionId: string,
   upToMessageUuid: string,
+  scope?: UserScope,
 ): Promise<ForkTargetResolution> {
-  const filePath = getAgentSessionMessagesPath(sessionId)
+  const filePath = getAgentSessionMessagesPath(sessionId, scope)
   if (!existsSync(filePath)) {
     throw new Error('未在会话历史中找到指定的消息，可能消息已被清理或截断')
   }
@@ -1059,11 +1070,11 @@ async function copyForkStoredSDKMessages({
   upToMessageUuid,
   sourceDir,
   destDir,
-}: CopyForkStoredSDKMessagesInput): Promise<number> {
-  const sourcePath = getAgentSessionMessagesPath(sourceSessionId)
+}: CopyForkStoredSDKMessagesInput, scope?: UserScope): Promise<number> {
+  const sourcePath = getAgentSessionMessagesPath(sourceSessionId, scope)
   if (!existsSync(sourcePath)) return 0
 
-  const destPath = getAgentSessionMessagesPath(destSessionId)
+  const destPath = getAgentSessionMessagesPath(destSessionId, scope)
   const out = createWriteStream(destPath, { flags: 'a', encoding: 'utf-8' })
   let copiedCount = 0
 
@@ -1207,8 +1218,8 @@ function rewriteSourceToDest(content: string, sourceDir: string, destDir: string
  *
  * @returns 截断后保留的消息列表
  */
-export function truncateSDKMessages(id: string, upToUuidInclusive: string): SDKMessage[] {
-  const filePath = getAgentSessionMessagesPath(id)
+export function truncateSDKMessages(id: string, upToUuidInclusive: string, scope?: UserScope): SDKMessage[] {
+  const filePath = getAgentSessionMessagesPath(id, scope)
   if (!existsSync(filePath)) {
     throw new Error(`[Agent 会话] 截断失败: 会话消息文件不存在, sessionId=${id}`)
   }
@@ -1236,8 +1247,8 @@ export function truncateSDKMessages(id: string, upToUuidInclusive: string): SDKM
  *
  * 仅删除 assistant error，避免调用方误删普通回复；找不到时保持幂等。
  */
-export function removeSDKErrorMessage(id: string, errorUuid: string): boolean {
-  const filePath = getAgentSessionMessagesPath(id)
+export function removeSDKErrorMessage(id: string, errorUuid: string, scope?: UserScope): boolean {
+  const filePath = getAgentSessionMessagesPath(id, scope)
   if (!existsSync(filePath)) return false
 
   const raw = readFileSync(filePath, 'utf-8')
@@ -1596,8 +1607,8 @@ export function rewindFilesFromSnapshot(
  * @param daysThreshold 天数阈值
  * @returns 本次归档的会话数量
  */
-export function autoArchiveAgentSessions(daysThreshold: number): number {
-  const index = readIndex()
+export function autoArchiveAgentSessions(daysThreshold: number, scope?: UserScope): number {
+  const index = readIndex(scope)
   const threshold = Date.now() - daysThreshold * 86_400_000
   let count = 0
 
@@ -1609,7 +1620,7 @@ export function autoArchiveAgentSessions(daysThreshold: number): number {
   }
 
   if (count > 0) {
-    writeIndex(index)
+    writeIndex(index, scope)
     console.log(`[Agent 会话] 自动归档 ${count} 个会话（阈值: ${daysThreshold} 天）`)
   }
 
@@ -1625,8 +1636,8 @@ export function autoArchiveAgentSessions(daysThreshold: number): number {
  *
  * @returns 被标记为中断的子会话数量
  */
-export function markRunningDelegationsAsInterrupted(): number {
-  const index = readIndex()
+export function markRunningDelegationsAsInterrupted(scope?: UserScope): number {
+  const index = readIndex(scope)
   let count = 0
 
   for (const session of index.sessions) {
@@ -1638,7 +1649,7 @@ export function markRunningDelegationsAsInterrupted(): number {
   }
 
   if (count > 0) {
-    writeIndex(index)
+    writeIndex(index, scope)
     console.log(`[Agent 会话] 启动收敛 ${count} 个遗留的运行中委派子会话为 interrupted`)
   }
 
@@ -1649,8 +1660,8 @@ export function markRunningDelegationsAsInterrupted(): number {
  * 清理所有会话中不存在的附加目录和附加文件
  * @returns 清理的条目总数
  */
-export function cleanupStaleAttachedPaths(): number {
-  const index = readIndex()
+export function cleanupStaleAttachedPaths(scope?: UserScope): number {
+  const index = readIndex(scope)
   let count = 0
 
   for (const session of index.sessions) {
@@ -1680,7 +1691,7 @@ export function cleanupStaleAttachedPaths(): number {
   }
 
   if (count > 0) {
-    writeIndex(index)
+    writeIndex(index, scope)
     console.log(`[Agent 会话] 清理了 ${count} 个不存在的附加路径`)
   }
 
@@ -1695,10 +1706,10 @@ export function cleanupStaleAttachedPaths(): number {
  * @param query 搜索关键词
  * @returns 匹配结果列表
  */
-export async function searchAgentSessionMessages(query: string): Promise<AgentMessageSearchResult[]> {
+export async function searchAgentSessionMessages(query: string, scope?: UserScope): Promise<AgentMessageSearchResult[]> {
   if (!query || query.length < 2) return []
 
-  const index = readIndex()
+  const index = readIndex(scope)
   const results: AgentMessageSearchResult[] = []
   const queryLower = query.toLowerCase()
   const maxResults = 30
@@ -1706,7 +1717,7 @@ export async function searchAgentSessionMessages(query: string): Promise<AgentMe
   for (const session of index.sessions) {
     if (results.length >= maxResults) break
 
-    const filePath = getAgentSessionMessagesPath(session.id)
+    const filePath = getAgentSessionMessagesPath(session.id, scope)
     if (!existsSync(filePath)) continue
 
     const hit = await findFirstMatchInAgentJsonl(filePath, queryLower, query.length)
@@ -1824,10 +1835,10 @@ function createSnippet(text: string, matchIndex: number, matchLength: number): s
     (snippetEnd < text.length ? '...' : '')
 }
 
-function findSessionMessageSnippet(sessionId: string, query: string): string | undefined {
+function findSessionMessageSnippet(sessionId: string, query: string, scope?: UserScope): string | undefined {
   if (!query || query.length < 2) return undefined
 
-  const filePath = getAgentSessionMessagesPath(sessionId)
+  const filePath = getAgentSessionMessagesPath(sessionId, scope)
   if (!existsSync(filePath)) return undefined
 
   const queryLower = query.toLowerCase()
@@ -1863,7 +1874,7 @@ function findSessionMessageSnippet(sessionId: string, query: string): string | u
  *
  * 仅返回当前工作区、未归档、非当前会话的结果；无关键词时返回最近更新的会话。
  */
-export function searchAgentSessionReferences(input: AgentSessionReferenceSearchInput): AgentSessionReferenceSearchResult[] {
+export function searchAgentSessionReferences(input: AgentSessionReferenceSearchInput, scope?: UserScope): AgentSessionReferenceSearchResult[] {
   const workspaceId = input?.workspaceId?.trim()
   if (!workspaceId) return []
 
@@ -1872,7 +1883,7 @@ export function searchAgentSessionReferences(input: AgentSessionReferenceSearchI
   const requestedLimit = Number.isFinite(input?.limit) ? input.limit! : 20
   const limit = Math.min(Math.max(requestedLimit, 1), MAX_SESSION_REFERENCE_LIMIT)
 
-  const candidates = listAgentSessions()
+  const candidates = listAgentSessions(scope)
     .filter((session) => session.workspaceId === workspaceId)
     .filter((session) => !session.archived)
     .filter((session) => session.id !== input?.excludeSessionId)
@@ -1902,7 +1913,7 @@ export function searchAgentSessionReferences(input: AgentSessionReferenceSearchI
       continue
     }
 
-    const snippet = findSessionMessageSnippet(session.id, query)
+    const snippet = findSessionMessageSnippet(session.id, query, scope)
     if (snippet) {
       results.push({
         sessionId: session.id,

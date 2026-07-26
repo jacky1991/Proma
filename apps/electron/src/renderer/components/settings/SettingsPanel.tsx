@@ -23,7 +23,9 @@ import {
   Mic,
   HardDriveDownload,
   HardDrive,
+  CircleUser,
 } from "lucide-react";
+import { isWebRuntime } from "@/lib/web-runtime";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { settingsTabAtom, channelFormDirtyAtom, settingsCloseRequestedAtom, settingsOpenAtom } from "@/atoms/settings-tab";
 import type { SettingsTab } from "@/atoms/settings-tab";
@@ -53,6 +55,7 @@ import { ShortcutSettings } from "./ShortcutSettings";
 import { VoiceInputSettings } from "./VoiceInputSettings";
 import { MigrationSettings } from "./MigrationSettings";
 import { StorageSettings } from "./StorageSettings";
+import { AccountSettings } from "./AccountSettings";
 
 /** 设置 Tab 定义 */
 interface TabItem {
@@ -68,6 +71,14 @@ const BASE_TABS: TabItem[] = [
   { id: "prompts", label: "提示词管理", icon: <BookOpen size={16} /> },
   { id: "proxy", label: "代理设置", icon: <Globe size={16} /> },
 ];
+
+/** 账号 Tab（仅 Web 端：改密 / 管理员用户管理；Electron 无登录概念） */
+const ACCOUNT_TAB: TabItem = {
+  id: "account",
+  label: "账号设置",
+  icon: <CircleUser size={16} />,
+};
+const ACCOUNT_TABS: TabItem[] = isWebRuntime() ? [ACCOUNT_TAB] : [];
 
 const TOOLS_TAB: TabItem = {
   id: "tools",
@@ -108,6 +119,8 @@ function renderTabContent(tab: SettingsTab): React.ReactElement {
   switch (tab) {
     case "general":
       return <GeneralSettings />;
+    case "account":
+      return <AccountSettings />;
     case "channels":
       return <ChannelSettings />;
     case "prompts":
@@ -213,6 +226,7 @@ export function SettingsPanel({
     if (appMode === "agent") {
       return [
         ...BASE_TABS,
+        ...ACCOUNT_TABS,
         TOOLS_TAB,
         VOICE_INPUT_TAB,
         BOTS_TAB,
@@ -223,6 +237,7 @@ export function SettingsPanel({
     }
     return [
       ...BASE_TABS,
+      ...ACCOUNT_TABS,
       TOOLS_TAB,
       VOICE_INPUT_TAB,
       BOTS_TAB,

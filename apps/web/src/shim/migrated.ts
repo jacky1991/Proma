@@ -1,7 +1,8 @@
 import type { ElectronAPI } from './types'
-import type { AgentSessionMeta, AgentStreamEvent, AgentStreamCompletePayload, PermissionResponse, AskUserResponse, ExitPlanModeResponse, PendingRequestsSnapshot, AttachmentSaveInput, FileDialogResult, AgentQueueMessageInput, ForkSessionInput, RewindSessionInput, AgentAttachDirectoryInput, AgentAttachFileInput, WorkspaceAttachDirectoryInput, WorkspaceAttachFileInput, AgentSaveFilesInput, AgentSaveWorkspaceFilesInput, AgentSessionReferenceSearchInput, MoveSessionToWorkspaceInput, WorkspaceWorktreeRepo, FileAccessOptions, ChannelDirectTestInput, CodexOAuthLoginResult } from '@proma/shared'
+import type { AgentSessionMeta, AgentStreamEvent, AgentStreamCompletePayload, PermissionResponse, AskUserResponse, ExitPlanModeResponse, PendingRequestsSnapshot, AttachmentSaveInput, FileDialogResult, AgentQueueMessageInput, ForkSessionInput, RewindSessionInput, AgentAttachDirectoryInput, AgentAttachFileInput, WorkspaceAttachDirectoryInput, WorkspaceAttachFileInput, AgentSaveFilesInput, AgentSaveWorkspaceFilesInput, AgentSessionReferenceSearchInput, MoveSessionToWorkspaceInput, WorkspaceWorktreeRepo, FileAccessOptions, ChannelDirectTestInput, CodexOAuthLoginResult, AuthUser, ChangePasswordInput, ResetUserPasswordInput } from '@proma/shared'
 import { createHttpClient, type ShimConfig } from './http-client'
 import { createWsClient } from './ws-client'
+import { getStoredUser, clearTokens } from './auth-store.ts'
 
 /**
  * 已迁移方法注册表
@@ -404,6 +405,18 @@ export function createMigrated(config: ShimConfig): Partial<ElectronAPI> {
       bc.onmessage = (e) => cb(e.data as { themeMode: string; themeStyle: string; interfaceVariant?: string })
       return () => bc.close()
     },
+
+    // ===== M3 迭代 7：账号与用户管理（Web 专属，Electron 端不实现） =====
+    getAuthUser: () => Promise.resolve(getStoredUser()),
+    changePassword: (input: ChangePasswordInput) => invoke<{ ok: boolean }>('auth:change-password', input),
+    listUsers: () => invoke<AuthUser[]>('user:list'),
+    resetUserPassword: (input: ResetUserPasswordInput) => invoke<{ ok: boolean }>('user:reset-password', input),
+    // 退出登录：清空本地 token 与用户信息（JWT 无状态，服务端无需吊销）；
+    // 跳转登录页由调用方完成（window.location.href = '/login'）
+    logout: () => {
+      clearTokens()
+      return Promise.resolve({ ok: true })
+    },
   } as Partial<ElectronAPI>
 }
 
@@ -618,4 +631,10 @@ export const migratedNames: ReadonlySet<string> = new Set([
   // 迭代 6：Settings 主题事件
   'onSystemThemeChanged',
   'onThemeSettingsChanged',
+  // M3 迭代 7：账号与用户管理
+  'getAuthUser',
+  'changePassword',
+  'listUsers',
+  'resetUserPassword',
+  'logout',
 ])

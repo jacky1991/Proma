@@ -109,6 +109,9 @@ import type {
   Automation,
   CreateAutomationInput,
   UpdateAutomationInput,
+  AuthUser,
+  ChangePasswordInput,
+  ResetUserPasswordInput,
 } from '@proma/shared'
 import type {
   UserProfile,
@@ -1063,6 +1066,19 @@ export interface ElectronAPI {
   runAutomationNow: (id: string) => Promise<void>
   /** 订阅任务列表变更事件 */
   onAutomationChanged: (callback: () => void) => () => void
+
+  // ===== Web 账号与用户管理（仅 Web 端实现，Electron 端不存在）=====
+
+  /** 获取当前登录用户（含角色）；未登录返回 null */
+  getAuthUser?: () => Promise<AuthUser | null>
+  /** 修改当前用户密码（需校验旧密码） */
+  changePassword?: (input: ChangePasswordInput) => Promise<{ ok: boolean }>
+  /** 列出全部用户（仅管理员） */
+  listUsers?: () => Promise<AuthUser[]>
+  /** 管理员重置任意用户密码 */
+  resetUserPassword?: (input: ResetUserPasswordInput) => Promise<{ ok: boolean }>
+  /** 退出登录：清空本地 token 与用户信息（跳转登录页由调用方完成） */
+  logout?: () => Promise<{ ok: boolean }>
 }
 
 interface MigrationExportResult {

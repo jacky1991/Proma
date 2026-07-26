@@ -24,6 +24,7 @@ import { calculateContextUsageRatio, inferAgentSdkContextWindow, inferContextWin
 import type { SDKAssistantMessage, SDKResultMessage } from '@proma/shared'
 import { existsSync, readFileSync } from 'node:fs'
 import { getAgentSessionMessagesPath } from './config-paths'
+import type { UserScope } from './config-paths'
 
 interface UsageTokens {
   input_tokens: number
@@ -42,8 +43,8 @@ function sumUsedTokens(usage: UsageTokens): number {
   )
 }
 
-export function getSessionContextUsageRatio(sessionId: string): number | undefined {
-  const filePath = getAgentSessionMessagesPath(sessionId)
+export function getSessionContextUsageRatio(sessionId: string, scope?: UserScope): number | undefined {
+  const filePath = getAgentSessionMessagesPath(sessionId, scope)
   if (!existsSync(filePath)) return undefined
 
   let lines: string[]

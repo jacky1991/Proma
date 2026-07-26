@@ -15,6 +15,7 @@ import {
   getConversationsDir,
   getConversationMessagesPath,
 } from './config-paths'
+import type { UserScope } from './config-paths'
 import { deleteConversationAttachments, deleteAttachment } from './attachment-service'
 import type { ConversationMeta, ChatMessage, RecentMessagesResult, MessageSearchResult } from '@proma/shared'
 
@@ -34,8 +35,8 @@ const INDEX_VERSION = 1
 /**
  * 读取对话索引文件
  */
-function readIndex(): ConversationsIndex {
-  const indexPath = getConversationsIndexPath()
+function readIndex(scope?: UserScope): ConversationsIndex {
+  const indexPath = getConversationsIndexPath(scope)
   const data = readJsonFileSafe<ConversationsIndex>(indexPath)
   if (data) return data
   return { version: INDEX_VERSION, conversations: [] }
@@ -44,8 +45,8 @@ function readIndex(): ConversationsIndex {
 /**
  * 写入对话索引文件
  */
-function writeIndex(index: ConversationsIndex): void {
-  const indexPath = getConversationsIndexPath()
+function writeIndex(index: ConversationsIndex, scope?: UserScope): void {
+  const indexPath = getConversationsIndexPath(scope)
 
   try {
     writeJsonFileAtomic(indexPath, index)
@@ -58,8 +59,8 @@ function writeIndex(index: ConversationsIndex): void {
 /**
  * 获取所有对话（按 updatedAt 降序）
  */
-export function listConversations(): ConversationMeta[] {
-  const index = readIndex()
+export function listConversations(scope?: UserScope): ConversationMeta[] {
+  const index = readIndex(scope)
   return index.conversations.sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
@@ -75,8 +76,9 @@ export function createConversation(
   title?: string,
   modelId?: string,
   channelId?: string,
+  scope?: UserScope,
 ): ConversationMeta {
-  const index = readIndex()
+  const index = readIndex(scope)
   const now = Date.now()
 
   const meta: ConversationMeta = {
@@ -89,10 +91,10 @@ export function createConversation(
   }
 
   index.conversations.push(meta)
-  writeIndex(index)
+  writeIndex(index, scope)
 
   // 确保消息目录存在
-  getConversationsDir()
+  getConversationsDir(scope)
 
   console.log(`[对话管理] 已创建对话: ${meta.title} (${meta.id})`)
   return meta
@@ -106,8 +108,8 @@ export function createConversation(
  * @param id 对话 ID
  * @returns 消息列表
  */
-export function getConversationMessages(id: string): ChatMessage[] {
-  const filePath = getConversationMessagesPath(id)
+export function getConversationMessages(id: string, scope?: UserScope): ChatMessage[] {
+  const filePath = getConversationMessagesPath(id, scope)
 
   if (!existsSync(filePath)) {
     return []
@@ -134,8 +136,8 @@ export function getConversationMessages(id: string): ChatMessage[] {
  * @param limit 返回的最大消息数
  * @returns 最近的消息列表 + 总数 + 是否还有更多
  */
-export function getRecentMessages(id: string, limit: number): RecentMessagesResult {
-  const filePath = getConversationMessagesPath(id)
+export function getRecentMessages(id: string, limit: number, scope?: UserScope): RecentMessagesResult {
+  const filePath = getConversationMessagesPath(id, scope)
 
   if (!existsSync(filePath)) {
     return { messages: [], total: 0, hasMore: false }
@@ -170,21 +172,21 @@ export function getRecentMessages(id: string, limit: number): RecentMessagesResu
  * @param id 对话 ID
  * @param message 消息对象
  */
-export function appendMessage(id: string, message: ChatMessage): void {
-  const filePath = getConversationMessagesPath(id)
+export function appendMessage(id: string, message: ChatMessage, scope?: UserScope): void {
+  const filePath = getConversationMessagesPath(id, scope)
 
   try {
     const line = JSON.stringify(message) + '\n'
     appendFileSync(filePath, line, 'utf-8')
 
     // 追加消息时更新 updatedAt，若已归档则自动恢复活跃
-    const index = readIndex()
+    const index = readIndex(scope)
     const idx = index.conversations.findIndex((c) => c.id === id)
     if (idx !== -1) {
       const conv = index.conversations[idx]!
       conv.updatedAt = Date.now()
       if (conv.archived) conv.archived = false
-      writeIndex(index)
+      writeIndex(index, scope)
     }
   } catch (error) {
     console.error(`[对话管理] 追加消息失败 (${id}):`, error)
@@ -200,8 +202,8 @@ export function appendMessage(id: string, message: ChatMessage): void {
  * @param id 对话 ID
  * @param messages 完整消息列表
  */
-export function saveConversationMessages(id: string, messages: ChatMessage[]): void {
-  const filePath = getConversationMessagesPath(id)
+export function saveConversationMessages(id: string, messages: ChatMessage[], scope?: UserScope): void {
+  const filePath = getConversationMessagesPath(id, scope)
 
   try {
     const content = messages.map((msg) => JSON.stringify(msg)).join('\n') + (messages.length > 0 ? '\n' : '')
@@ -222,8 +224,9 @@ export function saveConversationMessages(id: string, messages: ChatMessage[]): v
 export function updateConversationMeta(
   id: string,
   updates: Partial<Pick<ConversationMeta, 'title' | 'modelId' | 'channelId' | 'contextDividers' | 'contextLength' | 'pinned' | 'archived'>>,
+  scope?: UserScope,
 ): ConversationMeta {
-  const index = readIndex()
+  const index = readIndex(scope)
   const idx = index.conversations.findIndex((c) => c.id === id)
 
   if (idx === -1) {
@@ -241,7 +244,7 @@ export function updateConversationMeta(
   }
 
   index.conversations[idx] = updated
-  writeIndex(index)
+  writeIndex(index, scope)
 
   console.log(`[对话管理] 已更新对话: ${updated.title} (${updated.id})`)
   return updated
@@ -254,8 +257,8 @@ export function updateConversationMeta(
  *
  * @param id 对话 ID
  */
-export function deleteConversation(id: string): void {
-  const index = readIndex()
+export function deleteConversation(id: string, scope?: UserScope): void {
+  const index = readIndex(scope)
   const idx = index.conversations.findIndex((c) => c.id === id)
 
   if (idx === -1) {
@@ -264,10 +267,10 @@ export function deleteConversation(id: string): void {
   }
 
   const removed = index.conversations.splice(idx, 1)[0]!
-  writeIndex(index)
+  writeIndex(index, scope)
 
   // 删除消息文件
-  const filePath = getConversationMessagesPath(id)
+  const filePath = getConversationMessagesPath(id, scope)
   if (existsSync(filePath)) {
     try {
       unlinkSync(filePath)
@@ -279,7 +282,7 @@ export function deleteConversation(id: string): void {
   console.log(`[对话管理] 已删除对话: ${removed.title} (${removed.id})`)
 
   // 删除对话附件目录
-  deleteConversationAttachments(id)
+  deleteConversationAttachments(id, scope)
 }
 
 /**
@@ -291,8 +294,8 @@ export function deleteConversation(id: string): void {
  * @param messageId 要删除的消息 ID
  * @returns 更新后的消息列表
  */
-export function deleteMessage(conversationId: string, messageId: string): ChatMessage[] {
-  const messages = getConversationMessages(conversationId)
+export function deleteMessage(conversationId: string, messageId: string, scope?: UserScope): ChatMessage[] {
+  const messages = getConversationMessages(conversationId, scope)
   const targetMessage = messages.find((msg) => msg.id === messageId)
   const filtered = messages.filter((msg) => msg.id !== messageId)
 
@@ -304,11 +307,11 @@ export function deleteMessage(conversationId: string, messageId: string): ChatMe
   // 删除消息关联的附件文件
   if (targetMessage?.attachments) {
     for (const attachment of targetMessage.attachments) {
-      deleteAttachment(attachment.localPath)
+      deleteAttachment(attachment.localPath, scope)
     }
   }
 
-  saveConversationMessages(conversationId, filtered)
+  saveConversationMessages(conversationId, filtered, scope)
   console.log(`[对话管理] 已删除消息: ${messageId} (对话 ${conversationId})`)
   return filtered
 }
@@ -328,8 +331,9 @@ export function truncateMessagesFrom(
   conversationId: string,
   messageId: string,
   preserveFirstMessageAttachments = false,
+  scope?: UserScope,
 ): ChatMessage[] {
-  const messages = getConversationMessages(conversationId)
+  const messages = getConversationMessages(conversationId, scope)
   const startIndex = messages.findIndex((msg) => msg.id === messageId)
 
   if (startIndex === -1) {
@@ -347,11 +351,11 @@ export function truncateMessagesFrom(
     if (idx === 0 && preserveFirstMessageAttachments) return
 
     msg.attachments.forEach((attachment) => {
-      deleteAttachment(attachment.localPath)
+      deleteAttachment(attachment.localPath, scope)
     })
   })
 
-  saveConversationMessages(conversationId, kept)
+  saveConversationMessages(conversationId, kept, scope)
   console.log(`[对话管理] 已从消息截断: ${messageId} (对话 ${conversationId})`)
   return kept
 }
@@ -363,8 +367,8 @@ export function truncateMessagesFrom(
  * @param dividers 新的分隔线消息 ID 列表
  * @returns 更新后的对话元数据
  */
-export function updateContextDividers(conversationId: string, dividers: string[]): ConversationMeta {
-  return updateConversationMeta(conversationId, { contextDividers: dividers })
+export function updateContextDividers(conversationId: string, dividers: string[], scope?: UserScope): ConversationMeta {
+  return updateConversationMeta(conversationId, { contextDividers: dividers }, scope)
 }
 
 /**
@@ -375,8 +379,8 @@ export function updateContextDividers(conversationId: string, dividers: string[]
  * @param daysThreshold 天数阈值
  * @returns 本次归档的对话数量
  */
-export function autoArchiveConversations(daysThreshold: number): number {
-  const index = readIndex()
+export function autoArchiveConversations(daysThreshold: number, scope?: UserScope): number {
+  const index = readIndex(scope)
   const threshold = Date.now() - daysThreshold * 86_400_000
   let count = 0
 
@@ -388,7 +392,7 @@ export function autoArchiveConversations(daysThreshold: number): number {
   }
 
   if (count > 0) {
-    writeIndex(index)
+    writeIndex(index, scope)
     console.log(`[对话管理] 自动归档 ${count} 个对话（阈值: ${daysThreshold} 天）`)
   }
 
@@ -404,10 +408,10 @@ export function autoArchiveConversations(daysThreshold: number): number {
  * @param query 搜索关键词
  * @returns 匹配结果列表
  */
-export async function searchConversationMessages(query: string): Promise<MessageSearchResult[]> {
+export async function searchConversationMessages(query: string, scope?: UserScope): Promise<MessageSearchResult[]> {
   if (!query || query.length < 2) return []
 
-  const index = readIndex()
+  const index = readIndex(scope)
   const results: MessageSearchResult[] = []
   const queryLower = query.toLowerCase()
   const maxResults = 30
@@ -415,7 +419,7 @@ export async function searchConversationMessages(query: string): Promise<Message
   for (const conv of index.conversations) {
     if (results.length >= maxResults) break
 
-    const filePath = getConversationMessagesPath(conv.id)
+    const filePath = getConversationMessagesPath(conv.id, scope)
     if (!existsSync(filePath)) continue
 
     const hit = await findFirstMatchInJsonl(filePath, queryLower, query.length)

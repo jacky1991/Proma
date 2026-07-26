@@ -10,6 +10,7 @@ import { join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { createConversation, appendMessage } from './conversation-manager'
 import { getConversationAttachmentsDir } from './config-paths'
+import type { UserScope } from './config-paths'
 import type { ConversationMeta, FileAttachment, ChatMessage } from '@proma/shared'
 
 /**
@@ -66,7 +67,7 @@ export function getTutorialContent(): string | null {
  *
  * @returns 对话元数据，失败返回 null
  */
-export function createWelcomeConversation(): ConversationMeta | null {
+export function createWelcomeConversation(scope?: UserScope): ConversationMeta | null {
   const tutorialContent = getTutorialContent()
   if (!tutorialContent) {
     console.warn('[教程服务] 无法读取教程内容，跳过创建欢迎对话')
@@ -75,13 +76,13 @@ export function createWelcomeConversation(): ConversationMeta | null {
 
   try {
     // 1. 创建对话
-    const meta = createConversation('了解 Proma')
+    const meta = createConversation('了解 Proma', undefined, undefined, scope)
 
     // 2. 保存教程文件为附件
     const attachmentId = randomUUID()
     const attachmentFilename = 'Proma 使用教程.md'
     const localPath = `${meta.id}/${attachmentId}.md`
-    const dir = getConversationAttachmentsDir(meta.id)
+    const dir = getConversationAttachmentsDir(meta.id, scope)
     const fullPath = join(dir, `${attachmentId}.md`)
 
     // 去掉图片标记，保留纯文本
@@ -105,7 +106,7 @@ export function createWelcomeConversation(): ConversationMeta | null {
       createdAt: now,
       attachments: [attachment],
     }
-    appendMessage(meta.id, userMessage)
+    appendMessage(meta.id, userMessage, scope)
 
     // 4. 追加 assistant 欢迎消息
     const assistantMessage: ChatMessage = {
@@ -125,7 +126,7 @@ export function createWelcomeConversation(): ConversationMeta | null {
       createdAt: now + 1,
       model: 'Proma',
     }
-    appendMessage(meta.id, assistantMessage)
+    appendMessage(meta.id, assistantMessage, scope)
 
     console.log(`[教程服务] 已创建欢迎对话: ${meta.id}`)
     return meta

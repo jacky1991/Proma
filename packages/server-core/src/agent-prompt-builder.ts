@@ -10,11 +10,10 @@
  */
 
 import type { AgentRuntime, PromaPermissionMode } from '@proma/shared'
-import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { getUserProfile } from './user-profile-service'
 import { getWorkspaceMcpConfig } from './agent-workspace-manager'
-import { getConfigDirName } from './config-paths'
+import { getDataRoot, resolveAgentSessionWorkspacePath, type UserScope } from './config-paths'
 
 // ===== 工具使用指南（可复用常量） =====
 
@@ -36,23 +35,26 @@ interface SystemPromptContext {
   permissionMode: PromaPermissionMode
   /** 当前会话是否已注入 Proma collaboration 工具 */
   collaborationAvailable?: boolean
+  /** 用户作用域（Web 多用户隔离） */
+  scope?: UserScope
 }
 
-function buildWorkspacePromptPaths(workspaceSlug: string, sessionId: string) {
-  const configDirName = getConfigDirName()
-  const workspaceRoot = join(homedir(), configDirName, 'agent-workspaces', workspaceSlug)
+function buildWorkspacePromptPaths(workspaceSlug: string, sessionId: string, scope?: UserScope) {
+  const dataRoot = getDataRoot()
+  const workspaceRoot = join(dataRoot, 'agent-workspaces', workspaceSlug)
   const autoMemoryDir = join(workspaceRoot, '.claude', 'memory')
 
   return {
     workspaceRoot,
-    sessionDir: join(workspaceRoot, sessionId),
+    // 会话工作目录按用户作用域隔离（Web 多用户场景）；workspaceRoot 等元数据路径全局共享
+    sessionDir: resolveAgentSessionWorkspacePath(workspaceSlug, sessionId, scope),
     mcpConfig: join(workspaceRoot, 'mcp.json'),
     skillsDir: join(workspaceRoot, 'skills'),
     workspaceContextDir: join(workspaceRoot, 'workspace-files', '.context'),
     claudeMd: join(workspaceRoot, 'CLAUDE.md'),
     autoMemoryDir,
     autoMemoryIndex: join(autoMemoryDir, 'MEMORY.md'),
-    sdkConfigDir: join(homedir(), configDirName, 'sdk-config'),
+    sdkConfigDir: join(dataRoot, 'sdk-config'),
   }
 }
 
@@ -71,7 +73,7 @@ export function buildSystemPrompt(ctx: SystemPromptContext): string {
   const agentRuntime = ctx.agentRuntime ?? 'pi'
   const runtimeName = agentRuntime === 'pi' ? 'Pi Agent SDK' : 'Claude Agent SDK'
   const workspacePaths = ctx.workspaceSlug
-    ? buildWorkspacePromptPaths(ctx.workspaceSlug, ctx.sessionId)
+    ? buildWorkspacePromptPaths(ctx.workspaceSlug, ctx.sessionId, ctx.scope)
     : undefined
 
   const sections: string[] = []

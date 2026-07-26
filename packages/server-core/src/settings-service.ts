@@ -7,6 +7,7 @@
 
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { getSettingsPath } from './config-paths'
+import type { UserScope } from './config-paths'
 
 // 默认值常量（与 Electron types 保持一致；server-core 自持以避免依赖 renderer 类型）
 const DEFAULT_AGENT_RUNTIME = 'pi' as const
@@ -44,8 +45,8 @@ export interface AppSettings {
  *
  * 如果文件不存在，返回默认设置。
  */
-export function getSettings(): AppSettings {
-  const filePath = getSettingsPath()
+export function getSettings(scope?: UserScope): AppSettings {
+  const filePath = getSettingsPath(scope)
 
   if (!existsSync(filePath)) {
     return {
@@ -105,13 +106,13 @@ export function getSettings(): AppSettings {
  *
  * 合并更新字段并写入文件。
  */
-export function updateSettings(updates: Partial<AppSettings>): AppSettings {
-  const current = getSettings()
+export function updateSettings(updates: Partial<AppSettings>, scope?: UserScope): AppSettings {
+  const current = getSettings(scope)
   const updated: AppSettings = {
     ...current,
     ...updates,
   }
-  const filePath = getSettingsPath()
+  const filePath = getSettingsPath(scope)
 
   try {
     writeFileSync(filePath, JSON.stringify(updated, null, 2), 'utf-8')

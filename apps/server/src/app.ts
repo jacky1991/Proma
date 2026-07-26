@@ -9,6 +9,9 @@ import { upload } from './routes/upload'
 import { chatTool } from './routes/chat-tool'
 import { storage } from './routes/storage'
 import { automation } from './routes/automation'
+import { auth } from './routes/auth'
+import { user } from './routes/user'
+import { authMiddleware, AUTH_EXEMPT_PATHS } from './middleware/auth'
 
 const app = new Hono()
 
@@ -27,7 +30,22 @@ app.get('/api/health', (c) =>
   c.json({ ok: true, name: 'proma-server', version: '0.0.1' }),
 )
 
-// 挂载路由
+// 全局认证中间件：豁免路径（健康检查 / 注册 / 登录 / 刷新）直接放行，
+// 其余 /api/* 请求必须携带有效 Bearer token。
+app.use('/api/*', async (c, next) => {
+  if (AUTH_EXEMPT_PATHS.includes(c.req.path)) {
+    return next()
+  }
+  return authMiddleware(c, next)
+})
+
+// 挂载认证路由（注册/登录/刷新已由 AUTH_EXEMPT_PATHS 豁免；/auth:me 与 /auth:change-password 自带行内中间件）
+app.route('/api', auth)
+
+// 挂载用户管理路由（全部经 adminOnly 角色校验）
+app.route('/api', user)
+
+// 挂载业务路由
 app.route('/api', agent)
 app.route('/api', channel)
 app.route('/api', settings)

@@ -55,3 +55,6 @@ pnpm-workspace.yaml
 
 # Proma 会话/工作区文档（不应入仓，见 CLAUDE.md 红线）
 .context/
+
+# Playwright MCP 工具输出（日志/快照）
+.playwright-mcp/
