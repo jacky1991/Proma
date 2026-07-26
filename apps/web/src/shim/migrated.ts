@@ -25,10 +25,10 @@ export function createMigrated(config: ShimConfig): Partial<ElectronAPI> {
     deleteAgentSession: (id: string) => invoke('agent:delete-session', { id }),
     getAgentSDKMessages: (id: string) => invoke('agent:get-sdk-messages', { id }),
     getAgentSessionSDKMessages: (id: string) => invoke('agent:get-sdk-messages', { id }),  // 别名
-    updateAgentTitle: (id: string, title: string) => invoke('agent:update-title', { sessionId: id, title }),
-    updateSessionModel: (id: string, model: string) => invoke('agent:update-session-model', { sessionId: id, model }),
-    togglePinSession: (id: string) => invoke('agent:toggle-pin', { id }),
-    toggleArchiveSession: (id: string) => invoke('agent:toggle-archive', { id }),
+    updateAgentSessionTitle: (id: string, title: string) => invoke('agent:update-title', { sessionId: id, title }),
+    updateAgentSessionModel: (id: string, channelId?: string, modelId?: string) => invoke('agent:update-session-model', { sessionId: id, channelId, modelId }),
+    togglePinAgentSession: (id: string) => invoke('agent:toggle-pin', { id }),
+    toggleArchiveAgentSession: (id: string) => invoke('agent:toggle-archive', { id }),
     updateSessionPermissionMode: (id: string, mode: string) => invoke('agent:update-session-permission-mode', { sessionId: id, mode }),
 
     // ===== Agent 消息发送 & 控制 =====
@@ -85,7 +85,8 @@ export function createMigrated(config: ShimConfig): Partial<ElectronAPI> {
     moveFile: (filePath: string, targetDir: string) => invoke('agent:move-file', { filePath, targetDir }),
     getWorkspaceFilesPath: (workspaceSlug: string) => invoke('agent:get-workspace-files-path', { workspaceSlug }),
     checkPathsType: (paths: string[]) => invoke('agent:check-paths-type', { paths }),
-    searchWorkspaceFiles: (rootPath: string, query: string, limit?: number) => invoke('agent:search-workspace-files', { rootPath, query, limit }),
+    searchWorkspaceFiles: (rootPath: string, query: string, limit?: number, additionalPaths?: string[], sessionPaths?: string[]) =>
+      invoke('agent:search-workspace-files', { rootPath, query, limit, additionalPaths, sessionPaths }),
 
     // ===== Agent 流式订阅（走 WS） =====
     // ws-client 传递 { sessionId, payload } 结构
@@ -120,7 +121,7 @@ export function createMigrated(config: ShimConfig): Partial<ElectronAPI> {
     updateChannel: (input: unknown) => invoke('channel:update', input),
     deleteChannel: (id: string) => invoke('channel:delete', { id }),
     testChannel: (input: unknown) => invoke('channel:test', input),
-    fetchChannelModels: (input: unknown) => invoke('channel:fetch-models', input),
+    fetchModels: (input: unknown) => invoke('channel:fetch-models', input),
 
     // ===== Settings / Profile 域 =====
     getSettings: () => invoke('settings:get'),
@@ -145,7 +146,7 @@ export function createMigrated(config: ShimConfig): Partial<ElectronAPI> {
     deleteConversation: (id: string) => invoke('chat:delete-conversation', { id }),
     updateConversationModel: (id: string, modelId: string, channelId: string) => invoke('chat:update-conversation-model', { id, modelId, channelId }),
     togglePinConversation: (id: string) => invoke('chat:toggle-pin', { id }),
-    deleteChatMessage: (conversationId: string, messageId: string) => invoke('chat:delete-message', { conversationId, messageId }),
+    deleteMessage: (conversationId: string, messageId: string) => invoke('chat:delete-message', { conversationId, messageId }),
     truncateMessagesFrom: (conversationId: string, messageId: string) => invoke('chat:truncate-messages-from', { conversationId, messageId }),
     updateContextDividers: (conversationId: string, dividers: string[]) => invoke('chat:update-context-dividers', { conversationId, dividers }),
     sendMessage: (input: unknown) => invoke('chat:send-message', input),
@@ -298,20 +299,20 @@ export function createMigrated(config: ShimConfig): Partial<ElectronAPI> {
     // ===== 迭代 5：Chat Tool 域 =====
     getAllTools: () => invoke('chat-tool:get-all-tools'),
     getChatTools: () => invoke('chat-tool:get-all-tools'),  // 别名（main.tsx 使用）
-    getToolCredentials: (toolId: string) => invoke('chat-tool:get-credentials', { toolId }),
-    updateToolState: (toolId: string, state: unknown) => invoke('chat-tool:update-state', { toolId, state }),
-    updateToolCredentials: (toolId: string, credentials: Record<string, string>) => invoke('chat-tool:update-credentials', { toolId, credentials }),
-    testTool: (toolId: string) => invoke('chat-tool:test', { toolId }),
+    getChatToolCredentials: (toolId: string) => invoke('chat-tool:get-credentials', { toolId }),
+    updateChatToolState: (toolId: string, state: unknown) => invoke('chat-tool:update-state', { toolId, state }),
+    updateChatToolCredentials: (toolId: string, credentials: Record<string, string>) => invoke('chat-tool:update-credentials', { toolId, credentials }),
+    testChatTool: (toolId: string) => invoke('chat-tool:test', { toolId }),
     createCustomTool: (meta: unknown) => invoke('chat-tool:create-custom', meta),
-    deleteCustomTool: (toolId: string) => invoke('chat-tool:delete-custom', { toolId }),
+    deleteCustomChatTool: (toolId: string) => invoke('chat-tool:delete-custom', { toolId }),
     onCustomToolChanged: (cb: () => void) =>
       wsClient.on('chat-tool:custom-tool-changed', cb as (payload: unknown) => void),
 
     // ===== 迭代 5：Channel 扩展 =====
-    decryptChannelKey: (channelId: string) => invoke('channel:decrypt-key', { channelId }),
+    decryptApiKey: (channelId: string) => invoke('channel:decrypt-key', { channelId }),
     testChannelDirect: (input: ChannelDirectTestInput) => invoke('channel:test-direct', input),
     getChannelPlanQuota: (channelId: string) => invoke('channel:get-plan-quota', { channelId }),
-    codexOauthLogin: async () => {
+    codexOAuthLogin: async () => {
       const result = await invoke<CodexOAuthLoginResult & { authUrl?: string }>('channel:codex-oauth-login')
       // 如果返回了授权 URL，在新窗口打开
       if (result.success && result.authUrl) {
@@ -337,10 +338,10 @@ export function createMigrated(config: ShimConfig): Partial<ElectronAPI> {
     // ===== 迭代 5：Agent 杂项 =====
     migrateChatToAgent: (conversationId: string, agentSessionId: string) => invoke('agent:migrate-chat-to-agent', { conversationId, agentSessionId }),
     confirmWorkingDone: (id: string) => invoke('agent:confirm-working-done', { id }),
-    searchSessionReferences: (input: AgentSessionReferenceSearchInput) => invoke('agent:search-session-references', input),
-    moveSessionToWorkspace: (input: MoveSessionToWorkspaceInput) => invoke('agent:move-session-to-workspace', input),
-    saveFilesToSession: (input: AgentSaveFilesInput) => invoke('agent:save-files-to-session', input),
-    saveFilesToWorkspace: (input: AgentSaveWorkspaceFilesInput) => invoke('agent:save-files-to-workspace', input),
+    searchAgentSessionReferences: (input: AgentSessionReferenceSearchInput) => invoke('agent:search-session-references', input),
+    moveAgentSessionToWorkspace: (input: MoveSessionToWorkspaceInput) => invoke('agent:move-session-to-workspace', input),
+    saveFilesToAgentSession: (input: AgentSaveFilesInput) => invoke('agent:save-files-to-session', input),
+    saveFilesToWorkspaceFiles: (input: AgentSaveWorkspaceFilesInput) => invoke('agent:save-files-to-workspace', input),
     getTaskOutput: (input: unknown) => invoke('agent:get-task-output', input),
     stopTask: (input: unknown) => invoke('agent:stop-task', input),
 
@@ -416,10 +417,10 @@ export const migratedNames: ReadonlySet<string> = new Set([
   'createAgentSession',
   'deleteAgentSession',
   'getAgentSDKMessages',
-  'updateAgentTitle',
-  'updateSessionModel',
-  'togglePinSession',
-  'toggleArchiveSession',
+  'updateAgentSessionTitle',
+  'updateAgentSessionModel',
+  'togglePinAgentSession',
+  'toggleArchiveAgentSession',
   'updateSessionPermissionMode',
   // Agent 消息发送 & 控制
   'sendAgentMessage',
@@ -486,7 +487,7 @@ export const migratedNames: ReadonlySet<string> = new Set([
   'updateChannel',
   'deleteChannel',
   'testChannel',
-  'fetchChannelModels',
+  'fetchModels',
   // Settings / Profile 域
   'getSettings',
   'updateSettings',
@@ -508,7 +509,7 @@ export const migratedNames: ReadonlySet<string> = new Set([
   'deleteConversation',
   'updateConversationModel',
   'togglePinConversation',
-  'deleteChatMessage',
+  'deleteMessage',
   'truncateMessagesFrom',
   'updateContextDividers',
   'sendMessage',
@@ -558,18 +559,18 @@ export const migratedNames: ReadonlySet<string> = new Set([
   'onWorkspaceFilesChanged',
   // 迭代 5：Chat Tool 域
   'getAllTools',
-  'getToolCredentials',
-  'updateToolState',
-  'updateToolCredentials',
-  'testTool',
+  'getChatToolCredentials',
+  'updateChatToolState',
+  'updateChatToolCredentials',
+  'testChatTool',
   'createCustomTool',
-  'deleteCustomTool',
+  'deleteCustomChatTool',
   'onCustomToolChanged',
   // 迭代 5：Channel 扩展
-  'decryptChannelKey',
+  'decryptApiKey',
   'testChannelDirect',
   'getChannelPlanQuota',
-  'codexOauthLogin',
+  'codexOAuthLogin',
   'codexOauthCancel',
   'onCodexOauthComplete',
   // 迭代 5：Agent 挂载文件操作
@@ -584,10 +585,10 @@ export const migratedNames: ReadonlySet<string> = new Set([
   // 迭代 5：Agent 杂项
   'migrateChatToAgent',
   'confirmWorkingDone',
-  'searchSessionReferences',
-  'moveSessionToWorkspace',
-  'saveFilesToSession',
-  'saveFilesToWorkspace',
+  'searchAgentSessionReferences',
+  'moveAgentSessionToWorkspace',
+  'saveFilesToAgentSession',
+  'saveFilesToWorkspaceFiles',
   'getTaskOutput',
   'stopTask',
   // 迭代 6：Storage 管理

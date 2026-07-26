@@ -583,43 +583,158 @@ agent.post(`/${AGENT_IPC_CHANNELS.CHECK_PATHS_TYPE}`, async (c) => {
 
 /** POST /api/agent:search-workspace-files → FileSearchResult */
 agent.post(`/${AGENT_IPC_CHANNELS.SEARCH_WORKSPACE_FILES}`, async (c) => {
-  const { rootPath, query, limit = 20 } = await c.req.json<{ rootPath: string; query: string; limit?: number }>()
+  const { rootPath, query, limit = 20, additionalPaths, sessionPaths } = await c.req.json<{
+    rootPath: string; query: string; limit?: number; additionalPaths?: string[]; sessionPaths?: string[]
+  }>()
   const safeRoot = resolve(rootPath)
   const ignoreDirs = new Set(['node_modules', '.git', 'dist', '.next', '__pycache__', '.venv', 'build', '.cache'])
   const ignoreFiles = new Set(['.DS_Store', '.Spotlight-V100', '.Trashes', 'Thumbs.db', 'desktop.ini'])
+  const BROWSE_LIMIT_PER_GROUP = 2000
+  const BROWSE_TOTAL_CAP = 3000
 
-  type Entry = { name: string; path: string; type: 'file' | 'dir' }
-  const allEntries: Entry[] = []
+  // 按来源分组收集文件（对齐 Electron ipc.ts 实现）
+  type Entry = { name: string; path: string; type: 'file' | 'dir'; source: 'session' | 'workspace' }
+  const rootEntries: Entry[] = []
+  const workspaceEntries: Entry[] = []
 
-  function scan(dir: string, depth: number): void {
-    if (depth > 10 || allEntries.length > 3000) return
+  function scan(
+    dir: string, depth: number, baseRoot: string,
+    target: Entry[], useAbsPath: boolean, source: 'session' | 'workspace',
+  ): void {
+    if (depth > 10) return
     try {
       const items = readdirSync(dir, { withFileTypes: true })
       for (const item of items) {
         if (ignoreFiles.has(item.name)) continue
         if (item.isDirectory() && ignoreDirs.has(item.name)) continue
         const fullPath = resolve(dir, item.name)
-        allEntries.push({
+        target.push({
           name: item.name,
-          path: relative(safeRoot, fullPath),
+          path: useAbsPath ? fullPath : relative(baseRoot, fullPath),
           type: item.isDirectory() ? 'dir' : 'file',
+          source,
         })
-        if (item.isDirectory()) scan(fullPath, depth + 1)
+        if (item.isDirectory()) scan(fullPath, depth + 1, baseRoot, target, useAbsPath, source)
       }
     } catch { /* 忽略无权限目录 */ }
   }
 
-  scan(safeRoot, 0)
+  function addAttachedPath(pathValue: string, target: Entry[], source: 'session' | 'workspace'): void {
+    try {
+      const attachedPath = resolve(pathValue)
+      const name = basename(attachedPath)
+      if (ignoreFiles.has(name)) return
+      const stats = statSync(attachedPath)
+      if (stats.isFile()) {
+        target.push({ name, path: attachedPath, type: 'file', source })
+        return
+      }
+      if (!stats.isDirectory()) return
+      if (ignoreDirs.has(name)) return
+      target.push({
+        name: name === 'workspace-files' ? '工作文件' : name,
+        path: attachedPath, type: 'dir', source,
+      })
+      scan(attachedPath, 0, attachedPath, target, true, source)
+    } catch { /* 忽略不存在或无权限的附加路径 */ }
+  }
+
+  // session 目录：相对路径
+  scan(safeRoot, 0, safeRoot, rootEntries, false, 'session')
+
+  // 会话级附加路径：绝对路径
+  if (sessionPaths && sessionPaths.length > 0) {
+    for (const sp of sessionPaths) addAttachedPath(sp, rootEntries, 'session')
+  }
+
+  // 工作区文件 + 工作区级附加路径：绝对路径
+  if (additionalPaths && additionalPaths.length > 0) {
+    for (const addPath of additionalPaths) addAttachedPath(addPath, workspaceEntries, 'workspace')
+  }
+
+  // 排序：目录优先、前缀匹配优先、路径短优先
+  function sortGroup(entries: Entry[], q: string): void {
+    entries.sort((a, b) => {
+      const aStartsWith = a.name.toLowerCase().startsWith(q) ? 0 : 1
+      const bStartsWith = b.name.toLowerCase().startsWith(q) ? 0 : 1
+      if (aStartsWith !== bStartsWith) return aStartsWith - bStartsWith
+      if (a.type === 'dir' && b.type !== 'dir') return -1
+      if (a.type !== 'dir' && b.type === 'dir') return 1
+      return a.path.length - b.path.length
+    })
+  }
+
+  function matchEntries(entries: Entry[], q: string): Entry[] {
+    return entries.filter((entry) => {
+      const nameLower = entry.name.toLowerCase()
+      const pathLower = entry.path.toLowerCase()
+      if (nameLower.startsWith(q)) return true
+      if (nameLower.includes(q) || pathLower.includes(q)) return true
+      // 模糊子序列匹配
+      let qi = 0
+      for (let i = 0; i < nameLower.length && qi < q.length; i++) {
+        if (nameLower[i] === q[qi]) qi++
+      }
+      return qi === q.length
+    })
+  }
+
+  function sortDirsFirst(entries: Entry[]): void {
+    entries.sort((a, b) => {
+      if (a.type === 'dir' && b.type !== 'dir') return -1
+      if (a.type !== 'dir' && b.type === 'dir') return 1
+      return a.path.length - b.path.length || a.name.localeCompare(b.name)
+    })
+  }
 
   const q = query.toLowerCase()
-  const matched = q
-    ? allEntries.filter((e) => e.name.toLowerCase().includes(q))
-    : allEntries
+
+  if (!q) {
+    // 空 query：目录优先排序后截断
+    sortDirsFirst(rootEntries)
+    sortDirsFirst(workspaceEntries)
+    const maxPerGroup = Math.max(limit, BROWSE_LIMIT_PER_GROUP)
+    const sessionSlice = rootEntries.slice(0, maxPerGroup)
+    const workspaceSlice = workspaceEntries.slice(0, maxPerGroup)
+    const combined = [...sessionSlice, ...workspaceSlice]
+    const capped = combined.length > BROWSE_TOTAL_CAP ? combined.slice(0, BROWSE_TOTAL_CAP) : combined
+    return c.json({
+      entries: capped,
+      total: rootEntries.length + workspaceEntries.length,
+      sessionEntries: sessionSlice,
+      workspaceEntries: workspaceSlice,
+    })
+  }
+
+  const sessionMatched = matchEntries(rootEntries, q)
+  const workspaceMatched = matchEntries(workspaceEntries, q)
+  sortGroup(sessionMatched, q)
+  sortGroup(workspaceMatched, q)
+
+  const totalMatched = sessionMatched.length + workspaceMatched.length
+  let sessionSlice: Entry[]
+  let workspaceSlice: Entry[]
+  if (totalMatched <= limit) {
+    sessionSlice = sessionMatched
+    workspaceSlice = workspaceMatched
+  } else {
+    const sessionQuota = Math.max(
+      sessionMatched.length > 0 ? 1 : 0,
+      Math.round(limit * sessionMatched.length / totalMatched),
+    )
+    const workspaceQuota = Math.max(
+      workspaceMatched.length > 0 ? 1 : 0,
+      limit - sessionQuota,
+    )
+    sessionSlice = sessionMatched.slice(0, sessionQuota)
+    workspaceSlice = workspaceMatched.slice(0, workspaceQuota)
+  }
 
   return c.json({
-    files: matched.slice(0, limit),
-    totalCount: matched.length,
-    truncated: matched.length > limit,
+    entries: [...sessionSlice, ...workspaceSlice],
+    total: sessionMatched.length + workspaceMatched.length,
+    sessionEntries: sessionSlice,
+    workspaceEntries: workspaceSlice,
   })
 })
 
