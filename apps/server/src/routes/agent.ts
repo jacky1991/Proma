@@ -116,12 +116,12 @@ agent.post(`/${AGENT_IPC_CHANNELS.UPDATE_TITLE}`, async (c) => {
   return c.json({ ok: true })
 })
 
-/** POST /api/agent:update-session-model → { ok: true } */
+/** POST /api/agent:update-session-model → AgentSessionMeta（与 preload 契约一致） */
 agent.post(`/${AGENT_IPC_CHANNELS.UPDATE_SESSION_MODEL}`, async (c) => {
   const scope = getUserScope(c)
-  const { sessionId, model } = await c.req.json()
-  updateAgentSessionMeta(sessionId, { modelId: model }, scope)
-  return c.json({ ok: true })
+  const { sessionId, channelId, modelId } = await c.req.json()
+  const updated = updateAgentSessionMeta(sessionId, { channelId, modelId }, scope)
+  return c.json(updated)
 })
 
 /** POST /api/agent:toggle-pin → AgentSessionMeta */
@@ -189,11 +189,11 @@ agent.post(`/${AGENT_IPC_CHANNELS.STOP_AGENT}`, async (c) => {
   return c.json({ ok: true })
 })
 
-/** POST /api/agent:generate-title → { title: string } */
+/** POST /api/agent:generate-title → string | null（与 preload 契约一致） */
 agent.post(`/${AGENT_IPC_CHANNELS.GENERATE_TITLE}`, async (c) => {
   const input = await c.req.json<AgentGenerateTitleInput>()
   const title = await orchestrator.generateTitle(input)
-  return c.json({ title })
+  return c.json(title ?? null)
 })
 
 // ===== 工作区管理 =====

@@ -1,8 +1,8 @@
 import type { ElectronAPI } from './types'
-import type { AgentSessionMeta, AgentStreamEvent, AgentStreamCompletePayload, PermissionResponse, AskUserResponse, ExitPlanModeResponse, PendingRequestsSnapshot, AttachmentSaveInput, FileDialogResult, AgentQueueMessageInput, ForkSessionInput, RewindSessionInput, AgentAttachDirectoryInput, AgentAttachFileInput, WorkspaceAttachDirectoryInput, WorkspaceAttachFileInput, AgentSaveFilesInput, AgentSaveWorkspaceFilesInput, AgentSessionReferenceSearchInput, MoveSessionToWorkspaceInput, WorkspaceWorktreeRepo, FileAccessOptions, ChannelDirectTestInput, CodexOAuthLoginResult, AuthUser, ChangePasswordInput, ResetUserPasswordInput } from '@proma/shared'
+import type { AgentSessionMeta, AgentStreamEvent, AgentStreamCompletePayload, PermissionResponse, AskUserResponse, ExitPlanModeResponse, PendingRequestsSnapshot, AttachmentSaveInput, FileDialogResult, AgentQueueMessageInput, ForkSessionInput, RewindSessionInput, AgentAttachDirectoryInput, AgentAttachFileInput, WorkspaceAttachDirectoryInput, WorkspaceAttachFileInput, AgentSaveFilesInput, AgentSaveWorkspaceFilesInput, AgentSessionReferenceSearchInput, MoveSessionToWorkspaceInput, WorkspaceWorktreeRepo, FileAccessOptions, ChannelDirectTestInput, ChannelUpdateInput, CodexOAuthLoginResult, AuthUser, ChangePasswordInput, ResetUserPasswordInput } from '@proma/shared'
 import { createHttpClient, type ShimConfig } from './http-client'
 import { createWsClient } from './ws-client'
-import { getStoredUser, clearTokens } from './auth-store.ts'
+import { getStoredUser, clearTokens, getAccessToken } from './auth-store.ts'
 
 /**
  * 已迁移方法注册表
@@ -41,7 +41,7 @@ export function createMigrated(config: ShimConfig): Partial<ElectronAPI> {
     getAgentWorkspaces: () => invoke('agent:list-workspaces'),
     listAgentWorkspaces: () => invoke('agent:list-workspaces'),  // 别名（main.tsx 使用）
     createAgentWorkspace: (input: unknown) => invoke('agent:create-workspace', input),
-    updateAgentWorkspace: (input: unknown) => invoke('agent:update-workspace', input),
+    updateAgentWorkspace: (id: string, updates: { name: string }) => invoke('agent:update-workspace', { id, ...updates }),
     deleteAgentWorkspace: (id: string) => invoke('agent:delete-workspace', { id }),
     reorderAgentWorkspaces: (orderedIds: string[]) => invoke('agent:reorder-workspaces', { orderedIds }),
     getWorkspaceCapabilities: (workspaceSlug: string) => invoke('agent:get-capabilities', { workspaceSlug }),
@@ -119,9 +119,9 @@ export function createMigrated(config: ShimConfig): Partial<ElectronAPI> {
     // ===== Channel 域 =====
     listChannels: () => invoke('channel:list'),
     createChannel: (input: unknown) => invoke('channel:create', input),
-    updateChannel: (input: unknown) => invoke('channel:update', input),
+    updateChannel: (id: string, input: ChannelUpdateInput) => invoke('channel:update', { id, ...input }),
     deleteChannel: (id: string) => invoke('channel:delete', { id }),
-    testChannel: (input: unknown) => invoke('channel:test', input),
+    testChannel: (channelId: string) => invoke('channel:test', { channelId }),
     fetchModels: (input: unknown) => invoke('channel:fetch-models', input),
 
     // ===== Settings / Profile 域 =====
@@ -148,7 +148,8 @@ export function createMigrated(config: ShimConfig): Partial<ElectronAPI> {
     updateConversationModel: (id: string, modelId: string, channelId: string) => invoke('chat:update-conversation-model', { id, modelId, channelId }),
     togglePinConversation: (id: string) => invoke('chat:toggle-pin', { id }),
     deleteMessage: (conversationId: string, messageId: string) => invoke('chat:delete-message', { conversationId, messageId }),
-    truncateMessagesFrom: (conversationId: string, messageId: string) => invoke('chat:truncate-messages-from', { conversationId, messageId }),
+    truncateMessagesFrom: (conversationId: string, messageId: string, preserveFirstMessageAttachments?: boolean) =>
+      invoke('chat:truncate-messages-from', { conversationId, messageId, preserveFirstMessageAttachments }),
     updateContextDividers: (conversationId: string, dividers: string[]) => invoke('chat:update-context-dividers', { conversationId, dividers }),
     sendMessage: (input: unknown) => invoke('chat:send-message', input),
     stopGeneration: (conversationId: string) => invoke('chat:stop-generation', { conversationId }),
@@ -338,7 +339,8 @@ export function createMigrated(config: ShimConfig): Partial<ElectronAPI> {
 
     // ===== 迭代 5：Agent 杂项 =====
     migrateChatToAgent: (conversationId: string, agentSessionId: string) => invoke('agent:migrate-chat-to-agent', { conversationId, agentSessionId }),
-    confirmWorkingDone: (id: string) => invoke('agent:confirm-working-done', { id }),
+    // 键名须与 preload 契约一致（channel 字符串是 AGENT_IPC_CHANNELS.CLEAR_COMPLETION_STATE 的值）
+    clearAgentCompletionState: (id: string) => invoke('agent:confirm-working-done', { id }),
     searchAgentSessionReferences: (input: AgentSessionReferenceSearchInput) => invoke('agent:search-session-references', input),
     moveAgentSessionToWorkspace: (input: MoveSessionToWorkspaceInput) => invoke('agent:move-session-to-workspace', input),
     saveFilesToAgentSession: (input: AgentSaveFilesInput) => invoke('agent:save-files-to-session', input),
@@ -349,27 +351,33 @@ export function createMigrated(config: ShimConfig): Partial<ElectronAPI> {
     // ===== 迭代 6：Storage 管理 =====
     getStorageStats: () => invoke('storage:get-stats'),
     cleanupStorage: (options: unknown) => invoke('storage:cleanup', options),
-    cleanupTempFiles: () => invoke('storage:cleanup-temp'),
+    cleanupTempStorage: () => invoke('storage:cleanup-temp'),
 
     // ===== 迭代 6：Scratch-pad =====
     loadScratchPad: () => invoke<string>('scratch-pad:load'),
     saveScratchPad: (content: string) => invoke('scratch-pad:save', { content }),
-    exportScratchPad: (markdown: string, filename?: string) => {
-      // Web 端：通过服务端生成文件 → 浏览器下载
+    exportScratchPad: (markdown: string, _dirPath: string, filename: string) => {
+      // Web 端无文件系统概念：忽略 dirPath，通过服务端生成文件 → 浏览器下载。
+      // 下载走 blob 不经 invoke，需手动附加鉴权头（/api/* 路由强制鉴权）。
+      const safeName = filename || 'scratch-pad.md'
+      const token = getAccessToken()
       return fetch(`${config.apiBase}/scratch-pad:export`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ markdown, filename }),
+        headers: {
+          'content-type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ markdown, filename: safeName }),
       }).then(async (res) => {
         if (!res.ok) throw new Error('导出失败')
         const blob = await res.blob()
         const url = URL.createObjectURL(blob)
         const a = document.createElement('a')
         a.href = url
-        a.download = filename || 'scratch-pad.md'
+        a.download = safeName
         a.click()
         URL.revokeObjectURL(url)
-        return filename || 'scratch-pad.md'
+        return safeName
       })
     },
 
@@ -597,7 +605,7 @@ export const migratedNames: ReadonlySet<string> = new Set([
   'removeWorktreeRepo',
   // 迭代 5：Agent 杂项
   'migrateChatToAgent',
-  'confirmWorkingDone',
+  'clearAgentCompletionState',
   'searchAgentSessionReferences',
   'moveAgentSessionToWorkspace',
   'saveFilesToAgentSession',
@@ -607,7 +615,7 @@ export const migratedNames: ReadonlySet<string> = new Set([
   // 迭代 6：Storage 管理
   'getStorageStats',
   'cleanupStorage',
-  'cleanupTempFiles',
+  'cleanupTempStorage',
   // 迭代 6：Scratch-pad
   'loadScratchPad',
   'saveScratchPad',

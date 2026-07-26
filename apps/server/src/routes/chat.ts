@@ -126,8 +126,8 @@ chat.post(`/${CHAT_IPC_CHANNELS.DELETE_MESSAGE}`, async (c) => {
 /** POST /api/chat:truncate-messages-from → ChatMessage[] */
 chat.post(`/${CHAT_IPC_CHANNELS.TRUNCATE_MESSAGES_FROM}`, async (c) => {
   const scope = getUserScope(c)
-  const { conversationId, messageId } = await c.req.json()
-  return c.json(truncateMessagesFrom(conversationId, messageId, undefined, scope))
+  const { conversationId, messageId, preserveFirstMessageAttachments } = await c.req.json()
+  return c.json(truncateMessagesFrom(conversationId, messageId, preserveFirstMessageAttachments, scope))
 })
 
 /** POST /api/chat:update-context-dividers → ConversationMeta */
@@ -156,11 +156,11 @@ chat.post(`/${CHAT_IPC_CHANNELS.STOP_GENERATION}`, async (c) => {
   return c.json({ ok: true })
 })
 
-/** POST /api/chat:generate-title → { title: string | null } */
+/** POST /api/chat:generate-title → string | null（与 preload 契约一致） */
 chat.post(`/${CHAT_IPC_CHANNELS.GENERATE_TITLE}`, async (c) => {
   const input = await c.req.json<GenerateTitleInput>()
   const title = await generateChatTitle(input)
-  return c.json({ title })
+  return c.json(title ?? null)
 })
 
 // ===== 附件管理 =====
