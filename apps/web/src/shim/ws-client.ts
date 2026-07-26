@@ -104,13 +104,15 @@ export function createWsClient(config: ShimConfig): WsClient {
                 kind: 'proma_event',
                 event: { type: 'text', text: delta },
               }
+              // 传递完整的 { sessionId, payload } 结构，renderer 需要 sessionId
               for (const cb of callbacks) {
-                cb(singlePayload)
+                cb({ sessionId: msg.sessionId, payload: singlePayload })
               }
             }
           } else {
+            // 传递完整的 { sessionId, payload } 结构
             for (const cb of callbacks) {
-              cb(msg.payload)
+              cb({ sessionId: msg.sessionId, payload: msg.payload })
             }
           }
         }

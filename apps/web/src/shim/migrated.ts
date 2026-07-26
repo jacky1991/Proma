@@ -20,9 +20,11 @@ export function createMigrated(config: ShimConfig): Partial<ElectronAPI> {
   return {
     // ===== Agent 会话 CRUD =====
     listAgentSessions: () => invoke<AgentSessionMeta[]>('agent:list-sessions'),
-    createAgentSession: (input: unknown) => invoke('agent:create-session', input),
+    createAgentSession: (title?: string, channelId?: string, workspaceId?: string, modelId?: string) =>
+      invoke('agent:create-session', { title, channelId, workspaceId, modelId }),
     deleteAgentSession: (id: string) => invoke('agent:delete-session', { id }),
     getAgentSDKMessages: (id: string) => invoke('agent:get-sdk-messages', { id }),
+    getAgentSessionSDKMessages: (id: string) => invoke('agent:get-sdk-messages', { id }),  // 别名
     updateAgentTitle: (id: string, title: string) => invoke('agent:update-title', { sessionId: id, title }),
     updateSessionModel: (id: string, model: string) => invoke('agent:update-session-model', { sessionId: id, model }),
     togglePinSession: (id: string) => invoke('agent:toggle-pin', { id }),
@@ -36,11 +38,12 @@ export function createMigrated(config: ShimConfig): Partial<ElectronAPI> {
 
     // ===== Agent 工作区 =====
     getAgentWorkspaces: () => invoke('agent:list-workspaces'),
+    listAgentWorkspaces: () => invoke('agent:list-workspaces'),  // 别名（main.tsx 使用）
     createAgentWorkspace: (input: unknown) => invoke('agent:create-workspace', input),
     updateAgentWorkspace: (input: unknown) => invoke('agent:update-workspace', input),
     deleteAgentWorkspace: (id: string) => invoke('agent:delete-workspace', { id }),
     reorderAgentWorkspaces: (orderedIds: string[]) => invoke('agent:reorder-workspaces', { orderedIds }),
-    getWorkspaceCapabilities: (id: string) => invoke('agent:get-capabilities', { workspaceId: id }),
+    getWorkspaceCapabilities: (workspaceSlug: string) => invoke('agent:get-capabilities', { workspaceSlug }),
 
     // ===== Agent MCP 配置 =====
     getWorkspaceMcpConfig: (workspaceSlug: string) => invoke('agent:get-mcp-config', { workspaceSlug }),
@@ -85,14 +88,25 @@ export function createMigrated(config: ShimConfig): Partial<ElectronAPI> {
     searchWorkspaceFiles: (rootPath: string, query: string, limit?: number) => invoke('agent:search-workspace-files', { rootPath, query, limit }),
 
     // ===== Agent 流式订阅（走 WS） =====
+    // ws-client 传递 { sessionId, payload } 结构
+    // stream-event 直接透传；其他事件需要解包 payload
     onAgentStreamEvent: (cb: (event: AgentStreamEvent) => void) =>
       wsClient.on('agent:stream-event', cb as (payload: unknown) => void),
     onAgentStreamComplete: (cb: (data: AgentStreamCompletePayload) => void) =>
-      wsClient.on('agent:stream-complete', cb as (payload: unknown) => void),
+      wsClient.on('agent:stream-complete', (msg: unknown) => {
+        const { sessionId, payload } = msg as { sessionId: string; payload: Record<string, unknown> }
+        cb({ sessionId, ...payload } as AgentStreamCompletePayload)
+      }),
     onAgentStreamError: (cb: (data: { sessionId: string; error: string }) => void) =>
-      wsClient.on('agent:stream-error', cb as (payload: unknown) => void),
+      wsClient.on('agent:stream-error', (msg: unknown) => {
+        const { sessionId, payload } = msg as { sessionId: string; payload: Record<string, unknown> }
+        cb({ sessionId, ...payload } as { sessionId: string; error: string })
+      }),
     onAgentTitleUpdated: (cb: (data: { sessionId: string; title: string }) => void) =>
-      wsClient.on('agent:title-updated', cb as (payload: unknown) => void),
+      wsClient.on('agent:title-updated', (msg: unknown) => {
+        const { sessionId, payload } = msg as { sessionId: string; payload: Record<string, unknown> }
+        cb({ sessionId, ...payload } as { sessionId: string; title: string })
+      }),
 
     // ===== Agent 权限 / AskUser / ExitPlanMode 交互 =====
     respondPermission: (response: PermissionResponse) => invoke('agent:permission:respond', response),
@@ -283,6 +297,7 @@ export function createMigrated(config: ShimConfig): Partial<ElectronAPI> {
 
     // ===== 迭代 5：Chat Tool 域 =====
     getAllTools: () => invoke('chat-tool:get-all-tools'),
+    getChatTools: () => invoke('chat-tool:get-all-tools'),  // 别名（main.tsx 使用）
     getToolCredentials: (toolId: string) => invoke('chat-tool:get-credentials', { toolId }),
     updateToolState: (toolId: string, state: unknown) => invoke('chat-tool:update-state', { toolId, state }),
     updateToolCredentials: (toolId: string, credentials: Record<string, string>) => invoke('chat-tool:update-credentials', { toolId, credentials }),

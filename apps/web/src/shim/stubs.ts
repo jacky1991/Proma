@@ -15,7 +15,9 @@ export function notMigrated(name: string): (...args: unknown[]) => Promise<never
  * 安全默认值表：列表类返回 []，标量/对象类返回空值或最小可用值
  * 键名须与 ElectronAPI 上的方法名一致
  */
-export const safeDefaults: Record<string, () => Promise<unknown>> = {
+export const safeDefaults: Record<string, unknown> = {
+  // 自动更新：Web 端不支持，返回 undefined 让 updater.ts 优雅降级
+  updater: undefined,
   // 运行时 / 环境：Web 端不做本地检测，返回空占位
   getRuntimeStatus: () => Promise.resolve(null),
   reinitRuntime: () => Promise.resolve(null),
@@ -32,4 +34,10 @@ export const safeDefaults: Record<string, () => Promise<unknown>> = {
   getSystemPrompts: () => Promise.resolve([]),
   listChatTools: () => Promise.resolve([]),
   listWorkspaceFiles: () => Promise.resolve([]),
+
+  // Agent 状态清理：Web 端无实际状态需要清理，no-op
+  clearAgentCompletionState: () => Promise.resolve(),
+
+  // 桌面专属：用默认 App 打开文件，Web 端不支持
+  getDefaultAppForFile: () => Promise.resolve(null),
 }

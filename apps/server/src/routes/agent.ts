@@ -84,8 +84,8 @@ agent.post(`/${AGENT_IPC_CHANNELS.LIST_SESSIONS}`, (c) => {
 
 /** POST /api/agent:create-session → AgentSessionMeta */
 agent.post(`/${AGENT_IPC_CHANNELS.CREATE_SESSION}`, async (c) => {
-  const input = await c.req.json()
-  const session = createAgentSession(input)
+  const { title, channelId, workspaceId, modelId } = await c.req.json()
+  const session = createAgentSession(title, channelId, workspaceId, modelId)
   return c.json(session)
 })
 
@@ -221,12 +221,8 @@ agent.post(`/${AGENT_IPC_CHANNELS.REORDER_WORKSPACES}`, async (c) => {
 
 /** POST /api/agent:get-capabilities → WorkspaceCapabilities */
 agent.post(`/${AGENT_IPC_CHANNELS.GET_CAPABILITIES}`, async (c) => {
-  const { workspaceId } = await c.req.json()
-  // getWorkspaceCapabilities 需要 slug，先通过 id 查找 workspace
-  const workspace = getAgentWorkspace(workspaceId)
-  if (!workspace) return c.json({ error: 'Workspace not found' }, 404)
-  const capabilities = getWorkspaceCapabilities(workspace.slug)
-  return c.json(capabilities)
+  const { workspaceSlug } = await c.req.json()
+  return c.json(getWorkspaceCapabilities(workspaceSlug))
 })
 
 // ===== 权限 / AskUser / ExitPlanMode 双向交互 =====
