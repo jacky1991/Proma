@@ -266,7 +266,7 @@ async function calcAgentSessionsCategory(scope?: UserScope): Promise<StorageCate
 }
 
 async function calcSdkConfigCategory(scope?: UserScope): Promise<StorageCategory> {
-  const sdkDir = getSdkConfigDir()
+  const sdkDir = getSdkConfigDir(scope)
   const activeSdkIds = getActiveSdkSessionIds(scope)
   let bytes = 0, count = 0, orphanBytes = 0, orphanCount = 0
   const orphanItems: StorageOrphanItem[] = []
@@ -592,7 +592,7 @@ async function cleanupOrphanAgentSessions(scope?: UserScope): Promise<CleanupRes
 }
 
 async function cleanupOrphanSdkConfig(scope?: UserScope): Promise<CleanupResult> {
-  const sdkDir = getSdkConfigDir()
+  const sdkDir = getSdkConfigDir(scope)
   const activeSdkIds = getActiveSdkSessionIds(scope)
   let freedBytes = 0, deletedCount = 0
   const errors: string[] = []
@@ -711,7 +711,7 @@ async function cleanupOrphanWorkspaces(scope?: UserScope): Promise<CleanupResult
 function cleanupArchivedSessions(beforeDays: number, scope?: UserScope): CleanupResult {
   const cutoff = Date.now() - beforeDays * 24 * 60 * 60 * 1000
   const sessions = listAgentSessions(scope)
-  const sdkDir = getSdkConfigDir()
+  const sdkDir = getSdkConfigDir(scope)
   let freedBytes = 0, deletedCount = 0
   const errors: string[] = []
 

@@ -460,6 +460,7 @@ export class AgentOrchestrator {
     baseUrl: string | undefined,
     provider: ProviderType,
     modelId: string | undefined,
+    scope?: UserScope,
   ): Promise<Record<string, string | undefined>> {
     const DEFAULT_ANTHROPIC_URL = 'https://api.anthropic.com'
 
@@ -507,7 +508,8 @@ export class AgentOrchestrator {
       // 官方文档确认直连 Anthropic API 不受此设置影响，故对所有 provider 无条件禁用。
       CLAUDE_CODE_ATTRIBUTION_HEADER: '0',
       // 配置隔离：让 SDK 使用独立的配置目录，不读取用户的 ~/.claude.json
-      CLAUDE_CONFIG_DIR: getSdkConfigDir(),
+      // 多用户场景按 scope 落到 users/{userId}/sdk-config/，桌面端（无 scope）保持全局目录
+      CLAUDE_CONFIG_DIR: getSdkConfigDir(scope),
     }
 
     // 认证方式按 provider 分支
@@ -1121,7 +1123,7 @@ export class AgentOrchestrator {
     }
 
     const proxyUrl = await getEffectiveProxyUrl()
-    const sdkEnv = await this.buildSdkEnv(apiKey, channel.baseUrl, channel.provider, modelId || DEFAULT_MODEL_ID)
+    const sdkEnv = await this.buildSdkEnv(apiKey, channel.baseUrl, channel.provider, modelId || DEFAULT_MODEL_ID, scope)
 
     // 4. 读取已有的 SDK session ID（用于 resume）
     let existingSdkSessionId = sessionMeta?.sdkSessionId
@@ -1578,8 +1580,8 @@ export class AgentOrchestrator {
         canUseTool,
         systemPrompt: systemPromptAppend + buildPiAdditionalDirectoriesPrompt(allAdditionalDirectories),
         resumeSessionId: existingSdkSessionId,
-        piAgentDir: getSdkConfigDir(),
-        piSessionDir: join(getSdkConfigDir(), 'sessions'),
+        piAgentDir: getSdkConfigDir(scope),
+        piSessionDir: join(getSdkConfigDir(scope), 'sessions'),
         ...(allAdditionalDirectories.length > 0 && { additionalDirectories: allAdditionalDirectories }),
         ...(workspaceSlug ? { additionalSkillPaths: [getWorkspaceSkillsDir(workspaceSlug)] } : {}),
         ...(mentionedSkills?.length ? { skillMentions: mentionedSkills } : {}),
@@ -2505,7 +2507,7 @@ export class AgentOrchestrator {
         projectDir = getAgentSessionWorkspacePath(ws.slug, sessionMeta.id, scope)
       }
     }
-    const userMessageUuid = resolveUserUuidFromSDK(sessionMeta.sdkSessionId, assistantMessageUuid, projectDir, sessionMeta.forkSourceSdkSessionId)
+    const userMessageUuid = resolveUserUuidFromSDK(sessionMeta.sdkSessionId, assistantMessageUuid, projectDir, sessionMeta.forkSourceSdkSessionId, scope)
     console.log(`[Agent 编排] 回退: 解析 user uuid=${userMessageUuid || '未找到'} (assistant uuid=${assistantMessageUuid}, forkSource=${sessionMeta.forkSourceSdkSessionId ?? 'none'})`)
 
     // 1. 文件恢复：直接从 SDK JSONL 的 file-history-snapshot 恢复，无需临时 Query
@@ -2523,7 +2525,7 @@ export class AgentOrchestrator {
         // 否则会话级 attachedDirectories 内的文件会因路径越界检查被静默跳过）
         const rewindAttachedDirs = collectAttachedDirectories({ sessionMeta, workspaceSlug })
         console.log(`[Agent 编排] 回退: 直接从 snapshot 恢复文件 (cwd=${cwd}, forkSource=${sessionMeta.forkSourceSdkSessionId ?? 'none'}, attachedDirs=${rewindAttachedDirs.length})`)
-        fileRewindResult = rewindFilesFromSnapshot(sessionMeta.sdkSessionId, userMessageUuid, cwd, projectDir, sessionMeta.forkSourceSdkSessionId, rewindAttachedDirs)
+        fileRewindResult = rewindFilesFromSnapshot(sessionMeta.sdkSessionId, userMessageUuid, cwd, projectDir, sessionMeta.forkSourceSdkSessionId, rewindAttachedDirs, scope)
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err)
         console.warn('[Agent 编排] 文件恢复失败，继续截断对话:', errMsg)

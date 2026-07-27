@@ -13,7 +13,7 @@ import type { AgentRuntime, PromaPermissionMode } from '@proma/shared'
 import { join } from 'node:path'
 import { getUserProfile } from './user-profile-service'
 import { getWorkspaceMcpConfig } from './agent-workspace-manager'
-import { getDataRoot, resolveAgentSessionWorkspacePath, type UserScope } from './config-paths'
+import { getDataRoot, getSdkConfigDir, resolveAgentSessionWorkspacePath, type UserScope } from './config-paths'
 
 // ===== 工具使用指南（可复用常量） =====
 
@@ -54,7 +54,7 @@ function buildWorkspacePromptPaths(workspaceSlug: string, sessionId: string, sco
     claudeMd: join(workspaceRoot, 'CLAUDE.md'),
     autoMemoryDir,
     autoMemoryIndex: join(autoMemoryDir, 'MEMORY.md'),
-    sdkConfigDir: join(dataRoot, 'sdk-config'),
+    sdkConfigDir: getSdkConfigDir(scope),
   }
 }
 

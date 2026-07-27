@@ -684,10 +684,13 @@ export function getAgentSessionWorkspacePath(workspaceSlug: string, sessionId: s
  *
  * 如果目录不存在则自动创建。
  *
- * @returns ~/.proma/sdk-config/
+ * - 传入 scope（Web 多用户）：{dataRoot}/users/{userId}/sdk-config/（按用户拆分）
+ * - 未传 scope（桌面端）：{dataRoot}/sdk-config/（保持原有语义）
  */
-export function getSdkConfigDir(): string {
-  const dir = join(getDataRoot(), 'sdk-config')
+export function getSdkConfigDir(scope?: UserScope): string {
+  const dir = scope
+    ? join(getUserDataDir(scope), 'sdk-config')
+    : join(getDataRoot(), 'sdk-config')
 
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true })

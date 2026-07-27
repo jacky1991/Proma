@@ -523,7 +523,7 @@ export function deleteAgentSession(id: string, scope?: UserScope): void {
   // 清理 SDK 关联数据（file-history 和 projects 下的 session JSONL）
   const sdkSessionIds = [removed.sdkSessionId, removed.forkSourceSdkSessionId].filter(Boolean) as string[]
   if (sdkSessionIds.length > 0) {
-    const sdkConfigDir = getSdkConfigDir()
+    const sdkConfigDir = getSdkConfigDir(scope)
 
     const fileHistoryDir = join(sdkConfigDir, 'file-history')
     for (const sid of sdkSessionIds) {
@@ -849,7 +849,7 @@ export async function forkAgentSession(input: ForkSessionInput, scope?: UserScop
   // 同时把 JSONL 内容中所有源目录路径改写为目标目录路径，避免历史中的绝对路径误导 Claude
   // 继续在源目录下读写文件。
   if (sourceDir && destDir) {
-    const sourceJsonl = findSdkSessionJsonl(forkResult.sessionId)
+    const sourceJsonl = findSdkSessionJsonl(forkResult.sessionId, undefined, scope)
     if (sourceJsonl) {
       // SDK 使用简单的字符替换计算 project-hash：path.replace(/[^a-zA-Z0-9]/g, '-')
       const destProjectHash = destDir.replace(/[^a-zA-Z0-9]/g, '-')
@@ -1299,9 +1299,10 @@ export function resolveUserUuidFromSDK(
   assistantMessageUuid: string,
   projectDir?: string,
   forkSourceSdkSessionId?: string,
+  scope?: UserScope,
 ): string | undefined {
   // 优先搜索当前 session JSONL
-  let sessionFilePath = findSdkSessionJsonl(sdkSessionId, projectDir)
+  let sessionFilePath = findSdkSessionJsonl(sdkSessionId, projectDir, scope)
 
   // 当前 session JSONL 中未找到 assistant UUID（作为消息 .uuid 字段）时，尝试源会话（fork 场景）
   let usingSourceSession = false
@@ -1316,7 +1317,7 @@ export function resolveUserUuidFromSDK(
       })
       if (!hasUuidAsField) {
         // Proma JSONL 中的 UUID 来自源会话，forked JSONL 中已重映射
-        const sourceFilePath = findSdkSessionJsonl(forkSourceSdkSessionId, projectDir)
+        const sourceFilePath = findSdkSessionJsonl(forkSourceSdkSessionId, projectDir, scope)
         if (sourceFilePath) {
           console.log(`[Agent 会话] resolveUserUuid: fork 会话 UUID 不匹配（非 .uuid 字段），切换到源会话 ${forkSourceSdkSessionId}`)
           sessionFilePath = sourceFilePath
@@ -1326,7 +1327,7 @@ export function resolveUserUuidFromSDK(
     } catch { /* fall through to main logic */ }
   } else if (!sessionFilePath && forkSourceSdkSessionId) {
     // 当前 session JSONL 完全找不到，直接尝试源会话
-    sessionFilePath = findSdkSessionJsonl(forkSourceSdkSessionId, projectDir)
+    sessionFilePath = findSdkSessionJsonl(forkSourceSdkSessionId, projectDir, scope)
     if (sessionFilePath) {
       usingSourceSession = true
       console.log(`[Agent 会话] resolveUserUuid: 当前 JSONL 未找到，使用源会话 ${forkSourceSdkSessionId}`)
@@ -1391,8 +1392,8 @@ export function resolveUserUuidFromSDK(
  * @param projectDir 项目目录（可选，优先在此目录的哈希下查找）
  * @returns JSONL 文件路径，找不到返回 undefined
  */
-function findSdkSessionJsonl(sdkSessionId: string, _projectDir?: string): string | undefined {
-  const sdkConfigDir = getSdkConfigDir()
+function findSdkSessionJsonl(sdkSessionId: string, _projectDir?: string, scope?: UserScope): string | undefined {
+  const sdkConfigDir = getSdkConfigDir(scope)
 
   // 遍历所有项目目录查找匹配的 session JSONL
   // （SDK 的目录命名规则与 Proma 不完全一致，直接遍历最可靠）
@@ -1433,11 +1434,12 @@ export function rewindFilesFromSnapshot(
   projectDir?: string,
   forkSourceSdkSessionId?: string,
   attachedDirectories?: string[],
+  scope?: UserScope,
 ): { canRewind: boolean; error?: string; filesChanged?: string[]; insertions?: number; deletions?: number } {
-  const sdkConfigDir = getSdkConfigDir()
+  const sdkConfigDir = getSdkConfigDir(scope)
 
   // 1. 查找 SDK session JSONL（优先当前 session，找不到目标 UUID 时 fallback 到源会话）
-  let sessionFilePath = findSdkSessionJsonl(sdkSessionId, projectDir)
+  let sessionFilePath = findSdkSessionJsonl(sdkSessionId, projectDir, scope)
   let effectiveSdkSessionId = sdkSessionId
   let isForkFallback = false
 
@@ -1456,7 +1458,7 @@ export function rewindFilesFromSnapshot(
     // 在 forked JSONL 中找不到 → 直接切换到源会话 JSONL
     if (targetIdx < 0 && forkSourceSdkSessionId) {
       console.log(`[Agent 会话] rewindFilesFromSnapshot: 目标 UUID 在当前 JSONL 中未找到，切换到源会话 ${forkSourceSdkSessionId}`)
-      const sourceFilePath = findSdkSessionJsonl(forkSourceSdkSessionId, projectDir)
+      const sourceFilePath = findSdkSessionJsonl(forkSourceSdkSessionId, projectDir, scope)
       if (!sourceFilePath) {
         return { canRewind: false, error: '未找到源会话 SDK session JSONL（fork 回退需要源会话数据）' }
       }
