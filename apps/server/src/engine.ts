@@ -54,8 +54,9 @@ const orchestrator = new AgentOrchestrator(adapter, eventBus, { piBuiltinToolDep
 // ===== eventBus → WsStreamSink 中间件 =====
 // 将 orchestrator 发出的所有 AgentStreamPayload 转发到 WS 推送层
 
-eventBus.use((sessionId, payload, next) => {
-  wsStreamSink.emit(sessionId, payload)
+eventBus.use((sessionId, payload, next, ownerUserId) => {
+  // ownerUserId 由编排层按会话归属（scope.userId）透传，WS 层据此对 '*' 广播按用户过滤
+  wsStreamSink.emit(sessionId, payload, undefined, ownerUserId)
   next()
 })
 

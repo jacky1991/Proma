@@ -3,6 +3,10 @@
  *
  * Chat 模式工具统一管理 tab。
  * 内嵌 MemorySettings（记忆工具）+ 联网搜索工具配置。
+ *
+ * 角色门控（Web 端）：工具列表所有用户可见；
+ * 凭证配置/启用开关/测试/删除等写操作仅管理员可用（服务端同步 adminOnly 拦截，
+ * 普通用户读取凭证的路由同样 403，只读模式下不发起该请求）。
  */
 
 import * as React from 'react'
@@ -10,12 +14,14 @@ import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { toast } from 'sonner'
 import { ExternalLink, Eye, EyeOff, Loader2, CheckCircle2, XCircle, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Input } from '@/components/ui/input'
 import { MemorySettings } from './MemorySettings'
-import { SettingsSection, SettingsCard } from './primitives'
+import { SettingsSection, SettingsCard, SettingsRow } from './primitives'
 import { chatToolsAtom } from '@/atoms/chat-tool-atoms'
 import { toolSettingsFocusAtom, type ToolSettingsFocus } from '@/atoms/settings-tab'
+import { canManageAtom } from '@/atoms/auth'
 
 /** 刷新全局工具列表 atom */
 async function refreshChatTools(setter: (tools: Awaited<ReturnType<typeof window.electronAPI.getChatTools>>) => void): Promise<void> {
@@ -27,8 +33,27 @@ async function refreshChatTools(setter: (tools: Awaited<ReturnType<typeof window
   }
 }
 
+/** 普通用户只读工具卡片：仅展示启用状态（凭证与开关由管理员统一配置） */
+function ReadOnlyToolSection({ title, description, enabled }: {
+  title: string
+  description: string
+  enabled: boolean
+}): React.ReactElement {
+  return (
+    <SettingsSection title={title} description={description}>
+      <SettingsCard divided={false}>
+        <SettingsRow label="凭证与启用开关由管理员统一配置">
+          <Badge variant={enabled ? 'default' : 'secondary'}>{enabled ? '已启用' : '未启用'}</Badge>
+        </SettingsRow>
+      </SettingsCard>
+    </SettingsSection>
+  )
+}
+
 /** 联网搜索工具设置区域 */
 function WebSearchSettings(): React.ReactElement {
+  const canManage = useAtomValue(canManageAtom)
+  const chatTools = useAtomValue(chatToolsAtom)
   const [apiKey, setApiKey] = React.useState('')
   const [showApiKey, setShowApiKey] = React.useState(false)
   const [enabled, setEnabled] = React.useState(false)
@@ -37,11 +62,18 @@ function WebSearchSettings(): React.ReactElement {
   const [testResult, setTestResult] = React.useState<{ success: boolean; message: string } | null>(null)
   const setChatTools = useSetAtom(chatToolsAtom)
 
+  // 只读分支的启用状态：直接派生自全局 atom（启动即填充 + 文件监听实时刷新，无需单独 fetch）
+  const readOnlyEnabled = React.useMemo(
+    () => chatTools.find((t) => t.meta.id === 'web-search')?.enabled ?? false,
+    [chatTools]
+  )
+
   // 已保存的 API Key（用于判断是否有变更）
   const savedApiKeyRef = React.useRef('')
 
-  // 从主进程加载当前配置 + 凭据
+  // 管理员分支：从主进程加载当前配置 + 凭据（凭据路由 adminOnly，普通用户不触发）
   React.useEffect(() => {
+    if (!canManage) return
     Promise.all([
       window.electronAPI.getChatTools(),
       window.electronAPI.getChatToolCredentials('web-search'),
@@ -59,7 +91,7 @@ function WebSearchSettings(): React.ReactElement {
     }).finally(() => {
       setLoading(false)
     })
-  }, [])
+  }, [canManage])
 
   /** 静默保存 API Key（blur 时触发） */
   const handleBlurSave = React.useCallback(async (): Promise<void> => {
@@ -109,6 +141,16 @@ function WebSearchSettings(): React.ReactElement {
     } finally {
       setTesting(false)
     }
+  }
+
+  if (!canManage) {
+    return (
+      <ReadOnlyToolSection
+        title="联网搜索"
+        description="启用后 AI 可以实时搜索互联网获取最新信息"
+        enabled={readOnlyEnabled}
+      />
+    )
   }
 
   if (loading) {
@@ -197,6 +239,8 @@ function WebSearchSettings(): React.ReactElement {
 
 /** Nano Banana 生图工具设置区域 */
 function NanoBananaSettings(): React.ReactElement {
+  const canManage = useAtomValue(canManageAtom)
+  const chatTools = useAtomValue(chatToolsAtom)
   const [apiKey, setApiKey] = React.useState('')
   const [baseUrl, setBaseUrl] = React.useState('')
   const [model, setModel] = React.useState('')
@@ -207,9 +251,17 @@ function NanoBananaSettings(): React.ReactElement {
   const [testResult, setTestResult] = React.useState<{ success: boolean; message: string } | null>(null)
   const setChatTools = useSetAtom(chatToolsAtom)
 
+  // 只读分支的启用状态：直接派生自全局 atom（启动即填充 + 文件监听实时刷新，无需单独 fetch）
+  const readOnlyEnabled = React.useMemo(
+    () => chatTools.find((t) => t.meta.id === 'nano-banana')?.enabled ?? false,
+    [chatTools]
+  )
+
   const savedCredentialsRef = React.useRef({ apiKey: '', baseUrl: '', model: '' })
 
+  // 管理员分支：从主进程加载当前配置 + 凭据（凭据路由 adminOnly，普通用户不触发）
   React.useEffect(() => {
+    if (!canManage) return
     Promise.all([
       window.electronAPI.getChatTools(),
       window.electronAPI.getChatToolCredentials('nano-banana'),
@@ -229,7 +281,7 @@ function NanoBananaSettings(): React.ReactElement {
     }).finally(() => {
       setLoading(false)
     })
-  }, [])
+  }, [canManage])
 
   /** 静默保存凭据（blur 时触发） */
   const handleBlurSave = React.useCallback(async (): Promise<void> => {
@@ -280,6 +332,16 @@ function NanoBananaSettings(): React.ReactElement {
     } finally {
       setTesting(false)
     }
+  }
+
+  if (!canManage) {
+    return (
+      <ReadOnlyToolSection
+        title="Nano Banana"
+        description="启用后 AI 可以生成和编辑图片（基于 Gemini Image Generation）"
+        enabled={readOnlyEnabled}
+      />
+    )
   }
 
   if (loading) {
@@ -392,6 +454,7 @@ function NanoBananaSettings(): React.ReactElement {
 
 /** 自定义工具列表区域 */
 function CustomToolsSection(): React.ReactElement | null {
+  const canManage = useAtomValue(canManageAtom)
   const tools = useAtomValue(chatToolsAtom)
   const setChatTools = useSetAtom(chatToolsAtom)
 
@@ -444,20 +507,22 @@ function CustomToolsSection(): React.ReactElement | null {
                 </p>
               )}
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <Switch
-                checked={tool.enabled}
-                onCheckedChange={(checked) => handleToggle(tool.meta.id, checked)}
-              />
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                onClick={() => handleDelete(tool.meta.id, tool.meta.name)}
-              >
-                <Trash2 size={14} />
-              </Button>
-            </div>
+            {canManage && (
+              <div className="flex items-center gap-2 shrink-0">
+                <Switch
+                  checked={tool.enabled}
+                  onCheckedChange={(checked) => handleToggle(tool.meta.id, checked)}
+                />
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                  onClick={() => handleDelete(tool.meta.id, tool.meta.name)}
+                >
+                  <Trash2 size={14} />
+                </Button>
+              </div>
+            )}
           </div>
         ))}
       </SettingsCard>

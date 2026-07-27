@@ -36,3 +36,11 @@ export interface ResetUserPasswordInput {
   /** 新密码 */
   newPassword: string
 }
+
+/** 管理员删除用户的请求体（user:delete） */
+export interface DeleteUserInput {
+  /** 目标用户 ID */
+  userId: string
+  /** 删除确认标志，必须为 true（前端二次确认弹窗传入，防误删） */
+  confirm: boolean
+}

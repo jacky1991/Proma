@@ -19,6 +19,8 @@ export type AgentEventMiddleware = (
   sessionId: string,
   payload: AgentStreamPayload,
   next: () => void,
+  /** 会话归属用户 ID（编排层传入；供 WS 层对 '*' 广播按用户过滤；桌面单用户场景为 undefined） */
+  ownerUserId?: string,
 ) => void
 
 export class AgentEventBus {
@@ -30,8 +32,10 @@ export class AgentEventBus {
    *
    * 事件依次经过中间件链，最终分发给所有监听器。
    * 中间件可以通过不调用 next() 来拦截事件。
+   *
+   * @param ownerUserId 会话归属用户 ID（仅透传给中间件，供 WS 推送层做 '*' 广播过滤）
    */
-  emit(sessionId: string, payload: AgentStreamPayload): void {
+  emit(sessionId: string, payload: AgentStreamPayload, ownerUserId?: string): void {
     const dispatch = (): void => {
       for (const handler of this.handlers) {
         try {
@@ -56,7 +60,7 @@ export class AgentEventBus {
       const next = chain
       chain = () => {
         try {
-          mw(sessionId, payload, next)
+          mw(sessionId, payload, next, ownerUserId)
         } catch (error) {
           console.error(`[AgentEventBus] 中间件错误:`, error)
           next()

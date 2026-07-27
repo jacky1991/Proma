@@ -1,6 +1,6 @@
 {
   "name": "@proma/server-core",
-  "version": "0.3.7",
+  "version": "0.3.8",
   "license": "AGPL-3.0-only",
   "description": "Proma 核心引擎共享包：从 Electron 主进程剥离的零 Electron 依赖逻辑（Agent 会话 / 渠道 / 工作区 / 对话管理）。Electron 桌面端与 Web 服务端共用此真源。",
   "type": "module",

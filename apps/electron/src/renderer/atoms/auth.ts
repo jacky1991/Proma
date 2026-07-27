@@ -1,40 +1,26 @@
 /**
- * Auth Atoms - 当前登录用户状态（仅 Web 端）
+ * Auth Atoms - 当前登录用户状态（仅 Web 端有值）
  *
- * 数据真源是 Web shim 的 localStorage（auth-store），
+ * 数据真源是 Web shim 的 localStorage（auth-store 的 proma_user），
  * 此处的 atom 仅为内存投影，供 renderer 组件做角色判断（如管理员 UI 渲染）。
- * Electron 端 getAuthUser 不存在，atom 恒为 null，天然降级。
+ * 由 main.tsx 的 AuthInitializer 在应用启动时经 window.electronAPI.getAuthUser 灌入；
+ * Electron 端无登录概念，atom 恒为 null，UI 门控经 canManageAtom 天然放行。
  */
 
-import { useEffect } from 'react'
-import { atom, useAtomValue, useSetAtom } from 'jotai'
+import { atom } from 'jotai'
 import type { AuthUser } from '@proma/shared'
+import { isWebRuntime } from '@/lib/web-runtime'
 
 /** 当前登录用户（未登录或非 Web 环境为 null） */
-export const currentUserAtom = atom<AuthUser | null>(null)
+export const authUserAtom = atom<AuthUser | null>(null)
 
-/** 当前用户是否为管理员 */
-export const isAdminAtom = atom((get) => get(currentUserAtom)?.role === 'admin')
-
-/** 模块级加载守卫：全应用只发起一次加载 */
-let ensureStarted = false
+/** 当前用户是否为管理员（非 Web 环境恒为 false） */
+export const isAdminAtom = atom((get) => get(authUserAtom)?.role === 'admin')
 
 /**
- * 确保当前用户已加载，并返回当前用户
+ * 管理类操作是否可用（共享资源写操作的门控入口；纯 Web 管理员专属页面用 isAdminAtom）
  *
- * 首次调用时经 window.electronAPI.getAuthUser 从 localStorage 读取（幂等）。
- * 需要用户信息的组件（如账号设置）在顶层调用。
+ * - Web 端：仅管理员可执行渠道/提示词/工具等共享资源的写操作
+ * - Electron 端：单用户本地应用无登录概念，恒为 true（全部功能可用）
  */
-export function useEnsureCurrentUser(): AuthUser | null {
-  const currentUser = useAtomValue(currentUserAtom)
-  const setCurrentUser = useSetAtom(currentUserAtom)
-
-  useEffect(() => {
-    if (ensureStarted) return
-    ensureStarted = true
-    // 写入 atom 属于 store 写入，组件卸载后到达的响应亦可安全写入
-    void window.electronAPI.getAuthUser?.().then((u) => setCurrentUser(u ?? null))
-  }, [setCurrentUser])
-
-  return currentUser
-}
+export const canManageAtom = atom((get) => !isWebRuntime() || get(authUserAtom)?.role === 'admin')

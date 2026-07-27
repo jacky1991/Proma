@@ -21,6 +21,7 @@ import {
 } from '@proma/server-core/channel-manager'
 import { loginCodexOAuth, cancelCodexOAuthLogin } from '@proma/server-core/codex-oauth-service'
 import { streamSink } from '../engine'
+import { adminOnly } from '../middleware/role.ts'
 
 const channel = new Hono()
 
@@ -29,29 +30,29 @@ channel.post(`/${CHANNEL_IPC_CHANNELS.LIST}`, (c) => {
   return c.json(listChannels())
 })
 
-/** POST /api/channel:create → Channel */
-channel.post(`/${CHANNEL_IPC_CHANNELS.CREATE}`, async (c) => {
+/** POST /api/channel:create → Channel（仅管理员） */
+channel.post(`/${CHANNEL_IPC_CHANNELS.CREATE}`, adminOnly, async (c) => {
   const input = await c.req.json()
   const ch = createChannel(input)
   return c.json(ch)
 })
 
-/** POST /api/channel:update → Channel */
-channel.post(`/${CHANNEL_IPC_CHANNELS.UPDATE}`, async (c) => {
+/** POST /api/channel:update → Channel（仅管理员） */
+channel.post(`/${CHANNEL_IPC_CHANNELS.UPDATE}`, adminOnly, async (c) => {
   const { id, ...input } = await c.req.json()
   const ch = updateChannel(id, input)
   return c.json(ch)
 })
 
-/** POST /api/channel:delete → { ok: true } */
-channel.post(`/${CHANNEL_IPC_CHANNELS.DELETE}`, async (c) => {
+/** POST /api/channel:delete → { ok: true }（仅管理员） */
+channel.post(`/${CHANNEL_IPC_CHANNELS.DELETE}`, adminOnly, async (c) => {
   const { id } = await c.req.json()
   deleteChannel(id)
   return c.json({ ok: true })
 })
 
-/** POST /api/channel:test → { success: boolean; message?: string } */
-channel.post(`/${CHANNEL_IPC_CHANNELS.TEST}`, async (c) => {
+/** POST /api/channel:test → { success: boolean; message?: string }（仅管理员） */
+channel.post(`/${CHANNEL_IPC_CHANNELS.TEST}`, adminOnly, async (c) => {
   const { channelId } = await c.req.json()
   const result = await testChannel(channelId)
   return c.json(result)
@@ -66,14 +67,14 @@ channel.post(`/${CHANNEL_IPC_CHANNELS.FETCH_MODELS}`, async (c) => {
 
 // ===== 迭代 5 扩展 =====
 
-/** POST /api/channel:decrypt-key → string（解密后的 API Key） */
-channel.post(`/${CHANNEL_IPC_CHANNELS.DECRYPT_KEY}`, async (c) => {
+/** POST /api/channel:decrypt-key → string（解密后的 API Key，仅管理员） */
+channel.post(`/${CHANNEL_IPC_CHANNELS.DECRYPT_KEY}`, adminOnly, async (c) => {
   const { channelId } = await c.req.json<{ channelId: string }>()
   return c.json(decryptApiKey(channelId))
 })
 
-/** POST /api/channel:test-direct → ChannelTestResult */
-channel.post(`/${CHANNEL_IPC_CHANNELS.TEST_DIRECT}`, async (c) => {
+/** POST /api/channel:test-direct → ChannelTestResult（仅管理员） */
+channel.post(`/${CHANNEL_IPC_CHANNELS.TEST_DIRECT}`, adminOnly, async (c) => {
   const input = await c.req.json<ChannelDirectTestInput>()
   const result = await testChannelDirect(input)
   return c.json(result)
@@ -95,7 +96,7 @@ channel.post(`/${CHANNEL_IPC_CHANNELS.GET_PLAN_QUOTA}`, async (c) => {
  * 3. 用户授权后 SDK 本地 :1455 回调服务接收 code，loginCodexOAuth 完成
  * 4. 服务端通过 WS 广播 channel:codex-oauth-complete 通知客户端
  */
-channel.post(`/${CHANNEL_IPC_CHANNELS.CODEX_OAUTH_LOGIN}`, async (c) => {
+channel.post(`/${CHANNEL_IPC_CHANNELS.CODEX_OAUTH_LOGIN}`, adminOnly, async (c) => {
   try {
     // 等待授权 URL 就绪（最多 10 秒）
     const authUrl = await new Promise<string>((resolve, reject) => {
@@ -133,8 +134,8 @@ channel.post(`/${CHANNEL_IPC_CHANNELS.CODEX_OAUTH_LOGIN}`, async (c) => {
   }
 })
 
-/** POST /api/channel:codex-oauth-cancel → { ok: true } */
-channel.post(`/${CHANNEL_IPC_CHANNELS.CODEX_OAUTH_CANCEL}`, (c) => {
+/** POST /api/channel:codex-oauth-cancel → { ok: true }（仅管理员） */
+channel.post(`/${CHANNEL_IPC_CHANNELS.CODEX_OAUTH_CANCEL}`, adminOnly, (c) => {
   cancelCodexOAuthLogin()
   return c.json({ ok: true })
 })

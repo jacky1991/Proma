@@ -13,10 +13,13 @@
  *   { id, sessionId, channel, payload, timestamp }    带全局序号的事件帧
  *
  * M2 单用户：renderer 启动时 subscribe '*' 接收所有会话事件。
- * M3 多用户：按需订阅具体 sessionId。
+ * M3 多用户（迭代 8）：连接需经 ?token= 认证；订阅具体 sessionId 校验归属，
+ * '*' 广播与断线补发按事件 ownerUserId 过滤（仅归属用户与管理员可见）。
  */
 
 import type { ServerWebSocket } from 'bun'
+import { canAccessSession } from '@proma/server-core/agent-session-manager'
+import type { UserScope } from '@proma/server-core/config-paths'
 
 // ===== 类型 =====
 
@@ -32,6 +35,8 @@ interface BufferedEvent {
   payload: unknown
   /** 时间戳 */
   timestamp: number
+  /** 事件源归属用户（'*' 全局事件为 undefined；用于 '*' 广播与补发的按用户过滤） */
+  ownerUserId?: string
 }
 
 /** 客户端上行消息 */
@@ -43,7 +48,13 @@ interface WsMessage {
 
 /** 连接状态 */
 interface WsState {
-  /** 已订阅的 sessionId 集合（'*' 表示全部） */
+  /** 用户 ID（连接认证时写入） */
+  userId: string
+  /** 用户名 */
+  username: string
+  /** 角色 */
+  role: 'admin' | 'user'
+  /** 已订阅的 sessionId 集合（'*' 表示自己的全部会话，admin 收全部） */
   sessions: Set<string>
 }
 
@@ -104,7 +115,7 @@ function serializeEvent(event: BufferedEvent): string {
   return JSON.stringify(event)
 }
 
-/** 向指定会话的所有连接广播 */
+/** 向指定会话的所有连接广播（订阅时已校验归属，直接推送） */
 function broadcastToSession(sessionId: string, frame: string): void {
   const connections = sessionConnections.get(sessionId)
   if (!connections) return
@@ -117,11 +128,42 @@ function broadcastToSession(sessionId: string, frame: string): void {
   }
 }
 
-/** 补发 lastEventId 之后的事件（从指定缓冲） */
+/**
+ * 判断 '*' 通配订阅连接是否可接收该事件
+ *
+ * 实时广播与 lastEventId 断线补发共用此函数，避免补发路径绕过过滤（AC-5）。
+ * - 无归属的全局事件（ownerUserId 为 undefined，如工作区 / 自动化 / 渠道变更广播）
+ *   对所有用户可见，与实时广播路径（sessionId='*' 事件不过滤）保持一致
+ * - 会话事件一律携带 ownerUserId，仅归属用户与管理员可收到
+ */
+function canReceiveWildcardEvent(ws: ServerWebSocket<WsState>, event: BufferedEvent): boolean {
+  if (event.ownerUserId === undefined) return true
+  return ws.data.userId === event.ownerUserId || ws.data.role === 'admin'
+}
+
+/** 向 '*' 通配订阅连接广播（按事件归属过滤） */
+function broadcastToWildcardSubscribers(event: BufferedEvent, frame: string): void {
+  const connections = sessionConnections.get('*')
+  if (!connections) return
+  for (const ws of connections) {
+    if (!canReceiveWildcardEvent(ws, event)) continue
+    try {
+      ws.send(frame)
+    } catch (err) {
+      console.error('[WS] 通配推送失败:', err)
+    }
+  }
+}
+
+/**
+ * 补发 lastEventId 之后的事件（从指定缓冲）
+ *
+ * '*' 全局缓冲回放时套用与实时广播相同的归属过滤（AC-5：断线补发同样过滤）。
+ */
 function replayFrom(bufferKey: string, lastEventId: number, ws: ServerWebSocket<WsState>): void {
   const buf = buffers.get(bufferKey)
   if (!buf) return
-  const missed = buf.filter((e) => e.id > lastEventId)
+  const missed = buf.filter((e) => e.id > lastEventId && (bufferKey !== '*' || canReceiveWildcardEvent(ws, e)))
   for (const event of missed) {
     try {
       ws.send(serializeEvent(event))
@@ -147,8 +189,8 @@ function replayFrom(bufferKey: string, lastEventId: number, ws: ServerWebSocket<
 class TextDeltaAggregator {
   /** sessionId → 待聚合的 delta 文本数组 */
   private pending = new Map<string, string[]>()
-  /** sessionId → 原始事件元数据（channel 等，用于 flush 时重建帧） */
-  private meta = new Map<string, { channel: string }>()
+  /** sessionId → 原始事件元数据（channel / 归属用户，用于 flush 时重建帧） */
+  private meta = new Map<string, { channel: string; ownerUserId?: string }>()
   private timer: ReturnType<typeof setInterval> | null = null
 
   constructor(private sink: WsStreamSink) {
@@ -161,7 +203,7 @@ class TextDeltaAggregator {
    * 尝试聚合一个事件。
    * 返回 true 表示已聚合（调用方不再直接发送），false 表示需立即发送。
    */
-  tryAggregate(sessionId: string, payload: unknown, channel: string): boolean {
+  tryAggregate(sessionId: string, payload: unknown, channel: string, ownerUserId?: string): boolean {
     if (!WS_AGGREGATION_ENABLED) return false
 
     const p = payload as { kind?: string; event?: { type?: string; text?: string } }
@@ -173,7 +215,7 @@ class TextDeltaAggregator {
     const buf = this.pending.get(sessionId) ?? []
     buf.push(p.event.text)
     this.pending.set(sessionId, buf)
-    this.meta.set(sessionId, { channel })
+    this.meta.set(sessionId, { channel, ownerUserId })
     return true
   }
 
@@ -200,19 +242,20 @@ class TextDeltaAggregator {
   private emitBatch(sessionId: string, deltas: string[]): void {
     const meta = this.meta.get(sessionId)
     const channel = meta?.channel ?? 'agent:stream-event'
+    const ownerUserId = meta?.ownerUserId
 
     if (deltas.length === 1) {
       // 单条 delta 无需 batch，直接作为普通 text 事件发送
       this.sink.emitRaw(sessionId, {
         kind: 'proma_event',
         event: { type: 'text', text: deltas[0] },
-      }, channel)
+      }, channel, ownerUserId)
     } else {
       // 多条 delta 合并为 text_batch
       this.sink.emitRaw(sessionId, {
         kind: 'proma_event',
         event: { type: 'text_batch', deltas },
-      }, channel)
+      }, channel, ownerUserId)
     }
   }
 
@@ -286,12 +329,14 @@ export class WsStreamSink {
    * @param sessionId 会话 ID（全局事件传 '*'）
    * @param payload 事件负载
    * @param channel 事件通道（默认按 payload 推断）
+   * @param ownerUserId 事件源归属用户（编排层传入 scope.userId；全局事件不传）。
+   *                    '*' 通配广播与断线补发据此按用户过滤：仅归属用户与管理员可收到
    */
-  emit(sessionId: string, payload: unknown, channel?: string): void {
+  emit(sessionId: string, payload: unknown, channel?: string, ownerUserId?: string): void {
     const resolvedChannel = channel ?? this.inferChannel(payload)
 
     // 尝试聚合文本 delta（聚合成功则不直接发送）
-    if (this.aggregator.tryAggregate(sessionId, payload, resolvedChannel)) {
+    if (this.aggregator.tryAggregate(sessionId, payload, resolvedChannel, ownerUserId)) {
       return
     }
 
@@ -305,13 +350,13 @@ export class WsStreamSink {
     // 工具输出截断
     const processedPayload = truncateToolOutput(payload)
 
-    this.emitRaw(sessionId, processedPayload, resolvedChannel)
+    this.emitRaw(sessionId, processedPayload, resolvedChannel, ownerUserId)
   }
 
   /**
    * 直接发射事件（跳过聚合和截断，由聚合器 flush 时调用）
    */
-  emitRaw(sessionId: string, payload: unknown, channel?: string): void {
+  emitRaw(sessionId: string, payload: unknown, channel?: string, ownerUserId?: string): void {
     const resolvedChannel = channel ?? this.inferChannel(payload)
     const event: BufferedEvent = {
       id: ++seq,
@@ -319,20 +364,25 @@ export class WsStreamSink {
       sessionId,
       payload,
       timestamp: Date.now(),
+      ownerUserId,
     }
 
     const frame = serializeEvent(event)
 
-    // 追加到会话缓冲
-    appendToBuffer(sessionId, event, BUFFER_MAX_EVENTS)
-    // 同时追加到全局缓冲（供 '*' 订阅者 replay）
-    appendToBuffer('*', event, GLOBAL_BUFFER_MAX)
+    // 追加到会话缓冲；同时追加到全局缓冲（供 '*' 订阅者 replay）。
+    // 全局事件（sessionId='*'）只进全局缓冲一次，避免同一帧重复入缓冲导致 replay 双发
+    if (sessionId === '*') {
+      appendToBuffer('*', event, GLOBAL_BUFFER_MAX)
+    } else {
+      appendToBuffer(sessionId, event, BUFFER_MAX_EVENTS)
+      appendToBuffer('*', event, GLOBAL_BUFFER_MAX)
+    }
 
-    // 广播到该会话的订阅者
+    // 广播到该会话的订阅者（订阅时已校验归属）
     broadcastToSession(sessionId, frame)
-    // 广播到通配符 '*' 订阅者（M2 单用户全量接收）
+    // 广播到通配符 '*' 订阅者：按事件归属过滤（仅归属用户与管理员可收到）
     if (sessionId !== '*') {
-      broadcastToSession('*', frame)
+      broadcastToWildcardSubscribers(event, frame)
     }
 
     // 会话完成/错误后安排延迟清理
@@ -379,7 +429,7 @@ export const websocketHandlers = {
   open(ws: ServerWebSocket<WsState>) {
     ws.data.sessions = new Set()
     allConnections.add(ws)
-    console.log('[WS] 新连接建立')
+    console.log(`[WS] 新连接建立: ${ws.data.username} (${ws.data.userId})`)
   },
 
   message(ws: ServerWebSocket<WsState>, message: string | Buffer) {
@@ -389,6 +439,16 @@ export const websocketHandlers = {
       if (msg.type === 'subscribe') {
         const sessionId = msg.sessionId
         if (!sessionId) return
+
+        // 订阅归属校验（AC-2）：'*' 放行（过滤在广播侧按 ownerUserId 执行）；
+        // 具体 sessionId 必须是该用户自己的会话，否则拒绝且不产生任何该会话的推送
+        if (sessionId !== '*') {
+          const scope: UserScope = { userId: ws.data.userId }
+          if (!canAccessSession(scope, sessionId)) {
+            ws.send(JSON.stringify({ type: 'error', error: 'Forbidden', message: '无权访问该会话' }))
+            return
+          }
+        }
 
         ws.data.sessions.add(sessionId)
         if (!sessionConnections.has(sessionId)) {

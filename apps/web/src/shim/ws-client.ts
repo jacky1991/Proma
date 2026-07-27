@@ -53,8 +53,6 @@ function resolveWsUrl(config: ShimConfig): string {
 }
 
 export function createWsClient(config: ShimConfig): WsClient {
-  const wsUrl = resolveWsUrl(config)
-
   let ws: WebSocket | null = null
   let reconnectDelay = RECONNECT_BASE_DELAY
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
@@ -70,7 +68,9 @@ export function createWsClient(config: ShimConfig): WsClient {
   function connect() {
     if (closed) return
 
-    ws = new WebSocket(wsUrl)
+    // 每次建连（含重连）重新读取 token：401 透明刷新成功后 access token 已更新，
+    // 重连必须使用最新 token，否则会被服务端 upgrade 认证拒绝
+    ws = new WebSocket(resolveWsUrl(config))
 
     ws.onopen = () => {
       console.log('[WS] 连接建立')

@@ -412,6 +412,14 @@ export class AgentOrchestrator {
   /** 运行中会话的当前权限模式（支持运行时动态切换） */
   private sessionPermissionModes = new Map<string, PromaPermissionMode>()
 
+  /**
+   * 会话归属登记表：sessionId → 归属 userId
+   *
+   * sendMessage 入口按 scope 登记，emitEvent 发射事件时随事件总线透传给 WS 推送层，
+   * 用于 '*' 通配订阅的按用户过滤（M3 迭代 8）。会话归属不会跨用户变更，条目无需失效。
+   */
+  private sessionOwners = new Map<string, string>()
+
   constructor(adapter: AgentProviderAdapter, eventBus: AgentEventBus, deps: OrchestratorDeps = {}) {
     this.adapter = adapter
     this.eventBus = eventBus
@@ -428,6 +436,17 @@ export class AgentOrchestrator {
     const stoppedByUser = this.stoppedBySessions.has(sessionId)
     this.stoppedBySessions.delete(sessionId)
     return stoppedByUser
+  }
+
+  /**
+   * 发射事件（携带会话归属用户 ID）
+   *
+   * 归属在 sendMessage 入口按 scope 登记（sessionOwners）。WS 推送层据此对 '*'
+   * 通配订阅做按用户过滤：仅归属用户与管理员可收到会话事件。桌面单用户场景无
+   * scope，ownerUserId 为 undefined。
+   */
+  private emitEvent(sessionId: string, payload: AgentStreamPayload): void {
+    this.eventBus.emit(sessionId, payload, this.sessionOwners.get(sessionId))
   }
 
   /**
@@ -860,6 +879,10 @@ export class AgentOrchestrator {
    */
   async sendMessage(input: AgentSendInput, callbacks: SessionCallbacks, scope?: UserScope): Promise<void> {
     const { sessionId, userMessage, channelId, modelId, agentRuntime: inputAgentRuntime, workspaceId, additionalDirectories, customMcpServers, permissionModeOverride, mentionedSkills, mentionedMcpServers, mentionedSessionIds, automationContext, retryOfErrorUuid } = input
+
+    // 登记会话归属：WS '*' 通配广播据此按用户过滤（见 emitEvent 与 apps/server ws.ts）
+    if (scope) this.sessionOwners.set(sessionId, scope.userId)
+
     const stderrChunks: string[] = []
     const streamStartedAt = input.startedAt ?? Date.now()
     let userMessagePersisted = false
@@ -1261,7 +1284,7 @@ export class AgentOrchestrator {
       console.log(`[Agent 编排] 权限模式: ${initialPermissionMode}${permissionModeOverride ? '（外部覆盖）' : ''}`)
 
       const emitPlanModeChanged = (active: boolean, source: 'initial' | 'tool' | 'permission'): void => {
-        this.eventBus.emit(sessionId, {
+        this.emitEvent(sessionId, {
           kind: 'proma_event',
           event: { type: 'plan_mode_changed', sessionId, active, source },
         })
@@ -1269,7 +1292,7 @@ export class AgentOrchestrator {
 
       // 当初始模式为 plan 时，通知渲染进程展示计划模式 UI（如「Agent 正在规划」横幅）
       if (initialPermissionMode === 'plan') {
-        this.eventBus.emit(sessionId, { kind: 'proma_event', event: { type: 'enter_plan_mode', sessionId } })
+        this.emitEvent(sessionId, { kind: 'proma_event', event: { type: 'enter_plan_mode', sessionId } })
         emitPlanModeChanged(true, 'initial')
       }
 
@@ -1284,7 +1307,7 @@ export class AgentOrchestrator {
           toolInput,
           signal,
           (request: ExitPlanModeRequest) => {
-            this.eventBus.emit(sessionId, { kind: 'proma_event', event: { type: 'exit_plan_mode_request', request } })
+            this.emitEvent(sessionId, { kind: 'proma_event', event: { type: 'exit_plan_mode_request', request } })
           },
         )
       }
@@ -1412,7 +1435,7 @@ export class AgentOrchestrator {
         if (toolName === 'EnterPlanMode') {
           planModeEntered = true
           emitPlanModeChanged(true, 'tool')
-          this.eventBus.emit(sessionId, { kind: 'proma_event', event: { type: 'enter_plan_mode', sessionId } })
+          this.emitEvent(sessionId, { kind: 'proma_event', event: { type: 'enter_plan_mode', sessionId } })
           return { behavior: 'allow' as const, updatedInput: input }
         }
 
@@ -1421,7 +1444,7 @@ export class AgentOrchestrator {
           return askUserService.handleAskUserQuestion(
             sessionId, input, options.signal,
             (request: AskUserRequest) => {
-              this.eventBus.emit(sessionId, { kind: 'proma_event', event: { type: 'ask_user_request', request } })
+              this.emitEvent(sessionId, { kind: 'proma_event', event: { type: 'ask_user_request', request } })
             },
           )
         }
@@ -1521,7 +1544,7 @@ export class AgentOrchestrator {
         // `[1m]` 是 SDK 内部上下文变体，不应泄漏到标题生成或用户可见的模型名。
         resolvedModel = model.replace(/\[1m\]$/i, '')
         console.log(`[Agent 编排] SDK 确认模型: ${resolvedModel}`)
-        this.eventBus.emit(sessionId, { kind: 'proma_event', event: { type: 'model_resolved', model: resolvedModel } })
+        this.emitEvent(sessionId, { kind: 'proma_event', event: { type: 'model_resolved', model: resolvedModel } })
       }
       const handleContextWindow = (cw: number): void => {
         const inferredWindow = inferAgentSdkContextWindow(modelId, channel.provider)
@@ -1529,7 +1552,7 @@ export class AgentOrchestrator {
         console.log(`[Agent 编排] 缓存 contextWindow: ${contextWindow}`)
         // result 消息里的真实 contextWindow 透传到 renderer，
         // 覆盖流式过程中按模型名推断的 fallback 值（智谱等端点会把 [1m] 等后缀剥掉，导致 fallback 不准）
-        this.eventBus.emit(sessionId, {
+        this.emitEvent(sessionId, {
           kind: 'proma_event',
           event: { type: 'context_window', contextWindow },
         })
@@ -1587,7 +1610,7 @@ export class AgentOrchestrator {
         onModelResolved: handleModelResolved,
         onContextWindow: handleContextWindow,
         onRetry: (retry: import('./adapters/pi-retry-control').PiRetryUpdate) => {
-          this.eventBus.emit(sessionId, { kind: 'proma_event', event: { type: 'retry', ...retry } })
+          this.emitEvent(sessionId, { kind: 'proma_event', event: { type: 'retry', ...retry } })
         },
       } : {
         agentRuntime: 'claude',
@@ -1699,11 +1722,11 @@ export class AgentOrchestrator {
 
             // 前 RETRY_VISIBILITY_THRESHOLD 次重试静默进行，避免偶发瞬时波动频繁惊扰用户
             if (retryAttempt > RETRY_VISIBILITY_THRESHOLD) {
-              this.eventBus.emit(sessionId, {
+              this.emitEvent(sessionId, {
                 kind: 'proma_event',
                 event: { type: 'retry', status: 'starting', attempt: retryAttempt, maxAttempts: MAX_AUTO_RETRIES, delaySeconds: delaySec, reason: lastRetryableError ?? '未知错误' },
               })
-              this.eventBus.emit(sessionId, {
+              this.emitEvent(sessionId, {
                 kind: 'proma_event',
                 event: { type: 'retry', status: 'attempt', attemptData },
               })
@@ -1791,7 +1814,7 @@ export class AgentOrchestrator {
               const sub = msg.type === 'system' ? (msg as { subtype?: string }).subtype : undefined
               if (msg.type === 'assistant' || msg.type === 'user' || sub === 'task_started' || sub === 'task_progress') {
                 awaitingBackgroundWake = false
-                this.eventBus.emit(sessionId, { kind: 'proma_event', event: { type: 'run_resumed', sessionId } })
+                this.emitEvent(sessionId, { kind: 'proma_event', event: { type: 'run_resumed', sessionId } })
               }
             }
 
@@ -1935,14 +1958,14 @@ export class AgentOrchestrator {
 
                 // 如果之前有可见重试记录，发送 retry_failed
                 if (retryAttemptsScheduled > RETRY_VISIBILITY_THRESHOLD && lastRetryableError) {
-                  this.eventBus.emit(sessionId, {
+                  this.emitEvent(sessionId, {
                     kind: 'proma_event',
                     event: { type: 'retry', status: 'failed', attemptData: { attempt: retryAttemptsScheduled, timestamp: Date.now(), reason: lastRetryableError, errorMessage: typedError.message, delaySeconds: 0 } },
                   })
                 }
 
                 // 透传归一化后的错误消息到前端，避免 SDK 原始 API Error 直接暴露给用户。
-                this.eventBus.emit(sessionId, { kind: 'sdk_message', message: errorSDKMsg })
+                this.emitEvent(sessionId, { kind: 'sdk_message', message: errorSDKMsg })
                 try { updateAgentSessionMeta(sessionId, {}, scope) } catch { /* 忽略 */ }
                 completeRun(getAgentSessionMessages(sessionId, scope), { startedAt: streamStartedAt })
                 return
@@ -2078,7 +2101,7 @@ export class AgentOrchestrator {
             if (!shouldEmit) {
               // 跳过 SDK 内部 user 消息的前端推送
             } else {
-              this.eventBus.emit(sessionId, { kind: 'sdk_message', message: msg })
+              this.emitEvent(sessionId, { kind: 'sdk_message', message: msg })
             }
           }
 
@@ -2091,7 +2114,7 @@ export class AgentOrchestrator {
 
           // 正常完成 — 如果之前有可见重试，发送 retry_cleared
           if (!wasStoppedByUser && retryAttemptsScheduled > RETRY_VISIBILITY_THRESHOLD) {
-            this.eventBus.emit(sessionId, { kind: 'proma_event', event: { type: 'retry', status: 'cleared' } })
+            this.emitEvent(sessionId, { kind: 'proma_event', event: { type: 'retry', status: 'cleared' } })
             console.log(`[Agent 编排] 重试成功，已在第 ${attempt} 次尝试后恢复`)
           }
           retrySucceeded = true
@@ -2113,7 +2136,7 @@ export class AgentOrchestrator {
 
           // Plan 模式：Agent 完成规划后注入"接受计划"建议
           if (initialPermissionMode === 'plan' && planModeEntered && this.activeSessions.has(sessionId)) {
-            this.eventBus.emit(sessionId, {
+            this.emitEvent(sessionId, {
               kind: 'sdk_message',
               message: { type: 'prompt_suggestion', suggestion: '请执行该计划' } as unknown as SDKMessage,
             })
@@ -2314,7 +2337,7 @@ export class AgentOrchestrator {
 
           // 如果之前有可见重试记录，发送 retry_failed
           if (retryAttemptsScheduled > RETRY_VISIBILITY_THRESHOLD && lastRetryableError) {
-            this.eventBus.emit(sessionId, {
+            this.emitEvent(sessionId, {
               kind: 'proma_event',
               event: { type: 'retry', status: 'failed', attemptData: { attempt: retryAttemptsScheduled, timestamp: Date.now(), reason: lastRetryableError, errorMessage: userFacingError, delaySeconds: 0 } },
             })
@@ -2345,7 +2368,7 @@ export class AgentOrchestrator {
 
         // 仅当重试曾经对用户可见时才发送 retry_failed 事件
         if (retryAttemptsScheduled > RETRY_VISIBILITY_THRESHOLD) {
-          this.eventBus.emit(sessionId, {
+          this.emitEvent(sessionId, {
             kind: 'proma_event',
             event: { type: 'retry', status: 'failed', attemptData: { attempt: retryAttemptsScheduled || MAX_AUTO_RETRIES, timestamp: Date.now(), reason: lastRetryableError, errorMessage: retryFailureMessage, delaySeconds: 0 } },
           })
@@ -2401,6 +2424,17 @@ export class AgentOrchestrator {
   }
 
   /**
+   * 查询会话归属用户 ID（未登记返回 undefined）
+   *
+   * 供路由层回调事件（permission_resolved / ask_user_resolved 等）补归属：
+   * 这些事件应推送给会话所有者与管理员，归属以 sendMessage 入口登记为准，
+   * 而非响应请求的调用者（管理员也可能代答他人会话的权限请求）。
+   */
+  getSessionOwner(sessionId: string): string | undefined {
+    return this.sessionOwners.get(sessionId)
+  }
+
+  /**
    * 运行中动态切换会话的权限模式
    *
    * 同时更新 Proma 侧（canUseTool 闭包读取的 Map）和 SDK 侧（query.setPermissionMode）。
@@ -2409,7 +2443,7 @@ export class AgentOrchestrator {
   async updateSessionPermissionMode(sessionId: string, mode: PromaPermissionMode): Promise<void> {
     if (!this.activeSessions.has(sessionId)) return
     this.sessionPermissionModes.set(sessionId, mode)
-    this.eventBus.emit(sessionId, {
+    this.emitEvent(sessionId, {
       kind: 'proma_event',
       event: { type: 'plan_mode_changed', sessionId, active: mode === 'plan', source: 'permission' },
     })

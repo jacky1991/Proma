@@ -10,7 +10,7 @@
  * - admin 账户由产品初始化流程内置创建（密码来自配置文件），注册用户均为 user。
  */
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { getDataRoot } from './config-paths.ts'
 
@@ -156,17 +156,40 @@ export function listUsers(): User[] {
 }
 
 /**
- * 删除用户
+ * 删除用户（级联清理私有数据）
  *
- * ID 不存在时静默忽略。
+ * 删除保护（违反时抛 Error，由路由层转 400）：
+ * - 禁止删除内置 admin 账户（保证系统始终有管理员）
+ * - 禁止删除操作者自己
+ *
+ * 删除成功后级联移除 users/{userId}/ 私有数据目录
+ * （会话 / 对话 / 设置 / 档案 / 附件 / agent-home），不动全局资源
+ * （渠道 / 工作区 / MCP / Skills）。
+ *
+ * @param id 目标用户 ID
+ * @param operatorId 执行删除的操作者用户 ID
  */
-export function deleteUser(id: string): void {
+export function deleteUser(id: string, operatorId: string): void {
   const users = readUsers()
-  const next = users.filter((u) => u.id !== id)
-  if (next.length === users.length) return
+  const target = users.find((u) => u.id === id)
+  if (!target) {
+    throw new Error(`用户不存在 id=${id}`)
+  }
+  if (target.username === 'admin') {
+    throw new Error('不能删除内置 admin 账户')
+  }
+  if (id === operatorId) {
+    throw new Error('不能删除操作者自己')
+  }
 
+  const next = users.filter((u) => u.id !== id)
   writeUsers(next)
-  console.log(`[用户管理] 已删除用户 id=${id}`)
+
+  // 级联删除用户私有数据目录（force：目录不存在时静默忽略，不阻塞账户删除）
+  const userDir = join(getDataRoot(), 'users', id)
+  rmSync(userDir, { recursive: true, force: true })
+
+  console.log(`[用户管理] 已删除用户 ${target.username}（id=${id}），并清理私有数据目录`)
 }
 
 /**

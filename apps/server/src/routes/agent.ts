@@ -158,25 +158,27 @@ agent.post(`/${AGENT_IPC_CHANNELS.UPDATE_SESSION_PERMISSION_MODE}`, async (c) =>
 agent.post(`/${AGENT_IPC_CHANNELS.SEND_MESSAGE}`, async (c) => {
   const input = await c.req.json<AgentSendInput>()
   const sessionId = input.sessionId
+  const scope = getUserScope(c)
 
   // 构建 SessionCallbacks：将事件转发到 StreamSink（WS 推送）
+  // 控制信号携带会话归属（scope.userId）：前端仅订阅 '*'，WS 层据此让归属用户收到事件
   const callbacks = {
     onError: (error: string) => {
-      streamSink.emit(sessionId, { type: 'stream-error', error })
+      streamSink.emit(sessionId, { type: 'stream-error', error }, undefined, scope.userId)
     },
     onComplete: (messages?: AgentMessage[], opts?: { stoppedByUser?: boolean }) => {
-      streamSink.emit(sessionId, { type: 'stream-complete', messages, ...opts })
+      streamSink.emit(sessionId, { type: 'stream-complete', messages, ...opts }, undefined, scope.userId)
     },
     onTitleUpdated: (title: string) => {
-      streamSink.emit(sessionId, { type: 'title-updated', title })
+      streamSink.emit(sessionId, { type: 'title-updated', title }, undefined, scope.userId)
     },
     onRunStarted: (opts: { startedAt: number }) => {
-      streamSink.emit(sessionId, { type: 'run-started', ...opts })
+      streamSink.emit(sessionId, { type: 'run-started', ...opts }, undefined, scope.userId)
     },
   }
 
   // 异步执行，不等待完成（流式事件经 WS 推送）
-  orchestrator.sendMessage(input, callbacks, getUserScope(c)).catch((err: unknown) => {
+  orchestrator.sendMessage(input, callbacks, scope).catch((err: unknown) => {
     console.error('[Agent 路由] sendMessage 失败:', err)
   })
   return c.json({ ok: true })
@@ -244,12 +246,12 @@ agent.post(`/${AGENT_IPC_CHANNELS.PERMISSION_RESPOND}`, async (c) => {
   const { requestId, behavior, alwaysAllow } = response
   const sessionId = permissionService.respondToPermission(requestId, behavior, alwaysAllow)
 
-  // 发送 permission_resolved 事件到 WS
+  // 发送 permission_resolved 事件到 WS（归属按会话所有者，管理员代答时所有者仍能收到）
   if (sessionId) {
     streamSink.emit(sessionId, {
       kind: 'proma_event',
       event: { type: 'permission_resolved', requestId, behavior },
-    })
+    }, undefined, orchestrator.getSessionOwner(sessionId))
   }
   return c.json({ ok: true })
 })
@@ -264,7 +266,7 @@ agent.post(`/${AGENT_IPC_CHANNELS.ASK_USER_RESPOND}`, async (c) => {
     streamSink.emit(sessionId, {
       kind: 'proma_event',
       event: { type: 'ask_user_resolved', requestId },
-    })
+    }, undefined, orchestrator.getSessionOwner(sessionId))
   }
   return c.json({ ok: true })
 })
@@ -277,12 +279,14 @@ agent.post(`/${AGENT_IPC_CHANNELS.EXIT_PLAN_MODE_RESPOND}`, async (c) => {
 
   if (result) {
     const { sessionId, targetMode } = result
+    // 事件归属按会话所有者（管理员代答时所有者仍能收到）
+    const ownerUserId = orchestrator.getSessionOwner(sessionId)
 
     // 通知渲染进程请求已处理
     streamSink.emit(sessionId, {
       kind: 'proma_event',
       event: { type: 'exit_plan_mode_resolved', requestId: response.requestId },
-    })
+    }, undefined, ownerUserId)
 
     // 如果用户选择了新的权限模式，持久化并通知 UI
     if (targetMode) {
@@ -297,7 +301,7 @@ agent.post(`/${AGENT_IPC_CHANNELS.EXIT_PLAN_MODE_RESPOND}`, async (c) => {
       streamSink.emit(sessionId, {
         kind: 'proma_event',
         event: { type: 'permission_mode_changed', mode: targetMode },
-      })
+      }, undefined, ownerUserId)
     }
   }
   return c.json({ ok: true })

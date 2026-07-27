@@ -4,6 +4,7 @@ import './bootstrap'
 import { existsSync, readFileSync, mkdirSync } from 'node:fs'
 import { app } from './app'
 import { websocketHandlers } from './ws'
+import { verifyToken } from './auth/jwt'
 import { getDataRoot, getProxySettingsPath } from '@proma/server-core/config-paths'
 import { initAdminUser } from '@proma/server-core/user-manager'
 
@@ -51,12 +52,28 @@ const port = Number(process.env.PORT ?? 3000)
 
 const server = Bun.serve({
   port,
-  fetch(req, srv) {
+  async fetch(req, srv) {
     const url = new URL(req.url)
-    // WebSocket 升级：/ws 路径
+    // WebSocket 升级：/ws 路径（AC-1：连接认证）
     if (url.pathname === '/ws') {
-      // upgrade 时初始化连接状态（subscriptions 集合），open 中无需重复赋值
-      if (srv.upgrade(req, { data: { sessions: new Set<string>() } })) {
+      // 浏览器 WebSocket API 无法自定义请求头，token 只能经 query 参数传递。
+      // 权衡：token 会出现在服务端访问日志中；access token 有效期 1 天，
+      // 企业内网部署可接受（与部署假设一致）。
+      const token = url.searchParams.get('token')
+      const payload = token ? await verifyToken(token) : null
+      if (!payload) {
+        return new Response('Unauthorized', { status: 401 })
+      }
+
+      // upgrade 时将认证结果写入连接状态，供订阅归属校验与 '*' 广播过滤使用
+      if (srv.upgrade(req, {
+        data: {
+          userId: payload.sub,
+          username: payload.username,
+          role: payload.role,
+          sessions: new Set<string>(),
+        },
+      })) {
         return // 升级成功，不返回 HTTP 响应
       }
       return new Response('WebSocket 升级失败', { status: 400 })

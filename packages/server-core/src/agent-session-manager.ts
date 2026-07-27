@@ -210,6 +210,15 @@ export function getAgentSessionMeta(id: string, scope?: UserScope): AgentSession
 }
 
 /**
+ * 校验用户是否拥有指定会话（按该用户会话索引存在性判断）
+ *
+ * 用于 WS 订阅归属校验。'*' 订阅不走此函数（在广播侧按事件帧 ownerUserId 过滤）。
+ */
+export function canAccessSession(scope: UserScope, sessionId: string): boolean {
+  return getAgentSessionMeta(sessionId, scope) !== undefined
+}
+
+/**
  * 创建新会话
  */
 export function createAgentSession(

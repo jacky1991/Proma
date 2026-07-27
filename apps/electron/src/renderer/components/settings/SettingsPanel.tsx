@@ -24,12 +24,13 @@ import {
   HardDriveDownload,
   HardDrive,
   CircleUser,
+  Users,
 } from "lucide-react";
 import { isWebRuntime } from "@/lib/web-runtime";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { settingsTabAtom, channelFormDirtyAtom, settingsCloseRequestedAtom, settingsOpenAtom } from "@/atoms/settings-tab";
 import type { SettingsTab } from "@/atoms/settings-tab";
-import { appModeAtom } from "@/atoms/app-mode";
+import { canManageAtom } from "@/atoms/auth";
 import { hasUpdateAtom } from "@/atoms/updater";
 import { tabsAtom, activeTabIdAtom, openTab, TUTORIAL_TAB_ID } from "@/atoms/tab-atoms";
 import { hasEnvironmentIssuesAtom } from "@/atoms/environment";
@@ -56,12 +57,18 @@ import { VoiceInputSettings } from "./VoiceInputSettings";
 import { MigrationSettings } from "./MigrationSettings";
 import { StorageSettings } from "./StorageSettings";
 import { AccountSettings } from "./AccountSettings";
+import { UserSettings } from "./UserSettings";
 
 /** 设置 Tab 定义 */
 interface TabItem {
   id: SettingsTab;
   label: string;
   icon: React.ReactNode;
+  /**
+   * Web 端管理员专属（普通用户不渲染导航项）。
+   * 桌面端无登录概念、canManage 恒为 true，此标记天然不生效。
+   */
+  adminOnly?: boolean;
 }
 
 /** 基础 Tabs（所有模式都有） */
@@ -69,26 +76,36 @@ const BASE_TABS: TabItem[] = [
   { id: "general", label: "通用设置", icon: <Settings size={16} /> },
   { id: "channels", label: "模型配置", icon: <Radio size={16} /> },
   { id: "prompts", label: "提示词管理", icon: <BookOpen size={16} /> },
-  { id: "proxy", label: "代理设置", icon: <Globe size={16} /> },
+  // 管理员专属：路由层已 adminOnly（含读取）
+  { id: "proxy", label: "代理设置", icon: <Globe size={16} />, adminOnly: true },
 ];
 
-/** 账号 Tab（仅 Web 端：改密 / 管理员用户管理；Electron 无登录概念） */
+/** 账号 Tab（仅 Web 端：改密 / 退出登录；Electron 无登录概念） */
 const ACCOUNT_TAB: TabItem = {
   id: "account",
   label: "账号设置",
   icon: <CircleUser size={16} />,
 };
-const ACCOUNT_TABS: TabItem[] = isWebRuntime() ? [ACCOUNT_TAB] : [];
+
+// 管理员专属：纯 Web 管理员页面（组件内另以 isAdminAtom 兜底）；桌面端无登录概念，不可达
+const USERS_TAB: TabItem = {
+  id: "users",
+  label: "用户管理",
+  icon: <Users size={16} />,
+  adminOnly: true,
+};
 
 const TOOLS_TAB: TabItem = {
   id: "tools",
   label: "Chat 工具",
   icon: <Wrench size={16} />,
 };
+// 管理员专属：底层能力未迁移 Web，路由层无暴露面（去留随 M4 桌面清理再议）
 const BOTS_TAB: TabItem = {
   id: "bots",
   label: "远程连接",
   icon: <Bot size={16} />,
+  adminOnly: true,
 };
 const TUTORIAL_TAB: TabItem = {
   id: "tutorial",
@@ -106,12 +123,25 @@ const VOICE_INPUT_TAB: TabItem = {
   icon: <Mic size={16} />,
 };
 
-/** 尾部 Tabs */
+/** 尾部 Tabs（migration / storage 管理员专属：底层能力未迁移 Web，路由层无暴露面，去留随 M4 桌面清理再议） */
 const TAIL_TABS: TabItem[] = [
-  { id: "migration", label: "数据迁移", icon: <HardDriveDownload size={16} /> },
-  { id: "storage", label: "磁盘管理", icon: <HardDrive size={16} /> },
+  { id: "migration", label: "数据迁移", icon: <HardDriveDownload size={16} />, adminOnly: true },
+  { id: "storage", label: "磁盘管理", icon: <HardDrive size={16} />, adminOnly: true },
   { id: "appearance", label: "外观设置", icon: <Palette size={16} /> },
   { id: "about", label: "关于/更新", icon: <Info size={16} /> },
+];
+
+/** 全部 Tab 平铺（account / users 仅 Web 端存在，组件内按平台过滤） */
+const ALL_TABS: TabItem[] = [
+  ...BASE_TABS,
+  ACCOUNT_TAB,
+  USERS_TAB,
+  TOOLS_TAB,
+  VOICE_INPUT_TAB,
+  BOTS_TAB,
+  TUTORIAL_TAB,
+  SHORTCUTS_TAB,
+  ...TAIL_TABS,
 ];
 
 /** 根据标签页 id 渲染对应内容 */
@@ -121,6 +151,8 @@ function renderTabContent(tab: SettingsTab): React.ReactElement {
       return <GeneralSettings />;
     case "account":
       return <AccountSettings />;
+    case "users":
+      return <UserSettings />;
     case "channels":
       return <ChannelSettings />;
     case "prompts":
@@ -160,7 +192,7 @@ export function SettingsPanel({
   const channelFormDirty = useAtomValue(channelFormDirtyAtom);
   const [closeRequested, setCloseRequested] = useAtom(settingsCloseRequestedAtom);
   const setSettingsOpen = useSetAtom(settingsOpenAtom);
-  const appMode = useAtomValue(appModeAtom);
+  const canManage = useAtomValue(canManageAtom);
   const hasUpdate = useAtomValue(hasUpdateAtom);
   const hasEnvironmentIssues = useAtomValue(hasEnvironmentIssuesAtom);
   const [mainTabs, setMainTabs] = useAtom(tabsAtom);
@@ -221,31 +253,24 @@ export function SettingsPanel({
     }
   }, [closeRequested, activeTab, setCloseRequested])
 
-  // 工具 tab 两种模式都显示，Agent Skills / MCP 独立在侧边栏能力中心管理。
+  // 按运行环境与角色组装可见 tab：
+  // - 桌面端无登录概念：全部 tab 可见（仅排除 Web 登录相关的账号/用户管理）
+  // - Web 管理员：全部可见（含账号设置 / 用户管理）
+  // - Web 普通用户：隐藏 adminOnly 标记的管理员专属导航项
   const tabs = React.useMemo(() => {
-    if (appMode === "agent") {
-      return [
-        ...BASE_TABS,
-        ...ACCOUNT_TABS,
-        TOOLS_TAB,
-        VOICE_INPUT_TAB,
-        BOTS_TAB,
-        TUTORIAL_TAB,
-        SHORTCUTS_TAB,
-        ...TAIL_TABS,
-      ];
+    const all = isWebRuntime()
+      ? ALL_TABS
+      : ALL_TABS.filter((tab) => tab.id !== "account" && tab.id !== "users")
+    return canManage ? all : all.filter((tab) => !tab.adminOnly)
+  }, [canManage]);
+
+  // 深链防御：当前 tab 不在可见列表时（如普通用户被外部直接指定管理员专属 tab id）
+  // 回退到 channels（所有用户可见）。
+  React.useEffect(() => {
+    if (!tabs.some((tab) => tab.id === activeTab)) {
+      setActiveTab("channels");
     }
-    return [
-      ...BASE_TABS,
-      ...ACCOUNT_TABS,
-      TOOLS_TAB,
-      VOICE_INPUT_TAB,
-      BOTS_TAB,
-      TUTORIAL_TAB,
-      SHORTCUTS_TAB,
-      ...TAIL_TABS,
-    ];
-  }, [appMode]);
+  }, [tabs, activeTab, setActiveTab]);
 
   // 当前 tab 标题
   const activeTabLabel = tabs.find((t) => t.id === activeTab)?.label ?? "设置";

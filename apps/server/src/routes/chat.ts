@@ -42,8 +42,13 @@ import { getUserScope } from '../utils/user-scope'
 
 const chat = new Hono()
 
-/** 将 ChatStreamEvent 转发到 WS（按事件类型分通道） */
-function chatStreamEmitter(event: ChatStreamEvent): void {
+/**
+ * 将 ChatStreamEvent 转发到 WS（按事件类型分通道）
+ *
+ * ownerUserId 由发起请求的路由传入（对话按用户隔离，发起者即归属者），
+ * WS 层据此对 '*' 通配订阅按用户过滤
+ */
+function chatStreamEmitter(event: ChatStreamEvent, ownerUserId?: string): void {
   const channelMap: Record<string, string> = {
     'chunk': CHAT_IPC_CHANNELS.STREAM_CHUNK,
     'reasoning': CHAT_IPC_CHANNELS.STREAM_REASONING,
@@ -52,7 +57,7 @@ function chatStreamEmitter(event: ChatStreamEvent): void {
     'tool-activity': CHAT_IPC_CHANNELS.STREAM_TOOL_ACTIVITY,
   }
   const channel = channelMap[event.type] ?? 'chat:stream:chunk'
-  streamSink.emit(event.conversationId, event, channel)
+  streamSink.emit(event.conversationId, event, channel, ownerUserId)
 }
 
 // ===== 对话管理 =====
@@ -142,8 +147,9 @@ chat.post(`/${CHAT_IPC_CHANNELS.UPDATE_CONTEXT_DIVIDERS}`, async (c) => {
 /** POST /api/chat:send-message → { ok: true }（流式事件经 WS 推送） */
 chat.post(`/${CHAT_IPC_CHANNELS.SEND_MESSAGE}`, async (c) => {
   const input = await c.req.json<ChatSendInput>()
-  // 异步执行，不等待完成（流式事件经 WS 推送）
-  sendChatMessage(input, chatStreamEmitter).catch((err: unknown) => {
+  const ownerUserId = getUserScope(c).userId
+  // 异步执行，不等待完成（流式事件经 WS 推送，携带归属用户）
+  sendChatMessage(input, (event) => chatStreamEmitter(event, ownerUserId)).catch((err: unknown) => {
     console.error('[Chat 路由] sendMessage 失败:', err)
   })
   return c.json({ ok: true })

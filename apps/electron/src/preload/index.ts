@@ -112,6 +112,7 @@ import type {
   AuthUser,
   ChangePasswordInput,
   ResetUserPasswordInput,
+  DeleteUserInput,
 } from '@proma/shared'
 import type {
   UserProfile,
@@ -1077,6 +1078,8 @@ export interface ElectronAPI {
   listUsers?: () => Promise<AuthUser[]>
   /** 管理员重置任意用户密码 */
   resetUserPassword?: (input: ResetUserPasswordInput) => Promise<{ ok: boolean }>
+  /** 管理员删除用户（级联清理其私有数据；confirm 必填，防误删） */
+  deleteUser?: (input: DeleteUserInput) => Promise<{ ok: boolean }>
   /** 退出登录：清空本地 token 与用户信息（跳转登录页由调用方完成） */
   logout?: () => Promise<{ ok: boolean }>
 }

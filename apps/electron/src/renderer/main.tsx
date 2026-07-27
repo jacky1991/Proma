@@ -44,6 +44,7 @@ import {
   unviewedCompletedSessionIdsAtom,
 } from './atoms/agent-atoms'
 import { updateStatusAtom, initializeUpdater } from './atoms/updater'
+import { authUserAtom } from './atoms/auth'
 import { automationsAtom } from './atoms/automation-atoms'
 import {
   notificationsEnabledAtom,
@@ -152,6 +153,25 @@ function ThemeInitializer(): null {
   useEffect(() => {
     applyInterfaceVariantToDOM(interfaceVariant)
   }, [interfaceVariant])
+
+  return null
+}
+
+/**
+ * 登录用户初始化组件
+ *
+ * Web 端从 localStorage（auth-store）读取当前登录用户（含角色）写入 atom，
+ * 供设置页角色门控使用；登录成功后整页重载进主应用，启动灌入即可。
+ * Electron 端 getAuthUser 不存在，atom 保持 null，门控经 canManageAtom 放行。
+ */
+function AuthInitializer(): null {
+  const setAuthUser = useSetAtom(authUserAtom)
+
+  useEffect(() => {
+    window.electronAPI.getAuthUser?.()
+      .then((user) => setAuthUser(user ?? null))
+      .catch((err) => console.error('[AuthInitializer] 加载登录用户失败:', err))
+  }, [setAuthUser])
 
   return null
 }
@@ -920,6 +940,7 @@ if (isQuickTaskWindow) {
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
       <ThemeInitializer />
+      <AuthInitializer />
       <AgentSettingsInitializer />
       <NotificationsInitializer />
       <DockBadgeInitializer />

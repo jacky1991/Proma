@@ -17,6 +17,7 @@ import {
   getChatToolsConfig,
 } from '@proma/server-core/chat-tool-config'
 import { getAllToolInfos } from '@proma/server-core/chat-tool-registry'
+import { adminOnly } from '../middleware/role.ts'
 
 const chatTool = new Hono()
 
@@ -27,42 +28,42 @@ chatTool.post(`/${CHAT_TOOL_IPC_CHANNELS.GET_ALL_TOOLS}`, (c) => {
   return c.json(getAllToolInfos())
 })
 
-/** POST /api/chat-tool:get-credentials → Record<string, string> */
-chatTool.post(`/${CHAT_TOOL_IPC_CHANNELS.GET_TOOL_CREDENTIALS}`, async (c) => {
+/** POST /api/chat-tool:get-credentials → Record<string, string>（仅管理员，返回工具 API Key） */
+chatTool.post(`/${CHAT_TOOL_IPC_CHANNELS.GET_TOOL_CREDENTIALS}`, adminOnly, async (c) => {
   const { toolId } = await c.req.json<{ toolId: string }>()
   return c.json(getToolCredentials(toolId))
 })
 
-/** POST /api/chat-tool:update-state → { ok: true } */
-chatTool.post(`/${CHAT_TOOL_IPC_CHANNELS.UPDATE_TOOL_STATE}`, async (c) => {
+/** POST /api/chat-tool:update-state → { ok: true }（仅管理员） */
+chatTool.post(`/${CHAT_TOOL_IPC_CHANNELS.UPDATE_TOOL_STATE}`, adminOnly, async (c) => {
   const { toolId, state } = await c.req.json<{ toolId: string; state: ChatToolState }>()
   updateToolState(toolId, state)
   return c.json({ ok: true })
 })
 
-/** POST /api/chat-tool:update-credentials → { ok: true } */
-chatTool.post(`/${CHAT_TOOL_IPC_CHANNELS.UPDATE_TOOL_CREDENTIALS}`, async (c) => {
+/** POST /api/chat-tool:update-credentials → { ok: true }（仅管理员） */
+chatTool.post(`/${CHAT_TOOL_IPC_CHANNELS.UPDATE_TOOL_CREDENTIALS}`, adminOnly, async (c) => {
   const { toolId, credentials } = await c.req.json<{ toolId: string; credentials: Record<string, string> }>()
   updateToolCredentials(toolId, credentials)
   return c.json({ ok: true })
 })
 
-/** POST /api/chat-tool:create-custom → { ok: true } */
-chatTool.post(`/${CHAT_TOOL_IPC_CHANNELS.CREATE_CUSTOM_TOOL}`, async (c) => {
+/** POST /api/chat-tool:create-custom → { ok: true }（仅管理员） */
+chatTool.post(`/${CHAT_TOOL_IPC_CHANNELS.CREATE_CUSTOM_TOOL}`, adminOnly, async (c) => {
   const meta = await c.req.json<ChatToolMeta>()
   addCustomTool(meta)
   return c.json({ ok: true })
 })
 
-/** POST /api/chat-tool:delete-custom → { ok: true } */
-chatTool.post(`/${CHAT_TOOL_IPC_CHANNELS.DELETE_CUSTOM_TOOL}`, async (c) => {
+/** POST /api/chat-tool:delete-custom → { ok: true }（仅管理员） */
+chatTool.post(`/${CHAT_TOOL_IPC_CHANNELS.DELETE_CUSTOM_TOOL}`, adminOnly, async (c) => {
   const { toolId } = await c.req.json<{ toolId: string }>()
   deleteCustomTool(toolId)
   return c.json({ ok: true })
 })
 
-/** POST /api/chat-tool:test → { success: boolean; message: string } */
-chatTool.post(`/${CHAT_TOOL_IPC_CHANNELS.TEST_TOOL}`, async (c) => {
+/** POST /api/chat-tool:test → { success: boolean; message: string }（仅管理员） */
+chatTool.post(`/${CHAT_TOOL_IPC_CHANNELS.TEST_TOOL}`, adminOnly, async (c) => {
   const { toolId } = await c.req.json<{ toolId: string }>()
 
   // 联网搜索工具测试（Tavily API）

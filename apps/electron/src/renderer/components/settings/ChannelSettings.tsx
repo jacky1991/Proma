@@ -2,10 +2,12 @@
  * ChannelSettings - 渠道配置页
  *
  * 管理所有渠道的添加、编辑、删除与启用状态；每个渠道直接展示可用的 Agent Core。
+ * 角色门控（Web 端）：渠道列表与模型选择所有用户可见；
+ * 新建/编辑/删除/启用切换等管理操作仅管理员可用（服务端同步 adminOnly 拦截）。
  */
 
 import * as React from 'react'
-import { useAtom, useSetAtom } from 'jotai'
+import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { Plus, Pencil, Trash2, ExternalLink } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -16,6 +18,7 @@ import { getChannelLogo, PromaLogo } from '@/lib/model-logo'
 import { getEnabledClaudeAgentChannelIds } from '@/lib/agent-channel-selection'
 import { agentChannelIdAtom, agentModelIdAtom, agentChannelIdsAtom } from '@/atoms/agent-atoms'
 import { channelsAtom } from '@/atoms/chat-atoms'
+import { canManageAtom } from '@/atoms/auth'
 import { SettingsSection, SettingsCard, SettingsRow } from './primitives'
 import {
   AlertDialog,
@@ -33,6 +36,7 @@ import { ChannelForm } from './ChannelForm'
 type ViewMode = 'list' | 'create' | 'edit'
 
 export function ChannelSettings(): React.ReactElement {
+  const canManage = useAtomValue(canManageAtom)
   const [channels, setChannels] = React.useState<Channel[]>([])
   const [viewMode, setViewMode] = React.useState<ViewMode>('list')
   const [editingChannel, setEditingChannel] = React.useState<Channel | null>(null)
@@ -182,8 +186,8 @@ export function ChannelSettings(): React.ReactElement {
     setEditingChannel(null)
   }
 
-  // 表单视图
-  if (viewMode === 'create' || viewMode === 'edit') {
+  // 表单视图（仅管理员可进入：新建/编辑表单内含测试连通性与 Key 解密等管理操作）
+  if (canManage && (viewMode === 'create' || viewMode === 'edit')) {
     return (
       <ChannelForm
         channel={editingChannel}
@@ -202,12 +206,20 @@ export function ChannelSettings(): React.ReactElement {
         title="模型配置"
         description="管理 AI 供应商连接，配置 API Key 和可用模型。每个渠道会标注可用的 Agent Core。"
         action={
-          <Button size="sm" onClick={() => setViewMode('create')}>
-            <Plus size={16} />
-            <span>添加配置</span>
-          </Button>
+          canManage ? (
+            <Button size="sm" onClick={() => setViewMode('create')}>
+              <Plus size={16} />
+              <span>添加配置</span>
+            </Button>
+          ) : undefined
         }
       >
+        {/* 普通用户提示：渠道为管理员统一配置的全局资源 */}
+        {!canManage && (
+          <div className="rounded-lg bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+            渠道由管理员统一配置，你可以查看可用渠道并选择模型
+          </div>
+        )}
         <SettingsCard>
           <PromaProviderCard />
         </SettingsCard>
@@ -216,7 +228,9 @@ export function ChannelSettings(): React.ReactElement {
         ) : channels.length === 0 ? (
           <SettingsCard divided={false}>
             <div className="text-sm text-muted-foreground py-12 text-center">
-              还没有配置任何模型，点击上方"添加配置"开始
+              {canManage
+                ? '还没有配置任何模型，点击上方"添加配置"开始'
+                : '还没有可用的模型渠道，请联系管理员配置'}
             </div>
           </SettingsCard>
         ) : (
@@ -225,6 +239,7 @@ export function ChannelSettings(): React.ReactElement {
               <ChannelRow
                 key={channel.id}
                 channel={channel}
+                canManage={canManage}
                 onEdit={() => {
                   setEditingChannel(channel)
                   setViewMode('edit')
@@ -260,12 +275,14 @@ export function ChannelSettings(): React.ReactElement {
 
 interface ChannelRowProps {
   channel: Channel
+  /** 是否可执行管理操作（编辑/删除/启用切换均为写路由，服务端 adminOnly） */
+  canManage: boolean
   onEdit: () => void
   onDelete: () => void
   onToggle: () => void
 }
 
-function ChannelRow({ channel, onEdit, onDelete, onToggle }: ChannelRowProps): React.ReactElement {
+function ChannelRow({ channel, canManage, onEdit, onDelete, onToggle }: ChannelRowProps): React.ReactElement {
   const enabledCount = channel.models.filter((m) => m.enabled).length
   const description = [
     PROVIDER_LABELS[channel.provider],
@@ -286,29 +303,31 @@ function ChannelRow({ channel, onEdit, onDelete, onToggle }: ChannelRowProps): R
       }
       className="group"
     >
-      <div className="flex items-center gap-2">
-        {/* 操作按钮 */}
-        <button
-          onClick={onEdit}
-          className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors opacity-0 group-hover:opacity-100"
-          title="编辑"
-        >
-          <Pencil size={14} />
-        </button>
-        <button
-          onClick={onDelete}
-          className="p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors opacity-0 group-hover:opacity-100"
-          title="删除"
-        >
-          <Trash2 size={14} />
-        </button>
+      {canManage && (
+        <div className="flex items-center gap-2">
+          {/* 操作按钮 */}
+          <button
+            onClick={onEdit}
+            className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors opacity-0 group-hover:opacity-100"
+            title="编辑"
+          >
+            <Pencil size={14} />
+          </button>
+          <button
+            onClick={onDelete}
+            className="p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors opacity-0 group-hover:opacity-100"
+            title="删除"
+          >
+            <Trash2 size={14} />
+          </button>
 
-        {/* 启用/关闭开关 */}
-        <Switch
-          checked={channel.enabled}
-          onCheckedChange={onToggle}
-        />
-      </div>
+          {/* 启用/关闭开关 */}
+          <Switch
+            checked={channel.enabled}
+            onCheckedChange={onToggle}
+          />
+        </div>
+      )}
     </SettingsRow>
   )
 }

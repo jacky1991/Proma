@@ -4,11 +4,15 @@
  * 上方：提示词列表（选择/新建/删除/设为默认）
  * 下方：编辑区（名称 + 内容，内置只读）
  * 底部：追加日期时间和用户名开关
+ *
+ * 角色门控（Web 端）：列表与查看对所有用户可见；
+ * 新建/编辑/删除/设默认/追加设置等写操作仅管理员可用（服务端同步 adminOnly 拦截）。
  */
 
 import * as React from 'react'
 import { useAtom, useAtomValue } from 'jotai'
 import { Plus, Trash2, Star } from 'lucide-react'
+import { canManageAtom } from '@/atoms/auth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -29,6 +33,7 @@ import type { SystemPrompt, SystemPromptCreateInput, SystemPromptUpdateInput } f
 const DEBOUNCE_DELAY = 500
 
 export function PromptSettings(): React.ReactElement {
+  const canManage = useAtomValue(canManageAtom)
   const [config, setConfig] = useAtom(promptConfigAtom)
   const [selectedId, setSelectedId] = useAtom(selectedPromptIdAtom)
   const defaultPromptId = useAtomValue(defaultPromptIdAtom)
@@ -44,6 +49,9 @@ export function PromptSettings(): React.ReactElement {
     () => config.prompts.find((p) => p.id === selectedId),
     [config.prompts, selectedId]
   )
+
+  /** 选中提示词是否只读（非管理员或内置提示词；未选中时为 undefined，该区域不渲染） */
+  const locked = !canManage || selectedPrompt?.isBuiltin
 
   /** 初始加载配置 */
   React.useEffect(() => {
@@ -161,12 +169,16 @@ export function PromptSettings(): React.ReactElement {
       {/* 提示词列表 */}
       <SettingsSection
         title="系统提示词"
-        description="管理 Chat 模式的系统提示词"
+        description={canManage
+          ? '管理 Chat 模式的系统提示词'
+          : '提示词由管理员统一配置，你可以查看与选用'}
         action={
-          <Button size="sm" onClick={handleCreate}>
-            <Plus className="size-4 mr-1" />
-            新建
-          </Button>
+          canManage ? (
+            <Button size="sm" onClick={handleCreate}>
+              <Plus className="size-4 mr-1" />
+              新建
+            </Button>
+          ) : undefined
         }
       >
         <SettingsCard divided={false} className="p-0">
@@ -178,6 +190,7 @@ export function PromptSettings(): React.ReactElement {
                 isSelected={prompt.id === selectedId}
                 isDefault={prompt.id === defaultPromptId}
                 isHovered={prompt.id === hoveredId}
+                canManage={canManage}
                 onSelect={handleSelect}
                 onDelete={handleDelete}
                 onSetDefault={handleSetDefault}
@@ -199,8 +212,8 @@ export function PromptSettings(): React.ReactElement {
               <Input
                 value={editName}
                 onChange={(e) => handleNameChange(e.target.value)}
-                readOnly={selectedPrompt.isBuiltin}
-                className={cn(selectedPrompt.isBuiltin && 'opacity-60 cursor-not-allowed')}
+                readOnly={locked ?? false}
+                className={cn(locked && 'opacity-60 cursor-not-allowed')}
                 maxLength={50}
               />
             </div>
@@ -211,10 +224,10 @@ export function PromptSettings(): React.ReactElement {
               <Textarea
                 value={editContent}
                 onChange={(e) => handleContentChange(e.target.value)}
-                readOnly={selectedPrompt.isBuiltin}
+                readOnly={locked ?? false}
                 className={cn(
                   'min-h-[280px] resize-y',
-                  selectedPrompt.isBuiltin && 'opacity-60 cursor-not-allowed'
+                  locked && 'opacity-60 cursor-not-allowed'
                 )}
                 placeholder="输入系统提示词内容..."
               />
@@ -223,17 +236,19 @@ export function PromptSettings(): React.ReactElement {
         </SettingsSection>
       )}
 
-      {/* 增强选项 */}
-      <SettingsSection title="增强选项">
-        <SettingsCard>
-          <SettingsToggle
-            label="追加日期时间和用户名"
-            description="在提示词末尾自动追加当前日期时间和用户名"
-            checked={config.appendDateTimeAndUserName}
-            onCheckedChange={handleAppendChange}
-          />
-        </SettingsCard>
-      </SettingsSection>
+      {/* 增强选项（追加设置为全局写路由，仅管理员可见） */}
+      {canManage && (
+        <SettingsSection title="增强选项">
+          <SettingsCard>
+            <SettingsToggle
+              label="追加日期时间和用户名"
+              description="在提示词末尾自动追加当前日期时间和用户名"
+              checked={config.appendDateTimeAndUserName}
+              onCheckedChange={handleAppendChange}
+            />
+          </SettingsCard>
+        </SettingsSection>
+      )}
     </div>
   )
 }
@@ -244,6 +259,8 @@ interface PromptListItemProps {
   isSelected: boolean
   isDefault: boolean
   isHovered: boolean
+  /** 是否可执行管理操作（删除/设默认为写路由，服务端 adminOnly） */
+  canManage: boolean
   onSelect: (id: string) => void
   onDelete: (id: string) => void
   onSetDefault: (id: string) => void
@@ -255,6 +272,7 @@ function PromptListItem({
   isSelected,
   isDefault,
   isHovered,
+  canManage,
   onSelect,
   onDelete,
   onSetDefault,
@@ -281,8 +299,8 @@ function PromptListItem({
         )}
       </div>
 
-      {/* 操作按钮 — 始终占位，hover 时显示 */}
-      <div className={cn(
+      {/* 操作按钮 — 始终占位，hover 时显示（普通用户不可见） */}
+      {canManage && <div className={cn(
         'flex items-center gap-1 shrink-0 transition-opacity',
         isHovered ? 'opacity-100' : 'opacity-0 pointer-events-none'
       )}>
@@ -314,7 +332,7 @@ function PromptListItem({
             <Trash2 className="size-3.5" />
           </Button>
         )}
-      </div>
+      </div>}
     </div>
   )
 }

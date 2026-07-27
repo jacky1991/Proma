@@ -1,5 +1,5 @@
 import type { ElectronAPI } from './types'
-import type { AgentSessionMeta, AgentStreamEvent, AgentStreamCompletePayload, PermissionResponse, AskUserResponse, ExitPlanModeResponse, PendingRequestsSnapshot, AttachmentSaveInput, FileDialogResult, AgentQueueMessageInput, ForkSessionInput, RewindSessionInput, AgentAttachDirectoryInput, AgentAttachFileInput, WorkspaceAttachDirectoryInput, WorkspaceAttachFileInput, AgentSaveFilesInput, AgentSaveWorkspaceFilesInput, AgentSessionReferenceSearchInput, MoveSessionToWorkspaceInput, WorkspaceWorktreeRepo, FileAccessOptions, ChannelDirectTestInput, ChannelUpdateInput, CodexOAuthLoginResult, AuthUser, ChangePasswordInput, ResetUserPasswordInput } from '@proma/shared'
+import type { AgentSessionMeta, AgentStreamEvent, AgentStreamCompletePayload, PermissionResponse, AskUserResponse, ExitPlanModeResponse, PendingRequestsSnapshot, AttachmentSaveInput, FileDialogResult, AgentQueueMessageInput, ForkSessionInput, RewindSessionInput, AgentAttachDirectoryInput, AgentAttachFileInput, WorkspaceAttachDirectoryInput, WorkspaceAttachFileInput, AgentSaveFilesInput, AgentSaveWorkspaceFilesInput, AgentSessionReferenceSearchInput, MoveSessionToWorkspaceInput, WorkspaceWorktreeRepo, FileAccessOptions, ChannelDirectTestInput, ChannelUpdateInput, CodexOAuthLoginResult, AuthUser, ChangePasswordInput, ResetUserPasswordInput, DeleteUserInput } from '@proma/shared'
 import { createHttpClient, type ShimConfig } from './http-client'
 import { createWsClient } from './ws-client'
 import { getStoredUser, clearTokens, getAccessToken } from './auth-store.ts'
@@ -419,6 +419,7 @@ export function createMigrated(config: ShimConfig): Partial<ElectronAPI> {
     changePassword: (input: ChangePasswordInput) => invoke<{ ok: boolean }>('auth:change-password', input),
     listUsers: () => invoke<AuthUser[]>('user:list'),
     resetUserPassword: (input: ResetUserPasswordInput) => invoke<{ ok: boolean }>('user:reset-password', input),
+    deleteUser: (input: DeleteUserInput) => invoke<{ ok: boolean }>('user:delete', input),
     // 退出登录：清空本地 token 与用户信息（JWT 无状态，服务端无需吊销）；
     // 跳转登录页由调用方完成（window.location.href = '/login'）
     logout: () => {
@@ -644,5 +645,7 @@ export const migratedNames: ReadonlySet<string> = new Set([
   'changePassword',
   'listUsers',
   'resetUserPassword',
+  // M3 迭代 8：管理员删除用户
+  'deleteUser',
   'logout',
 ])

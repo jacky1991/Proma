@@ -11,6 +11,7 @@ import { getSettings, updateSettings } from '@proma/server-core/settings-service
 import { getUserProfile, updateUserProfile } from '@proma/server-core/user-profile-service'
 import { getScratchPadPath } from '@proma/server-core/config-paths'
 import { getUserScope } from '../utils/user-scope'
+import { adminOnly } from '../middleware/role.ts'
 import {
   getProxySettings,
   saveProxySettings,
@@ -107,22 +108,24 @@ settings.post('/scratch-pad:export', async (c) => {
 })
 
 // ===== Proxy =====
+// 注意：proxy-settings.json 位于全局数据根且含 adminPassword，三个路由（含读取）均仅管理员可用。
+// 同文件的 settings:* / user-profile:* / scratch-pad:* / github-release:* 为用户私有或公开路由，不挂门控。
 
-/** POST /api/proxy:get-settings → ProxyConfig */
-settings.post('/proxy:get-settings', async (c) => {
+/** POST /api/proxy:get-settings → ProxyConfig（仅管理员） */
+settings.post('/proxy:get-settings', adminOnly, async (c) => {
   const config = await getProxySettings()
   return c.json(config)
 })
 
-/** POST /api/proxy:update-settings → void */
-settings.post('/proxy:update-settings', async (c) => {
+/** POST /api/proxy:update-settings → void（仅管理员） */
+settings.post('/proxy:update-settings', adminOnly, async (c) => {
   const config = await c.req.json<ProxyConfig>()
   await saveProxySettings(config)
   return c.json({ ok: true })
 })
 
-/** POST /api/proxy:detect-system → SystemProxyDetectResult */
-settings.post('/proxy:detect-system', async (c) => {
+/** POST /api/proxy:detect-system → SystemProxyDetectResult（仅管理员） */
+settings.post('/proxy:detect-system', adminOnly, async (c) => {
   const result = await detectSystemProxy()
   return c.json(result)
 })
