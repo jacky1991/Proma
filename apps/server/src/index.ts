@@ -6,6 +6,7 @@ import { app } from './app'
 import { websocketHandlers } from './ws'
 import { getDataRoot, getProxySettingsPath } from '@proma/server-core/config-paths'
 import { initAdminUser } from '@proma/server-core/user-manager'
+import { needsMigration, migrateToMultiUser } from '@proma/server-core/migration/index'
 
 // ─── 产品初始化 ───
 
@@ -16,7 +17,15 @@ for (const dir of ['users', 'agent-workspaces']) {
   if (!existsSync(p)) mkdirSync(p, { recursive: true })
 }
 
-// 2. 读取 admin 密码配置并初始化内置 admin 账户
+// 2. 桌面端数据迁移（复制模式）：检测到 ~/.proma/ 有数据且尚未迁移时，
+//    复制到 {dataRoot}/users/default/，原数据保持不动，幂等可重入。
+if (needsMigration()) {
+  console.log('[启动] 检测到桌面端数据（~/.proma/），复制到 Web 数据根...')
+  const result = migrateToMultiUser()
+  console.log(`[启动] 复制完成：${result.copied.length} 项（原数据不受影响）`)
+}
+
+// 3. 读取 admin 密码配置并初始化内置 admin 账户
 const proxySettingsPath = getProxySettingsPath()
 let adminPassword: string | undefined
 
