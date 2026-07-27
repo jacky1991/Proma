@@ -15,7 +15,6 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { homedir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
@@ -44,7 +43,7 @@ import { getFetchFn } from './proxy-fetch'
 import { getEffectiveProxyUrl } from './proxy-settings-service'
 import { appendSDKMessages, updateAgentSessionMeta, getAgentSessionMeta, getAgentSessionMessages, truncateSDKMessages, removeSDKErrorMessage, resolveUserUuidFromSDK, rewindFilesFromSnapshot, rewindPiAgentSession } from './agent-session-manager'
 import { getAgentWorkspace, getWorkspaceMcpConfig, ensurePluginManifest, getWorkspaceAutoMemoryDir, getWorkspaceAttachedDirectories, getWorkspaceAttachedFiles } from './agent-workspace-manager'
-import { getAgentWorkspacePath, getAgentSessionWorkspacePath, getSdkConfigDir, getWorkspaceFilesDir, getBundledCliPath, getWorkspaceSkillsDir, type UserScope } from './config-paths'
+import { getAgentWorkspacePath, getAgentSessionWorkspacePath, getSdkConfigDir, getWorkspaceFilesDir, getBundledCliPath, getWorkspaceSkillsDir, getAgentHomeDir, type UserScope } from './config-paths'
 import { getRuntimeStatus } from './runtime-init'
 import { getSettings } from './settings-service'
 import { buildSystemPrompt, buildDynamicContext } from './agent-prompt-builder'
@@ -1134,8 +1133,8 @@ export class AgentOrchestrator {
         `[Agent 编排] 启动 pi runtime — 模型: ${modelId || DEFAULT_MODEL_ID}, resume: ${existingSdkSessionId ?? '无'}`,
       )
 
-      // 确定 Agent 工作目录
-      agentCwd = homedir()
+      // 确定 Agent 工作目录：未绑定工作区时兜底到按用户隔离的 agent-home/
+      agentCwd = getAgentHomeDir(scope)
       workspaceSlug = undefined
       workspace = undefined
       if (workspaceId) {
@@ -2483,8 +2482,8 @@ export class AgentOrchestrator {
       fileRewindResult = { canRewind: true, filesChanged: [] }
     } else if (userMessageUuid) {
       try {
-        // 确定 cwd（文件的基准路径）
-        let cwd = homedir()
+        // 确定 cwd（文件的基准路径）：与 sendMessage 的兜底保持一致
+        let cwd = getAgentHomeDir(scope)
         if (projectDir) cwd = projectDir
         // 收集附加目录（必须与 sendMessage 中传给 SDK 的 additionalDirectories 一致，
         // 否则会话级 attachedDirectories 内的文件会因路径越界检查被静默跳过）

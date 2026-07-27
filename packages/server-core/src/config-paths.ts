@@ -137,6 +137,25 @@ export function getUserSessionWorkspacesDir(scope: UserScope): string {
 }
 
 /**
+ * 获取 Agent 未绑定工作区时的兜底工作目录（按用户隔离）
+ *
+ * 未绑定工作区的会话以该目录作为 Agent 进程的默认 cwd，
+ * 避免多用户共享服务器进程的 home 目录造成执行层串扰。
+ * - 传入 scope（Web 端）：{dataRoot}/users/{userId}/agent-home/
+ * - 未传 scope（桌面端）：保持传统 homedir() 语义，行为不变
+ *
+ * @param scope 用户作用域（可选）
+ */
+export function getAgentHomeDir(scope?: UserScope): string {
+  if (!scope) return homedir()
+  const dir = join(getUserDataDir(scope), 'agent-home')
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true })
+  }
+  return dir
+}
+
+/**
  * 获取渠道配置文件路径
  *
  * @returns ~/.proma/channels.json

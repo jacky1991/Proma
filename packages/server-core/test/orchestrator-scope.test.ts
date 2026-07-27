@@ -12,7 +12,7 @@
 
 import { test, expect, beforeAll, beforeEach, afterEach } from 'bun:test'
 import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { tmpdir, homedir } from 'node:os'
 import { join } from 'node:path'
 import { configureServerCore } from '../src/config'
 import {
@@ -33,7 +33,7 @@ import {
   buildRecoveryPrompt,
   buildReferencedSessionsPrompt,
 } from '../src/agent-session-context-prompt'
-import type { UserScope } from '../src/config-paths'
+import { getAgentHomeDir, type UserScope } from '../src/config-paths'
 import type { AgentProviderAdapter, SDKMessage } from '@proma/shared'
 
 beforeAll(() => {
@@ -131,4 +131,19 @@ test('context-prompt 系列函数：带 scope 读取用户隔离数据并生成�
   // buildReferencedSessionsPrompt：同 scope 会话可互相引用
   const ref = buildReferencedSessionsPrompt(a.id, [b.id], undefined, undefined, scope)
   expect(ref).toContain('title="会话 B"')
+})
+
+test('getAgentHomeDir：无工作区兜底 cwd 按用户隔离，无 scope 时保持桌面语义', () => {
+  // 有 scope：落在用户数据根内，目录自动创建
+  const home = getAgentHomeDir(scope)
+  expect(home).toBe(join(userRoot, 'users', 'u1', 'agent-home'))
+  expect(existsSync(home)).toBe(true)
+
+  // 不同用户互不共享
+  expect(getAgentHomeDir({ userId: 'u2', dataRoot: userRoot })).toBe(
+    join(userRoot, 'users', 'u2', 'agent-home'),
+  )
+
+  // 无 scope（桌面端）：保持 homedir() 语义，行为不变
+  expect(getAgentHomeDir()).toBe(homedir())
 })
