@@ -9,8 +9,9 @@ import pkg from './package.json' with { type: 'json' }
  * Web 端 Vite 配置
  *
  * 核心策略（方案 A，详见 M1 迭代 0 计划 §3.1）：
- *   root 指向 apps/electron/src/renderer，renderer 源码零改动复用。
- *   base 改为 '/'（区别于 electron 的 './'），alias 重新指向共享 renderer / types。
+ *   root 指向 apps/web/src/renderer（M4 迭代 11 步骤 3 已从 apps/electron 物理搬迁至此），
+ *   renderer 源码零改动复用，Web 构建完全脱离 apps/electron 目录。
+ *   base 改为 '/'（区别于 electron 的 './'），alias 指向本地 renderer 与 shared 领域类型。
  *
  * shim 注入（保证 window.electronAPI 在 React 挂载前就绪，renderer/index.html 不改动）：
  *   - dev：transformIndexHtml 在源 HTML 的 main.tsx 之前插入虚拟入口 /@proma-shim/entry，
@@ -23,9 +24,10 @@ import pkg from './package.json' with { type: 'json' }
  *          的 <script> 引用，确保 shim 在 main 之前执行（module script 按文档序执行）。
  */
 
-// renderer 源码零改动复用（方案 A）：root 指向 electron renderer
-const rendererRoot = resolve(__dirname, '../electron/src/renderer')
-const electronSrc = resolve(__dirname, '../electron/src')
+// renderer 源码零改动复用（方案 A）：root 指向本地 renderer（已搬迁至 apps/web）
+const rendererRoot = resolve(__dirname, 'src/renderer')
+// 领域类型别名指向共享包源码（原 electron/src/types 已迁回 @proma/shared）
+const sharedTypes = resolve(__dirname, '../../packages/shared/src/types')
 
 // shim 虚拟入口：dev 期被注入到 index.html，重定向到真实 shim-entry.ts
 const SHIM_VIRTUAL_ID = '/@proma-shim/entry'
@@ -101,7 +103,7 @@ export default defineConfig({
   base: '/',
   resolve: {
     alias: {
-      '@/types': resolve(electronSrc, 'types'),
+      '@/types': sharedTypes,
       '@': rendererRoot,
     },
   },
@@ -115,7 +117,7 @@ export default defineConfig({
     },
   },
   css: {
-    // root 在 electron renderer 下，需显式指定 apps/web 的 postcss 配置
+    // root 在 src/renderer 下，需显式指定 apps/web 的 postcss 配置
     postcss: resolve(__dirname, 'postcss.config.js'),
   },
   server: {
@@ -123,11 +125,10 @@ export default defineConfig({
     port: 5174,
     strictPort: true,
     open: false,
-    // 允许 dev server 读取 root 外的源码（apps/web shim、apps/electron renderer/types、packages/*）
+    // 允许 dev server 读取 root 外的源码（apps/web shim/types、monorepo 根下的 packages/*）
     fs: {
       allow: [
         resolve(__dirname),
-        resolve(__dirname, '../electron'),
         resolve(__dirname, '../..'),
       ],
     },

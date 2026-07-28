@@ -5,8 +5,8 @@
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "baseUrl": ".",
     "paths": {
-      "@/types/*": ["../electron/src/types/*"],
-      "@/*": ["../electron/src/renderer/*"]
+      "@/types/*": ["../../packages/shared/src/types/*"],
+      "@/*": ["./src/renderer/*"]
     }
   },
   "include": ["src/**/*"]
