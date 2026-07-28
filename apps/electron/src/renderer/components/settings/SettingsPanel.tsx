@@ -16,12 +16,8 @@ import {
   Globe,
   BookOpen,
   Wrench,
-  Bot,
   GraduationCap,
   X,
-  Keyboard,
-  Mic,
-  HardDriveDownload,
   HardDrive,
   CircleUser,
   Users,
@@ -51,10 +47,6 @@ import { AppearanceSettings } from "./AppearanceSettings";
 import { AboutSettings } from "./AboutSettings";
 import { PromptSettings } from "./PromptSettings";
 import { ToolSettings } from "./ToolSettings";
-import { BotHubSettings } from "./BotHubSettings";
-import { ShortcutSettings } from "./ShortcutSettings";
-import { VoiceInputSettings } from "./VoiceInputSettings";
-import { MigrationSettings } from "./MigrationSettings";
 import { StorageSettings } from "./StorageSettings";
 import { AccountSettings } from "./AccountSettings";
 import { UserSettings } from "./UserSettings";
@@ -100,32 +92,14 @@ const TOOLS_TAB: TabItem = {
   label: "Chat 工具",
   icon: <Wrench size={16} />,
 };
-// 管理员专属：底层能力未迁移 Web，路由层无暴露面（去留随 M4 桌面清理再议）
-const BOTS_TAB: TabItem = {
-  id: "bots",
-  label: "远程连接",
-  icon: <Bot size={16} />,
-  adminOnly: true,
-};
 const TUTORIAL_TAB: TabItem = {
   id: "tutorial",
   label: "Proma 教程",
   icon: <GraduationCap size={16} />,
 };
-const SHORTCUTS_TAB: TabItem = {
-  id: "shortcuts",
-  label: "快捷键管理",
-  icon: <Keyboard size={16} />,
-};
-const VOICE_INPUT_TAB: TabItem = {
-  id: "voice-input",
-  label: "语音输入",
-  icon: <Mic size={16} />,
-};
 
-/** 尾部 Tabs（migration / storage 管理员专属：底层能力未迁移 Web，路由层无暴露面，去留随 M4 桌面清理再议） */
+/** 尾部 Tabs（storage 管理员专属：底层能力未迁移 Web，路由层无暴露面，去留随 M4 桌面清理再议） */
 const TAIL_TABS: TabItem[] = [
-  { id: "migration", label: "数据迁移", icon: <HardDriveDownload size={16} />, adminOnly: true },
   { id: "storage", label: "磁盘管理", icon: <HardDrive size={16} />, adminOnly: true },
   { id: "appearance", label: "外观设置", icon: <Palette size={16} /> },
   { id: "about", label: "关于/更新", icon: <Info size={16} /> },
@@ -137,10 +111,7 @@ const ALL_TABS: TabItem[] = [
   ACCOUNT_TAB,
   USERS_TAB,
   TOOLS_TAB,
-  VOICE_INPUT_TAB,
-  BOTS_TAB,
   TUTORIAL_TAB,
-  SHORTCUTS_TAB,
   ...TAIL_TABS,
 ];
 
@@ -165,14 +136,6 @@ function renderTabContent(tab: SettingsTab): React.ReactElement {
       return <AppearanceSettings />;
     case "about":
       return <AboutSettings />;
-    case "bots":
-      return <BotHubSettings />;
-    case "shortcuts":
-      return <ShortcutSettings />;
-    case "voice-input":
-      return <VoiceInputSettings />;
-    case "migration":
-      return <MigrationSettings />;
     case "storage":
       return <StorageSettings />;
     default:
