@@ -68,8 +68,18 @@ proma-v2/
 ## 常用命令
 
 ```bash
-# 开发模式（推荐 - 自动启动 Vite + Electron + 热重载）
+# Web 开发模式（推荐 - 并发启动 server[PROMA_DEV=1] + 前端）
 bun run dev
+#   → 后端 http://127.0.0.1:3000，前端 http://127.0.0.1:5174
+#   PROMA_DEV=1 用于跳过生产敏感配置校验（JWT secret / 主密钥）
+#   停服务：pkill -f "apps/server/src/index.ts"; pkill -f vite
+
+# 单独启动
+bun run dev:server     # 仅后端（PROMA_DEV=1）
+bun run dev:web        # 仅前端
+
+# Electron 桌面端开发（迭代 11 将移除）
+bun run electron:dev
 
 # 手动开发模式（调试时更稳定）
 # 终端 1: cd apps/electron && bun run dev:vite
