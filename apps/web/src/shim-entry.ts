@@ -4,8 +4,8 @@
  * 由 vite.config.ts 的 proma-web-shim-inject 插件注入到 renderer/index.html 的
  *   <script src="/main.tsx"> 之前执行（renderer/index.html 零改动）。
  *
- * window.electronAPI 的全局类型声明来自 preload 的 `declare global`
- *   （经 shim/types.ts 的 type-only 引用链加载），此处无需重复声明。
+ * window.electronAPI 的全局类型声明来自 @proma/shared 的 `declare global`
+ *   （经 shim/types.ts 对 @proma/shared 的 type-only 引用链加载），此处无需重复声明。
  *
  * 路由守卫（JWT 认证）：
  *   - 始终注入 shim（已登录时正常可用；未登录时 safeDefaults 兜底不崩溃）

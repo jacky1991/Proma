@@ -1,22 +1,13 @@
 /**
  * 用户档案类型
  *
- * 用户名、头像、IPC 通道等定义。
+ * 类型定义已迁回 @proma/shared（transport 无关的共享契约，M4 迭代 11 步骤 2）。
+ * 本文件保留薄再导出，使 Electron 端现有 `../types` / `@/types/*` 引用零改动；
+ * IPC 通道常量仍属 Electron 专有，保留在此处。
  */
 
-/** 默认用户头像 emoji */
-export const DEFAULT_USER_AVATAR = '🧑‍💻'
-
-/** 默认用户名 */
-export const DEFAULT_USER_NAME = '用户'
-
-/** 用户档案 */
-export interface UserProfile {
-  /** 用户名 */
-  userName: string
-  /** 头像（emoji 字符串 或 data:image/* base64 URL） */
-  avatar: string
-}
+export type { UserProfile } from '@proma/shared'
+export { DEFAULT_USER_AVATAR, DEFAULT_USER_NAME } from '@proma/shared'
 
 /** 用户档案 IPC 通道 */
 export const USER_PROFILE_IPC_CHANNELS = {

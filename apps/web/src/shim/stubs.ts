@@ -13,7 +13,7 @@ export function notMigrated(name: string): (...args: unknown[]) => Promise<never
 
 /**
  * 安全默认值表：列表类返回 []，标量/对象类返回空值或最小可用值
- * 键名须与 ElectronAPI 上的方法名一致
+ * 键名须与 PromaClientAPI 上的方法名一致
  */
 export const safeDefaults: Record<string, unknown> = {
   // 自动更新：Web 端不支持，返回 undefined 让 updater.ts 优雅降级

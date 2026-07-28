@@ -1,4 +1,4 @@
-import type { ElectronAPI } from './types'
+import type { PromaClientAPI } from './types'
 import type { AgentSessionMeta, AgentStreamEvent, AgentStreamCompletePayload, PermissionResponse, AskUserResponse, ExitPlanModeResponse, PendingRequestsSnapshot, AttachmentSaveInput, FileDialogResult, AgentQueueMessageInput, ForkSessionInput, RewindSessionInput, AgentAttachDirectoryInput, AgentAttachFileInput, WorkspaceAttachDirectoryInput, WorkspaceAttachFileInput, AgentSaveFilesInput, AgentSaveWorkspaceFilesInput, AgentSessionReferenceSearchInput, MoveSessionToWorkspaceInput, WorkspaceWorktreeRepo, FileAccessOptions, ChannelDirectTestInput, ChannelUpdateInput, CodexOAuthLoginResult, AuthUser, ChangePasswordInput, ResetUserPasswordInput, DeleteUserInput, StreamChunkEvent, StreamReasoningEvent, StreamCompleteEvent, StreamErrorEvent, StreamToolActivityEvent } from '@proma/shared'
 import { createHttpClient, type ShimConfig } from './http-client'
 import { createWsClient } from './ws-client'
@@ -14,7 +14,7 @@ import { getStoredUser, clearTokens, getAccessToken } from './auth-store.ts'
  *
  * M2 迭代 2：Agent 会话 CRUD / 消息发送 / 流式订阅 / 渠道 / 设置。
  */
-export function createMigrated(config: ShimConfig): Partial<ElectronAPI> {
+export function createMigrated(config: ShimConfig): Partial<PromaClientAPI> {
   const invoke = createHttpClient(config.apiBase)
   const wsClient = createWsClient(config)
 
@@ -438,7 +438,7 @@ export function createMigrated(config: ShimConfig): Partial<ElectronAPI> {
       clearTokens()
       return Promise.resolve({ ok: true })
     },
-  } as Partial<ElectronAPI>
+  } as Partial<PromaClientAPI>
 }
 
 /**

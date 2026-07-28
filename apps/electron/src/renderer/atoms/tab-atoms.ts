@@ -18,11 +18,12 @@ import {
 } from './agent-atoms'
 import type { SessionIndicatorStatus } from './agent-atoms'
 import type { PreviewFile } from './preview-atoms'
+import type { TabItem, TabType } from '@proma/shared'
 
 // ===== 类型定义 =====
 
-/** 标签页类型（Settings 不作为 Tab，保留独立视图） */
-export type TabType = 'chat' | 'agent' | 'scratch' | 'preview' | 'tutorial'
+// Tab 共享类型已迁回 @proma/shared（客户端契约），此处再导出保持现有导入路径可用
+export type { TabItem, TabType }
 
 /** Scratch Pad 专用的固定 sessionId */
 export const SCRATCH_PAD_ID = '__scratch-pad__'
@@ -36,18 +37,6 @@ const PREVIEW_TAB_PREFIX = '__preview__:'
 
 /** Scratch Pad 标签默认标题 */
 export const SCRATCH_PAD_TITLE = 'Scratch Pad'
-
-/** 标签页数据 */
-export interface TabItem {
-  /** 唯一标签 ID（直接使用 sessionId） */
-  id: string
-  /** 标签页类型 */
-  type: TabType
-  /** Chat conversationId 或 Agent sessionId */
-  sessionId: string
-  /** 标签页显示标题 */
-  title: string
-}
 
 /** Tab 持久化数据（保存到 settings.json） */
 export interface PersistedTabState {

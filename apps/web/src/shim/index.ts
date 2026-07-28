@@ -1,9 +1,9 @@
-import type { ElectronAPI } from './types'
+import type { PromaClientAPI } from './types'
 import type { ShimConfig } from './http-client'
 import { createMigrated } from './migrated'
 import { safeDefaults, notMigrated } from './stubs'
 
-export type { ElectronAPI, ShimConfig }
+export type { PromaClientAPI, ShimConfig }
 
 /**
  * 创建 electronAPI shim 实例
@@ -18,7 +18,7 @@ export type { ElectronAPI, ShimConfig }
  *
  * 关键：renderer 源码零改动——它读 window.electronAPI.*，拿到的是此 shim。
  */
-export function createShim(config: ShimConfig): ElectronAPI {
+export function createShim(config: ShimConfig): PromaClientAPI {
   const migrated = createMigrated(config)
 
   const proxy = new Proxy(migrated as Record<string, unknown>, {
@@ -43,5 +43,5 @@ export function createShim(config: ShimConfig): ElectronAPI {
     },
   })
 
-  return proxy as unknown as ElectronAPI
+  return proxy as unknown as PromaClientAPI
 }

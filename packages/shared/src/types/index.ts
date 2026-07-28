@@ -56,3 +56,15 @@ export * from './automation'
 
 // Web 端认证与用户管理相关类型
 export * from './auth'
+
+// 标签页共享类型（Tab 持久化数据）
+export * from './tab'
+
+// 用户档案类型
+export * from './user-profile'
+
+// 应用设置类型（主题、语音输入、通知音等）
+export * from './settings'
+
+// 客户端 API 契约（PromaClientAPI + window.electronAPI 全局声明）
+export * from './client-api'
