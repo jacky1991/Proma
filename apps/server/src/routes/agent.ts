@@ -69,6 +69,7 @@ import { setBuiltinMcpUserEnabled } from '@proma/server-core/builtin-mcp/setting
 import { getWorkspaceSkillsDir, getAgentWorkspacesDir, getAgentSessionWorkspacePath, getWorkspaceFilesDir, getConfigDir, getUserSessionWorkspacesDir } from '@proma/server-core/config-paths'
 import type { UserScope } from '@proma/server-core/config-paths'
 import { getUserScope } from '../utils/user-scope'
+import { adminOnly } from '../middleware/role.ts'
 import { validateMcpServer } from '@proma/server-core/mcp-validator'
 import { permissionService } from '@proma/server-core/agent-permission-service'
 import { askUserService } from '@proma/server-core/agent-ask-user-service'
@@ -205,29 +206,29 @@ agent.post(`/${AGENT_IPC_CHANNELS.LIST_WORKSPACES}`, (c) => {
   return c.json(listAgentWorkspaces())
 })
 
-/** POST /api/agent:create-workspace → AgentWorkspace */
-agent.post(`/${AGENT_IPC_CHANNELS.CREATE_WORKSPACE}`, async (c) => {
+/** POST /api/agent:create-workspace → AgentWorkspace（仅管理员：全局共享资源写操作） */
+agent.post(`/${AGENT_IPC_CHANNELS.CREATE_WORKSPACE}`, adminOnly, async (c) => {
   const input = await c.req.json()
   const workspace = createAgentWorkspace(input)
   return c.json(workspace)
 })
 
-/** POST /api/agent:update-workspace → AgentWorkspace */
-agent.post(`/${AGENT_IPC_CHANNELS.UPDATE_WORKSPACE}`, async (c) => {
+/** POST /api/agent:update-workspace → AgentWorkspace（仅管理员：全局共享资源写操作） */
+agent.post(`/${AGENT_IPC_CHANNELS.UPDATE_WORKSPACE}`, adminOnly, async (c) => {
   const { id, ...updates } = await c.req.json()
   const workspace = updateAgentWorkspace(id, updates)
   return c.json(workspace)
 })
 
-/** POST /api/agent:delete-workspace → { ok: true } */
-agent.post(`/${AGENT_IPC_CHANNELS.DELETE_WORKSPACE}`, async (c) => {
+/** POST /api/agent:delete-workspace → { ok: true }（仅管理员：全局共享资源写操作） */
+agent.post(`/${AGENT_IPC_CHANNELS.DELETE_WORKSPACE}`, adminOnly, async (c) => {
   const { id } = await c.req.json()
   deleteAgentWorkspace(id)
   return c.json({ ok: true })
 })
 
-/** POST /api/agent:reorder-workspaces → AgentWorkspace[] */
-agent.post(`/${AGENT_IPC_CHANNELS.REORDER_WORKSPACES}`, async (c) => {
+/** POST /api/agent:reorder-workspaces → AgentWorkspace[]（仅管理员：全局共享资源写操作） */
+agent.post(`/${AGENT_IPC_CHANNELS.REORDER_WORKSPACES}`, adminOnly, async (c) => {
   const { orderedIds } = await c.req.json()
   return c.json(reorderAgentWorkspaces(orderedIds))
 })
@@ -325,15 +326,19 @@ agent.post(`/${AGENT_IPC_CHANNELS.GET_MCP_CONFIG}`, async (c) => {
   return c.json(getWorkspaceMcpConfig(workspaceSlug))
 })
 
-/** POST /api/agent:save-mcp-config → { ok: true } */
-agent.post(`/${AGENT_IPC_CHANNELS.SAVE_MCP_CONFIG}`, async (c) => {
+/** POST /api/agent:save-mcp-config → { ok: true }（仅管理员：全局共享资源写操作） */
+agent.post(`/${AGENT_IPC_CHANNELS.SAVE_MCP_CONFIG}`, adminOnly, async (c) => {
   const { workspaceSlug, config } = await c.req.json()
   saveWorkspaceMcpConfig(workspaceSlug, config as WorkspaceMcpConfig)
   return c.json({ ok: true })
 })
 
-/** POST /api/agent:test-mcp-server → { success, message } */
-agent.post(`/${AGENT_IPC_CHANNELS.TEST_MCP_SERVER}`, async (c) => {
+/**
+ * POST /api/agent:test-mcp-server → { success, message }（仅管理员）
+ *
+ * 非持久写，但会向用户指定地址 / 命令发起连接，同档门控以收敛 SSRF / 任意命令探测面。
+ */
+agent.post(`/${AGENT_IPC_CHANNELS.TEST_MCP_SERVER}`, adminOnly, async (c) => {
   const { name, entry } = await c.req.json()
   const result = await validateMcpServer(name, entry as McpServerEntry)
   return c.json({
@@ -342,8 +347,8 @@ agent.post(`/${AGENT_IPC_CHANNELS.TEST_MCP_SERVER}`, async (c) => {
   })
 })
 
-/** POST /api/agent:set-builtin-mcp-enabled → WorkspaceCapabilities */
-agent.post(`/${AGENT_IPC_CHANNELS.SET_BUILTIN_MCP_ENABLED}`, async (c) => {
+/** POST /api/agent:set-builtin-mcp-enabled → WorkspaceCapabilities（仅管理员：全局共享资源写操作） */
+agent.post(`/${AGENT_IPC_CHANNELS.SET_BUILTIN_MCP_ENABLED}`, adminOnly, async (c) => {
   const { workspaceSlug, id, enabled } = await c.req.json()
   setBuiltinMcpUserEnabled(id, enabled)
   return c.json(getWorkspaceCapabilities(workspaceSlug))
@@ -363,15 +368,15 @@ agent.post(`/${AGENT_IPC_CHANNELS.GET_SKILLS_DIR}`, async (c) => {
   return c.json(getWorkspaceSkillsDir(workspaceSlug))
 })
 
-/** POST /api/agent:delete-skill → { ok: true } */
-agent.post(`/${AGENT_IPC_CHANNELS.DELETE_SKILL}`, async (c) => {
+/** POST /api/agent:delete-skill → { ok: true }（仅管理员：全局共享资源写操作） */
+agent.post(`/${AGENT_IPC_CHANNELS.DELETE_SKILL}`, adminOnly, async (c) => {
   const { workspaceSlug, skillSlug } = await c.req.json()
   deleteWorkspaceSkill(workspaceSlug, skillSlug)
   return c.json({ ok: true })
 })
 
-/** POST /api/agent:toggle-skill → { ok: true } */
-agent.post(`/${AGENT_IPC_CHANNELS.TOGGLE_SKILL}`, async (c) => {
+/** POST /api/agent:toggle-skill → { ok: true }（仅管理员：全局共享资源写操作） */
+agent.post(`/${AGENT_IPC_CHANNELS.TOGGLE_SKILL}`, adminOnly, async (c) => {
   const { workspaceSlug, skillSlug, enabled } = await c.req.json()
   toggleWorkspaceSkill(workspaceSlug, skillSlug, enabled)
   return c.json({ ok: true })
@@ -388,14 +393,14 @@ agent.post(`/${AGENT_IPC_CHANNELS.GET_DEFAULT_SKILL_SLUGS}`, (c) => {
   return c.json(getDefaultSkillSlugs())
 })
 
-/** POST /api/agent:import-skill-from-workspace → SkillMeta */
-agent.post(`/${AGENT_IPC_CHANNELS.IMPORT_SKILL_FROM_WORKSPACE}`, async (c) => {
+/** POST /api/agent:import-skill-from-workspace → SkillMeta（仅管理员：全局共享资源写操作） */
+agent.post(`/${AGENT_IPC_CHANNELS.IMPORT_SKILL_FROM_WORKSPACE}`, adminOnly, async (c) => {
   const { targetSlug, sourceSlug, skillSlug } = await c.req.json()
   return c.json(importSkillFromWorkspace(targetSlug, sourceSlug, skillSlug))
 })
 
-/** POST /api/agent:update-skill-from-source → SkillMeta */
-agent.post(`/${AGENT_IPC_CHANNELS.UPDATE_SKILL_FROM_SOURCE}`, async (c) => {
+/** POST /api/agent:update-skill-from-source → SkillMeta（仅管理员：全局共享资源写操作） */
+agent.post(`/${AGENT_IPC_CHANNELS.UPDATE_SKILL_FROM_SOURCE}`, adminOnly, async (c) => {
   const { targetSlug, skillSlug } = await c.req.json()
   return c.json(updateSkillFromSource(targetSlug, skillSlug))
 })
@@ -406,8 +411,8 @@ agent.post(`/${AGENT_IPC_CHANNELS.READ_SKILL_CONTENT}`, async (c) => {
   return c.json(readWorkspaceSkillContent(workspaceSlug, skillSlug))
 })
 
-/** POST /api/agent:write-skill-content → { ok: true } */
-agent.post(`/${AGENT_IPC_CHANNELS.WRITE_SKILL_CONTENT}`, async (c) => {
+/** POST /api/agent:write-skill-content → { ok: true }（仅管理员：全局共享资源写操作） */
+agent.post(`/${AGENT_IPC_CHANNELS.WRITE_SKILL_CONTENT}`, adminOnly, async (c) => {
   const { workspaceSlug, skillSlug, content } = await c.req.json()
   writeWorkspaceSkillContent(workspaceSlug, skillSlug, content)
   return c.json({ ok: true })
@@ -427,29 +432,29 @@ agent.post(`/${AGENT_IPC_CHANNELS.READ_SKILL_FILE}`, async (c) => {
   return c.json(readSkillFile(workspaceSlug, skillSlug, relativePath))
 })
 
-/** POST /api/agent:write-skill-file → { ok: true } */
-agent.post(`/${AGENT_IPC_CHANNELS.WRITE_SKILL_FILE}`, async (c) => {
+/** POST /api/agent:write-skill-file → { ok: true }（仅管理员：全局共享资源写操作） */
+agent.post(`/${AGENT_IPC_CHANNELS.WRITE_SKILL_FILE}`, adminOnly, async (c) => {
   const { workspaceSlug, skillSlug, relativePath, content } = await c.req.json()
   writeSkillFile(workspaceSlug, skillSlug, relativePath, content)
   return c.json({ ok: true })
 })
 
-/** POST /api/agent:create-skill-entry → { ok: true } */
-agent.post(`/${AGENT_IPC_CHANNELS.CREATE_SKILL_ENTRY}`, async (c) => {
+/** POST /api/agent:create-skill-entry → { ok: true }（仅管理员：全局共享资源写操作） */
+agent.post(`/${AGENT_IPC_CHANNELS.CREATE_SKILL_ENTRY}`, adminOnly, async (c) => {
   const { workspaceSlug, skillSlug, relativePath, type } = await c.req.json()
   createSkillEntry(workspaceSlug, skillSlug, relativePath, type)
   return c.json({ ok: true })
 })
 
-/** POST /api/agent:delete-skill-entry → { ok: true } */
-agent.post(`/${AGENT_IPC_CHANNELS.DELETE_SKILL_ENTRY}`, async (c) => {
+/** POST /api/agent:delete-skill-entry → { ok: true }（仅管理员：全局共享资源写操作） */
+agent.post(`/${AGENT_IPC_CHANNELS.DELETE_SKILL_ENTRY}`, adminOnly, async (c) => {
   const { workspaceSlug, skillSlug, relativePath } = await c.req.json()
   deleteSkillEntry(workspaceSlug, skillSlug, relativePath)
   return c.json({ ok: true })
 })
 
-/** POST /api/agent:rename-skill-entry → { ok: true } */
-agent.post(`/${AGENT_IPC_CHANNELS.RENAME_SKILL_ENTRY}`, async (c) => {
+/** POST /api/agent:rename-skill-entry → { ok: true }（仅管理员：全局共享资源写操作） */
+agent.post(`/${AGENT_IPC_CHANNELS.RENAME_SKILL_ENTRY}`, adminOnly, async (c) => {
   const { workspaceSlug, skillSlug, fromRelative, toRelative } = await c.req.json()
   renameSkillEntry(workspaceSlug, skillSlug, fromRelative, toRelative)
   return c.json({ ok: true })
@@ -469,8 +474,8 @@ agent.post(`/${AGENT_IPC_CHANNELS.READ_WORKSPACE_CLAUDE_MD}`, async (c) => {
   return c.json(readWorkspaceClaudeMd(workspaceSlug))
 })
 
-/** POST /api/agent:write-workspace-claude-md → { ok: true } */
-agent.post(`/${AGENT_IPC_CHANNELS.WRITE_WORKSPACE_CLAUDE_MD}`, async (c) => {
+/** POST /api/agent:write-workspace-claude-md → { ok: true }（仅管理员：全局共享资源写操作） */
+agent.post(`/${AGENT_IPC_CHANNELS.WRITE_WORKSPACE_CLAUDE_MD}`, adminOnly, async (c) => {
   const { workspaceSlug, content } = await c.req.json()
   writeWorkspaceClaudeMd(workspaceSlug, content)
   return c.json({ ok: true })
@@ -488,8 +493,8 @@ agent.post(`/${AGENT_IPC_CHANNELS.READ_WORKSPACE_AUTO_MEMORY_FILE}`, async (c) =
   return c.json(readWorkspaceAutoMemoryFile(workspaceSlug, relativePath))
 })
 
-/** POST /api/agent:write-workspace-auto-memory-file → { ok: true } */
-agent.post(`/${AGENT_IPC_CHANNELS.WRITE_WORKSPACE_AUTO_MEMORY_FILE}`, async (c) => {
+/** POST /api/agent:write-workspace-auto-memory-file → { ok: true }（仅管理员：全局共享资源写操作） */
+agent.post(`/${AGENT_IPC_CHANNELS.WRITE_WORKSPACE_AUTO_MEMORY_FILE}`, adminOnly, async (c) => {
   const { workspaceSlug, relativePath, content } = await c.req.json()
   writeWorkspaceAutoMemoryFile(workspaceSlug, relativePath, content)
   return c.json({ ok: true })
@@ -845,8 +850,13 @@ agent.post(`/${AGENT_IPC_CHANNELS.DETACH_FILE}`, async (c) => {
 
 // ===== 上下文挂载（工作区级） =====
 
-/** POST /api/agent:attach-workspace-directory → string[] */
-agent.post(`/${AGENT_IPC_CHANNELS.ATTACH_WORKSPACE_DIRECTORY}`, async (c) => {
+/**
+ * POST /api/agent:attach-workspace-directory → string[]（仅管理员）
+ *
+ * 计划外审计补挂：修改全局工作区的挂载配置（可引入任意主机目录供所有会话访问），
+ * 与 §2.1 工作区写路由同档门控。会话级挂载（attach-directory）不受影响。
+ */
+agent.post(`/${AGENT_IPC_CHANNELS.ATTACH_WORKSPACE_DIRECTORY}`, adminOnly, async (c) => {
   const input = await c.req.json<WorkspaceAttachDirectoryInput>()
   assertPathSafe(input.directoryPath)
   if (!existsSync(input.directoryPath)) {
@@ -855,14 +865,14 @@ agent.post(`/${AGENT_IPC_CHANNELS.ATTACH_WORKSPACE_DIRECTORY}`, async (c) => {
   return c.json(attachWorkspaceDirectory(input.workspaceSlug, input.directoryPath))
 })
 
-/** POST /api/agent:detach-workspace-directory → string[] */
-agent.post(`/${AGENT_IPC_CHANNELS.DETACH_WORKSPACE_DIRECTORY}`, async (c) => {
+/** POST /api/agent:detach-workspace-directory → string[]（仅管理员：全局工作区挂载配置写操作） */
+agent.post(`/${AGENT_IPC_CHANNELS.DETACH_WORKSPACE_DIRECTORY}`, adminOnly, async (c) => {
   const input = await c.req.json<WorkspaceAttachDirectoryInput>()
   return c.json(detachWorkspaceDirectory(input.workspaceSlug, input.directoryPath))
 })
 
-/** POST /api/agent:attach-workspace-file → string[] */
-agent.post(`/${AGENT_IPC_CHANNELS.ATTACH_WORKSPACE_FILE}`, async (c) => {
+/** POST /api/agent:attach-workspace-file → string[]（仅管理员：全局工作区挂载配置写操作） */
+agent.post(`/${AGENT_IPC_CHANNELS.ATTACH_WORKSPACE_FILE}`, adminOnly, async (c) => {
   const input = await c.req.json<WorkspaceAttachFileInput>()
   assertPathSafe(input.filePath)
   const safePath = resolve(input.filePath)
@@ -874,8 +884,8 @@ agent.post(`/${AGENT_IPC_CHANNELS.ATTACH_WORKSPACE_FILE}`, async (c) => {
   return c.json(attachWorkspaceFile(input.workspaceSlug, safePath))
 })
 
-/** POST /api/agent:detach-workspace-file → string[] */
-agent.post(`/${AGENT_IPC_CHANNELS.DETACH_WORKSPACE_FILE}`, async (c) => {
+/** POST /api/agent:detach-workspace-file → string[]（仅管理员：全局工作区挂载配置写操作） */
+agent.post(`/${AGENT_IPC_CHANNELS.DETACH_WORKSPACE_FILE}`, adminOnly, async (c) => {
   const input = await c.req.json<WorkspaceAttachFileInput>()
   return c.json(detachWorkspaceFile(input.workspaceSlug, input.filePath))
 })
@@ -1118,14 +1128,18 @@ agent.post(`/${AGENT_IPC_CHANNELS.GET_WORKTREE_REPOS}`, async (c) => {
   return c.json(await getWorktreeRepos(workspaceSlug))
 })
 
-/** POST /api/agent:add-worktree-repo → WorkspaceWorktreeRepo[] */
-agent.post(`/${AGENT_IPC_CHANNELS.ADD_WORKTREE_REPO}`, async (c) => {
+/**
+ * POST /api/agent:add-worktree-repo → WorkspaceWorktreeRepo[]（仅管理员）
+ *
+ * 计划外审计补挂：worktree 仓库登记写入全局工作区配置，与工作区写路由同档门控。
+ */
+agent.post(`/${AGENT_IPC_CHANNELS.ADD_WORKTREE_REPO}`, adminOnly, async (c) => {
   const { workspaceSlug, repo } = await c.req.json<{ workspaceSlug: string; repo: WorkspaceWorktreeRepo }>()
   return c.json(addWorktreeRepo(workspaceSlug, repo))
 })
 
-/** POST /api/agent:remove-worktree-repo → WorkspaceWorktreeRepo[] */
-agent.post(`/${AGENT_IPC_CHANNELS.REMOVE_WORKTREE_REPO}`, async (c) => {
+/** POST /api/agent:remove-worktree-repo → WorkspaceWorktreeRepo[]（仅管理员：全局工作区配置写操作） */
+agent.post(`/${AGENT_IPC_CHANNELS.REMOVE_WORKTREE_REPO}`, adminOnly, async (c) => {
   const { workspaceSlug, repoPath } = await c.req.json<{ workspaceSlug: string; repoPath: string }>()
   return c.json(removeWorktreeRepo(workspaceSlug, repoPath))
 })
@@ -1216,8 +1230,14 @@ agent.post(`/${AGENT_IPC_CHANNELS.SAVE_FILES_TO_SESSION}`, async (c) => {
   return c.json(results)
 })
 
-/** POST /api/agent:save-files-to-workspace → AgentSavedFile[] */
-agent.post(`/${AGENT_IPC_CHANNELS.SAVE_FILES_TO_WORKSPACE}`, async (c) => {
+/**
+ * POST /api/agent:save-files-to-workspace → AgentSavedFile[]（仅管理员）
+ *
+ * 计划外审计补挂：向全局工作区的 workspace-files 目录写入任意文件，
+ * 与 write-workspace-auto-memory-file 等全局工作区写路由同档门控。
+ * 会话级对应路由（save-files-to-session，写用户私有会话目录）保持开放。
+ */
+agent.post(`/${AGENT_IPC_CHANNELS.SAVE_FILES_TO_WORKSPACE}`, adminOnly, async (c) => {
   const input = await c.req.json<AgentSaveWorkspaceFilesInput>()
   const wsFilesDir = getWorkspaceFilesDir(input.workspaceSlug)
   const results: AgentSavedFile[] = []

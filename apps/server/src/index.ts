@@ -5,8 +5,19 @@ import { existsSync, readFileSync, mkdirSync } from 'node:fs'
 import { app } from './app'
 import { websocketHandlers } from './ws'
 import { verifyToken } from './auth/jwt'
+import { validateProductionEnv } from './utils/env'
 import { getDataRoot, getProxySettingsPath } from '@proma/server-core/config-paths'
 import { initAdminUser } from '@proma/server-core/user-manager'
+
+// ─── 生产敏感配置强制校验（开发态 PROMA_DEV=1 跳过）───
+// 生产态必须显式设置 PROMA_JWT_SECRET 与 PROMA_SERVER_MASTER_KEY，缺失即退出：
+// 避免 JWT 回落公开默认密钥（可伪造任意 admin token）、渠道 API Key 明文落盘。
+const envCheck = validateProductionEnv()
+if (!envCheck.ok) {
+  console.error(`[启动] 生产模式缺少必需配置：${envCheck.missing.join(', ')}`)
+  console.error('[启动] 请设置上述环境变量后重启（开发模式可设 PROMA_DEV=1 跳过）')
+  process.exit(1)
+}
 
 // ─── 产品初始化 ───
 

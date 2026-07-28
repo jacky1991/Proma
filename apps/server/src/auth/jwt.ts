@@ -2,13 +2,31 @@
  * JWT 签发 / 验证
  *
  * 基于 hono/jwt（HS256）。access token 1 天有效，refresh token 7 天有效。
- * 生产环境务必通过 PROMA_JWT_SECRET 环境变量覆盖默认密钥。
+ * 生产环境务必通过 PROMA_JWT_SECRET 环境变量覆盖默认密钥（由 index.ts 启动校验强制）。
  */
 
 import { sign, verify } from 'hono/jwt'
 
-/** JWT 签名密钥（生产环境必须通过环境变量覆盖） */
-const JWT_SECRET = process.env.PROMA_JWT_SECRET || 'proma-dev-secret-change-in-production'
+/** 开发态回落默认密钥（生产态由启动校验阻断，不会走到此分支） */
+const DEV_FALLBACK_SECRET = 'proma-dev-secret-change-in-production'
+
+/** JWT 签名密钥缓存（首次调用 getSecret() 时求值并固化） */
+let cachedSecret: string | null = null
+
+/**
+ * 惰性读取 JWT 签名密钥（首次调用时求值并缓存）。
+ *
+ * 设计为函数内惰性读取而非模块顶层 const：
+ * - 避免「启动校验通过但模块已用 dev 默认值初始化」的时序坑
+ *   （顶层 const 在模块加载期即固化，早于 index.ts 的启动校验）。
+ * - 生产态校验要求 PROMA_JWT_SECRET 必设；未设置仅开发态可回落默认值。
+ */
+function getSecret(): string {
+  if (cachedSecret === null) {
+    cachedSecret = process.env.PROMA_JWT_SECRET || DEV_FALLBACK_SECRET
+  }
+  return cachedSecret
+}
 
 /** access token 有效期：1 天（秒） */
 const ACCESS_TOKEN_TTL = 60 * 60 * 24
@@ -63,14 +81,14 @@ function buildPayload(user: TokenUser, ttl: number): TokenPayload {
  * 签发 access token（1 天有效）
  */
 export async function signAccessToken(user: TokenUser): Promise<string> {
-  return sign(buildPayload(user, ACCESS_TOKEN_TTL), JWT_SECRET)
+  return sign(buildPayload(user, ACCESS_TOKEN_TTL), getSecret())
 }
 
 /**
  * 签发 refresh token（7 天有效）
  */
 export async function signRefreshToken(user: TokenUser): Promise<string> {
-  return sign(buildPayload(user, REFRESH_TOKEN_TTL), JWT_SECRET)
+  return sign(buildPayload(user, REFRESH_TOKEN_TTL), getSecret())
 }
 
 /**
@@ -80,7 +98,7 @@ export async function signRefreshToken(user: TokenUser): Promise<string> {
  */
 export async function verifyToken(token: string): Promise<TokenPayload | null> {
   try {
-    const payload = (await verify(token, JWT_SECRET, 'HS256')) as TokenPayload
+    const payload = (await verify(token, getSecret(), 'HS256')) as TokenPayload
     return payload
   } catch {
     return null

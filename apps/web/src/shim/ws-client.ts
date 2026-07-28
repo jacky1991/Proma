@@ -30,6 +30,12 @@ const RECONNECT_BASE_DELAY = 1000
 const RECONNECT_MAX_DELAY = 30000
 
 /**
+ * 服务端「用户被删除」自定义关闭码（须与 apps/server/src/ws.ts 的 WS_CLOSE_USER_DELETED 一致）。
+ * 收到此码时不自动重连：被删用户重连必然鉴权失败，且其会话已被服务端主动终止。
+ */
+const WS_CLOSE_USER_DELETED = 4001
+
+/**
  * 将相对或绝对 wsBase 解析为浏览器可用的绝对 WebSocket URL。
  * 若存在 access token，以 ?token=<accessToken> 形式附加到 URL（WS 握手不支持自定义 header）。
  */
@@ -137,10 +143,16 @@ export function createWsClient(config: ShimConfig): WsClient {
       }
     }
 
-    ws.onclose = () => {
-      console.log('[WS] 连接关闭')
+    ws.onclose = (event) => {
       ws = null
       subscribed = false
+      // 用户被服务端删除（关闭码 4001）：不自动重连，直接终结客户端
+      if (event.code === WS_CLOSE_USER_DELETED) {
+        console.log('[WS] 连接被服务端关闭（用户已删除），停止重连')
+        closed = true
+        return
+      }
+      console.log('[WS] 连接关闭')
       scheduleReconnect()
     }
 

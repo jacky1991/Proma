@@ -16,6 +16,8 @@ import type { ResetUserPasswordInput } from '@proma/shared'
 import { adminOnly } from '../middleware/role.ts'
 import { toPublicUser } from './auth.ts'
 import { validatePassword } from '../utils/password.ts'
+import { orchestrator } from '../engine'
+import { disconnectUser } from '../ws'
 
 /** user:delete 请求体 */
 interface DeleteUserInput {
@@ -73,9 +75,13 @@ user.post('/user:reset-password', adminOnly, async (c) => {
  * 管理员删除用户，并级联清理其私有数据目录 users/{userId}/。
  * 请求体：{ userId, confirm }
  * - confirm 必须为 true（防误删，前端二次确认弹窗传入）
- * - 删除保护：禁止删除自己 / 内置 admin（底层抛错转 400）
+ * - 删除保护：禁止删除自己 / 内置 admin（路由预检转 400，底层 deleteUser 二次防御）
+ *
+ * 即时管控编排（M4 迭代 9，顺序关键）：通过保护预检后，先 stopByUser 终止运行中会话、
+ * disconnectUser 以关闭码 4001 踢掉 WS 连接，最后 deleteUser 级联 rmSync——
+ * 避免 rmSync 与运行中 SDK 写 JSONL 竞态（AC-9 / AC-10）。
  * 成功 → 200 { ok: true }
- * 缺 userId 或 confirm !== true → 400；用户不存在 → 404；触发删除保护 → 400
+ * 缺 userId 或 confirm !== true → 400；用户不存在 → 404；触发删除保护 → 400（连接、会话不变）
  */
 user.post('/user:delete', adminOnly, async (c) => {
   const body = await c.req.json<DeleteUserInput>()
@@ -90,12 +96,28 @@ user.post('/user:delete', adminOnly, async (c) => {
   }
 
   // 预检用户存在性，与 reset-password 保持一致
-  if (!getUserById(userId)) {
+  const target = getUserById(userId)
+  if (!target) {
     return c.json({ error: '用户不存在' }, 404)
   }
 
   // 操作者 ID 取自全局认证中间件写入的用户上下文
   const operator = c.get('user')
+
+  // 删除保护预检（与底层 deleteUser 的保护一致）：必须前置到断连 / 停会话之前，
+  // 否则「删自己 / 删内置 admin」被拒时，操作者自身的连接与会话已被误断开（AC-11：连接、会话不变）。
+  if (target.username === 'admin') {
+    return c.json({ error: '不能删除内置 admin 账户' }, 400)
+  }
+  if (userId === operator.userId) {
+    return c.json({ error: '不能删除操作者自己' }, 400)
+  }
+
+  // 顺序关键（AC-10）：先停运行中会话 + 踢 WS 连接，再删数据。
+  // 否则 deleteUser 的 rmSync 与运行中 SDK 写 JSONL 竞态，可能报错或残留句柄。
+  orchestrator.stopByUser(userId)
+  disconnectUser(userId)
+
   try {
     deleteUser(userId, operator.userId)
   } catch (error) {

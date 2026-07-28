@@ -20,6 +20,7 @@ import type {
   UpdateAutomationInput,
 } from '@proma/shared'
 import { wsStreamSink } from '../ws'
+import { adminOnly } from '../middleware/role.ts'
 
 const automation = new Hono()
 
@@ -33,8 +34,8 @@ automation.post('/automation:list', (c) => {
   return c.json(listAutomations())
 })
 
-/** POST /api/automation:create → Automation */
-automation.post('/automation:create', async (c) => {
+/** POST /api/automation:create → Automation（仅管理员：全局共享资源写操作） */
+automation.post('/automation:create', adminOnly, async (c) => {
   const input = await c.req.json<CreateAutomationInput>()
   if (!input || typeof input !== 'object') {
     return c.json({ error: 'input 必须是对象' }, 400)
@@ -50,8 +51,8 @@ automation.post('/automation:create', async (c) => {
   return c.json(a)
 })
 
-/** POST /api/automation:update → Automation | undefined */
-automation.post('/automation:update', async (c) => {
+/** POST /api/automation:update → Automation | undefined（仅管理员：全局共享资源写操作） */
+automation.post('/automation:update', adminOnly, async (c) => {
   const input = await c.req.json<UpdateAutomationInput>()
   if (!input || typeof input !== 'object') {
     return c.json({ error: 'input 必须是对象' }, 400)
@@ -72,8 +73,8 @@ automation.post('/automation:update', async (c) => {
   }
 })
 
-/** POST /api/automation:delete → boolean */
-automation.post('/automation:delete', async (c) => {
+/** POST /api/automation:delete → boolean（仅管理员：全局共享资源写操作） */
+automation.post('/automation:delete', adminOnly, async (c) => {
   const { id } = await c.req.json<{ id: string }>()
   if (!id?.trim()) {
     return c.json({ error: 'id 必填' }, 400)
@@ -83,8 +84,8 @@ automation.post('/automation:delete', async (c) => {
   return c.json(ok)
 })
 
-/** POST /api/automation:toggle → Automation | undefined */
-automation.post('/automation:toggle', async (c) => {
+/** POST /api/automation:toggle → Automation | undefined（仅管理员：全局共享资源写操作） */
+automation.post('/automation:toggle', adminOnly, async (c) => {
   const { id, active } = await c.req.json<{ id: string; active: boolean }>()
   if (!id?.trim()) {
     return c.json({ error: 'id 必填' }, 400)
@@ -102,11 +103,11 @@ automation.post('/automation:toggle', async (c) => {
 })
 
 /**
- * POST /api/automation:run-now
+ * POST /api/automation:run-now（仅管理员：全局共享资源写操作）
  *
  * M2.5 阶段：执行逻辑推迟到 M3 后，返回"即将推出"提示。
  */
-automation.post('/automation:run-now', async (c) => {
+automation.post('/automation:run-now', adminOnly, async (c) => {
   const { id } = await c.req.json<{ id: string }>()
   if (!id?.trim()) {
     return c.json({ error: 'id 必填' }, 400)

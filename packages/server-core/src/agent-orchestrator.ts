@@ -43,7 +43,7 @@ import { getFetchFn } from './proxy-fetch'
 import { getEffectiveProxyUrl } from './proxy-settings-service'
 import { appendSDKMessages, updateAgentSessionMeta, getAgentSessionMeta, getAgentSessionMessages, truncateSDKMessages, removeSDKErrorMessage, resolveUserUuidFromSDK, rewindFilesFromSnapshot, rewindPiAgentSession } from './agent-session-manager'
 import { getAgentWorkspace, getWorkspaceMcpConfig, ensurePluginManifest, getWorkspaceAutoMemoryDir, getWorkspaceAttachedDirectories, getWorkspaceAttachedFiles } from './agent-workspace-manager'
-import { getAgentWorkspacePath, getAgentSessionWorkspacePath, getSdkConfigDir, getWorkspaceFilesDir, getBundledCliPath, getWorkspaceSkillsDir, getAgentHomeDir, type UserScope } from './config-paths'
+import { getAgentWorkspacePath, getAgentSessionWorkspacePath, getSdkConfigDir, getWorkspaceFilesDir, getBundledCliPath, getWorkspaceSkillsDir, getAgentHomeDir, getDataRoot, type UserScope } from './config-paths'
 import { getRuntimeStatus } from './runtime-init'
 import { getSettings } from './settings-service'
 import { buildSystemPrompt, buildDynamicContext } from './agent-prompt-builder'
@@ -510,6 +510,15 @@ export class AgentOrchestrator {
       // 配置隔离：让 SDK 使用独立的配置目录，不读取用户的 ~/.claude.json
       // 多用户场景按 scope 落到 users/{userId}/sdk-config/，桌面端（无 scope）保持全局目录
       CLAUDE_CONFIG_DIR: getSdkConfigDir(scope),
+      // 用户身份与数据根注入（M4 迭代 9）：
+      // scope 有值（Web 多用户）时注入 PROMA_USER_ID / PROMA_DATA_ROOT，供 SDK 子进程
+      // 及其拉起的 proma CLI 识别当前用户与数据根；scope 无值（桌面端）不注入，行为不变。
+      ...(scope
+        ? {
+            PROMA_USER_ID: scope.userId,
+            PROMA_DATA_ROOT: getDataRoot(),
+          }
+        : {}),
     }
 
     // 认证方式按 provider 分支
@@ -2434,6 +2443,32 @@ export class AgentOrchestrator {
    */
   getSessionOwner(sessionId: string): string | undefined {
     return this.sessionOwners.get(sessionId)
+  }
+
+  /**
+   * 终止指定用户的所有运行中会话（删除用户时调用，M4 迭代 9）
+   *
+   * 遍历归属表 sessionOwners，对归属该用户且当前活跃（isActive）的会话逐个 stop。
+   * sessionOwners 为内存态（进程重启丢失），对「运行中会话」的即时终止足够；
+   * 历史会话归属以持久化索引为准，随删除用户级联清理数据目录一并清除。
+   *
+   * 必须在 deleteUser 的 rmSync 之前调用，避免 rmSync 与运行中 SDK 写 JSONL 竞态。
+   *
+   * @param userId 目标用户 ID
+   * @returns 被终止的运行中会话数量
+   */
+  stopByUser(userId: string): number {
+    let stopped = 0
+    for (const [sessionId, owner] of this.sessionOwners) {
+      if (owner === userId && this.isActive(sessionId)) {
+        this.stop(sessionId)
+        stopped++
+      }
+    }
+    if (stopped > 0) {
+      console.log(`[Agent 编排] 已终止用户 ${userId} 的 ${stopped} 个运行中会话`)
+    }
+    return stopped
   }
 
   /**

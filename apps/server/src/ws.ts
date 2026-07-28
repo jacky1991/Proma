@@ -423,6 +423,34 @@ export class WsStreamSink {
 /** 全局 StreamSink 实例 */
 export const wsStreamSink = new WsStreamSink()
 
+/** 删除用户时使用的自定义 WS 关闭码（前端据此不自动重连） */
+export const WS_CLOSE_USER_DELETED = 4001
+
+/**
+ * 断开指定用户的全部 WS 连接（删除用户时调用，M4 迭代 9）
+ *
+ * 遍历所有活跃连接，对归属该用户的连接以自定义关闭码 4001 关闭。
+ * 前端 ws-client 收到 4001 时不触发自动重连（被删用户重连也必然鉴权失败）。
+ * 连接的清理（allConnections / sessionConnections）由 close 处理器统一负责。
+ *
+ * @param userId 目标用户 ID
+ * @param reason 关闭原因（随关闭帧下发）
+ * @returns 被关闭的连接数量
+ */
+export function disconnectUser(userId: string, reason = 'user deleted'): number {
+  let closed = 0
+  for (const ws of allConnections) {
+    if (ws.data.userId === userId) {
+      ws.close(WS_CLOSE_USER_DELETED, reason)
+      closed++
+    }
+  }
+  if (closed > 0) {
+    console.log(`[WS] 已断开用户 ${userId} 的 ${closed} 个连接（${reason}）`)
+  }
+  return closed
+}
+
 // ===== Bun WebSocket 处理器 =====
 
 export const websocketHandlers = {

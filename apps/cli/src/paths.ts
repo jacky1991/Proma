@@ -6,6 +6,7 @@
  * 因此这里独立实现一份等价逻辑：
  *   - 默认 ~/.proma
  *   - 环境变量 PROMA_DEV=1 → ~/.proma-dev
+ *   - 环境变量 PROMA_DATA_ROOT → 直接采用（Web 多用户：SDK 子进程注入，CLI 据此读对根）
  *   - 显式 configDir 覆盖（CLI 的 --config-dir）优先级最高
  *
  * 与 config-paths.ts 的目录布局保持一致：
@@ -24,6 +25,8 @@ export interface PathOptions {
 
 export function resolveConfigDir(opts: PathOptions = {}): string {
   if (opts.configDir) return opts.configDir
+  // Web 多用户：SDK 子进程注入 PROMA_DATA_ROOT，CLI 据此定位数据根，不再默认落 ~/.proma
+  if (process.env.PROMA_DATA_ROOT) return process.env.PROMA_DATA_ROOT
   const useDev = opts.dev || process.env.PROMA_DEV === '1'
   return join(homedir(), useDev ? '.proma-dev' : '.proma')
 }
