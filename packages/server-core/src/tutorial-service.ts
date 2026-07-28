@@ -2,7 +2,7 @@
  * 教程服务（server-core 版）
  *
  * 从 Electron 端 tutorial-service.ts 迁入，去除 Electron 依赖。
- * 教程文件路径：monorepo 根目录 tutorial/tutorial.md 或 apps/electron/resources/tutorial.md。
+ * 教程文件路径：monorepo 根目录 tutorial/tutorial.md（开发模式）或 resources/tutorial.md（server 独立部署）。
  */
 
 import { readFileSync, existsSync, writeFileSync } from 'node:fs'
@@ -19,14 +19,12 @@ import type { ConversationMeta, FileAttachment, ChatMessage } from '@proma/share
  * 按优先级搜索：
  * 1. 环境变量 PROMA_TUTORIAL_PATH（显式指定）
  * 2. 相对于 cwd 的 tutorial/tutorial.md（monorepo 开发模式）
- * 3. 相对于 cwd 的 apps/electron/resources/tutorial.md
- * 4. 相对于 cwd 的 resources/tutorial.md（server 独立部署）
+ * 3. 相对于 cwd 的 resources/tutorial.md（server 独立部署）
  */
 function findTutorialFilePath(): string | null {
   const candidates = [
     process.env.PROMA_TUTORIAL_PATH,
     resolve(process.cwd(), 'tutorial/tutorial.md'),
-    resolve(process.cwd(), 'apps/electron/resources/tutorial.md'),
     resolve(process.cwd(), 'resources/tutorial.md'),
   ].filter(Boolean) as string[]
 

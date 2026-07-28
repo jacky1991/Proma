@@ -259,65 +259,6 @@ export interface FeishuChatMessage {
   createTime: number
 }
 
-// ===== IPC 通道常量 =====
-
-export const FEISHU_IPC_CHANNELS = {
-  /** 获取飞书配置（旧格式，向后兼容） */
-  GET_CONFIG: 'feishu:get-config',
-  /** 保存飞书配置（旧格式，向后兼容） */
-  SAVE_CONFIG: 'feishu:save-config',
-  /** 获取解密后的 App Secret（旧格式，向后兼容） */
-  GET_DECRYPTED_SECRET: 'feishu:get-decrypted-secret',
-  /** 测试飞书连接 */
-  TEST_CONNECTION: 'feishu:test-connection',
-  /** 启动 Bridge（旧格式，向后兼容） */
-  START_BRIDGE: 'feishu:start-bridge',
-  /** 停止 Bridge（旧格式，向后兼容） */
-  STOP_BRIDGE: 'feishu:stop-bridge',
-  /** 获取 Bridge 状态（旧格式，向后兼容） */
-  GET_STATUS: 'feishu:get-status',
-  /** Bridge 状态变化（主进程 → 渲染进程推送） */
-  STATUS_CHANGED: 'feishu:status-changed',
-  /** 获取活跃绑定列表 */
-  LIST_BINDINGS: 'feishu:list-bindings',
-  /** 更新绑定（修改工作区/会话） */
-  UPDATE_BINDING: 'feishu:update-binding',
-  /** 移除绑定 */
-  REMOVE_BINDING: 'feishu:remove-binding',
-  /** 渲染进程 → 主进程：上报用户在场状态 */
-  REPORT_PRESENCE: 'feishu:report-presence',
-
-  // ===== 多 Bot（v2）=====
-
-  /** 获取多 Bot 配置 */
-  GET_MULTI_CONFIG: 'feishu:get-multi-config',
-  /** 保存单个 Bot 配置（新建或更新） */
-  SAVE_BOT_CONFIG: 'feishu:save-bot-config',
-  /** 删除 Bot */
-  REMOVE_BOT: 'feishu:remove-bot',
-  /** 获取单个 Bot 的解密 App Secret */
-  GET_BOT_DECRYPTED_SECRET: 'feishu:get-bot-decrypted-secret',
-  /** 启动单个 Bot Bridge */
-  START_BOT: 'feishu:start-bot',
-  /** 停止单个 Bot Bridge */
-  STOP_BOT: 'feishu:stop-bot',
-  /** 获取多 Bot Bridge 状态 */
-  GET_MULTI_STATUS: 'feishu:get-multi-status',
-  /** 多 Bot 状态变化推送 */
-  MULTI_STATUS_CHANGED: 'feishu:multi-status-changed',
-
-  // ===== 扫码注册（v3）=====
-
-  /** 启动扫码注册流程，返回最终的 App ID/Secret */
-  REGISTER_APP_START: 'feishu:register-app-start',
-  /** 主进程 → 渲染进程：二维码 URL 已生成 */
-  REGISTER_APP_QRCODE: 'feishu:register-app-qrcode',
-  /** 主进程 → 渲染进程：注册流程状态变化（polling/slow_down/domain_switched） */
-  REGISTER_APP_STATUS: 'feishu:register-app-status',
-  /** 取消正在进行的扫码注册流程 */
-  REGISTER_APP_CANCEL: 'feishu:register-app-cancel',
-} as const
-
 // ===== 扫码注册类型 =====
 
 export interface FeishuRegisterAppQRCode {

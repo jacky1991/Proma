@@ -9,41 +9,13 @@
  * 检测顺序（统一逻辑，开发/打包一致）：
  * 1. 打包产物内 vendor/bun/（当前默认不打包，留给未来可选打包扩展）
  * 2. 系统 PATH（which bun / where bun）
- * 3. 开发仓库 apps/electron/vendor/bun/{platform-arch}/（dev 用）
  */
 
 import { existsSync } from 'fs'
-import { join, dirname } from 'path'
+import { join } from 'path'
 import { execSync, spawnSync } from 'child_process'
-import type { BunRuntimeStatus, PlatformArch } from '@proma/shared'
+import type { BunRuntimeStatus } from '@proma/shared'
 import { getEnvProbe } from './config'
-
-/**
- * 获取当前平台架构标识
- *
- * @returns 当前系统的平台架构组合
- */
-export function getCurrentPlatformArch(): PlatformArch {
-  const platform = process.platform as 'darwin' | 'linux' | 'win32'
-  const arch = process.arch as 'arm64' | 'x64'
-
-  // 验证支持的组合
-  const platformArch = `${platform}-${arch}` as PlatformArch
-
-  const supportedCombinations: PlatformArch[] = [
-    'darwin-arm64',
-    'darwin-x64',
-    'linux-arm64',
-    'linux-x64',
-    'win32-x64',
-  ]
-
-  if (!supportedCombinations.includes(platformArch)) {
-    throw new Error(`不支持的平台架构组合: ${platformArch}`)
-  }
-
-  return platformArch
-}
 
 /**
  * 获取 Bun 二进制文件名
@@ -75,35 +47,6 @@ export function getBundledBunPath(): string | null {
 
   if (existsSync(bunPath)) {
     return bunPath
-  }
-
-  return null
-}
-
-/**
- * 获取开发环境下 vendor 目录中的 Bun 路径
- *
- * 开发环境目录结构：
- * apps/electron/vendor/bun/{platform-arch}/bun
- *
- * @returns Bun 二进制路径，如果不存在返回 null
- */
-export function getVendorBunPath(): string | null {
-  if (getEnvProbe().isPackaged) {
-    return null
-  }
-
-  try {
-    const platformArch = getCurrentPlatformArch()
-    // __dirname 在开发环境下指向 dist/，需要向上一级到 apps/electron/
-    const vendorDir = join(__dirname, '..', 'vendor', 'bun', platformArch)
-    const bunPath = join(vendorDir, getBunBinaryName())
-
-    if (existsSync(bunPath)) {
-      return bunPath
-    }
-  } catch {
-    // 平台不支持，忽略
   }
 
   return null
@@ -174,7 +117,7 @@ export function validateBunExecutable(bunPath: string): string | null {
  * - 系统运行时状态卡片展示
  * - 用户执行依赖 Bun 的自定义脚本时提供可用性提示
  *
- * 检测顺序：bundled（若存在） → 系统 PATH → 开发 vendor 目录
+ * 检测顺序：bundled（若存在） → 系统 PATH
  * 全部未命中时返回 available: false 但 **不视为错误**（error 置 null）。
  *
  * @returns Bun 运行时状态
@@ -184,11 +127,10 @@ export async function detectBunRuntime(): Promise<BunRuntimeStatus> {
 
   const candidates: Array<{
     getPath: () => string | null
-    source: 'bundled' | 'system' | 'vendor'
+    source: 'bundled' | 'system'
   }> = [
     { getPath: getBundledBunPath, source: 'bundled' },
     { getPath: getSystemBunPath, source: 'system' },
-    { getPath: getVendorBunPath, source: 'vendor' },
   ]
 
   for (const { getPath, source } of candidates) {

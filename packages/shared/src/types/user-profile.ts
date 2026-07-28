@@ -2,7 +2,7 @@
  * 用户档案类型
  *
  * 用户名、头像等档案定义（transport 无关的共享契约）。
- * IPC 通道常量仍保留在 Electron 端（apps/electron/src/types/）。
+ * 原 Electron IPC 通道常量已随桌面端删除（M4 迭代 11）。
  */
 
 /** 默认用户头像 emoji */

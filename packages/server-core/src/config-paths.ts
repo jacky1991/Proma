@@ -564,9 +564,11 @@ export function getBundledCliPath(): string | undefined {
   return existsSync(cliPath) ? cliPath : undefined
 }
 
-// 注：seedDefaultSkills（及 compareSemver / defaultSkillCopyFilter 等
-// 其专属辅助）依赖 process.resourcesPath / app.isPackaged，属 Electron 打包职责，不进 server-core——
-// 由 Electron 端 lib/config-paths.ts 在 re-export 纯路径函数之外本地保留。
+// 注：内置默认 Skills 的 bundle 源目录已迁至 packages/server-core/default-skills/
+// （随 Electron 桌面端删除一并迁移，M4 迭代 11）。
+// 原 Electron 端 seedDefaultSkills 的「bundle → ~/.proma/default-skills/」播种入口
+// 尚未在 Web 端重建；工作区升级逻辑 upgradeDefaultSkillsInWorkspaces 仍从
+// ~/.proma/default-skills/ 读取，老用户已有数据不受影响。
 
 /**
  * 获取微信配置文件路径

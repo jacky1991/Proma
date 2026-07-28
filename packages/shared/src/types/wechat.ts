@@ -106,24 +106,3 @@ export interface WeChatIncomingMessage {
   item_list: WeChatMessageItem[]
   context_token: string
 }
-
-// ===== IPC 通道常量 =====
-
-export const WECHAT_IPC_CHANNELS = {
-  /** 获取微信配置 */
-  GET_CONFIG: 'wechat:get-config',
-  /** 保存微信配置 */
-  SAVE_CONFIG: 'wechat:save-config',
-  /** 开始扫码登录 */
-  START_LOGIN: 'wechat:start-login',
-  /** 登出 */
-  LOGOUT: 'wechat:logout',
-  /** 启动 Bridge（用已有凭证） */
-  START_BRIDGE: 'wechat:start-bridge',
-  /** 停止 Bridge */
-  STOP_BRIDGE: 'wechat:stop-bridge',
-  /** 获取 Bridge 状态 */
-  GET_STATUS: 'wechat:get-status',
-  /** Bridge 状态变化（主进程 → 渲染进程推送） */
-  STATUS_CHANGED: 'wechat:status-changed',
-} as const

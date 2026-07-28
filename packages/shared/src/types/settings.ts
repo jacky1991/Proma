@@ -2,7 +2,7 @@
  * 应用设置类型
  *
  * 主题模式、语音输入、通知音等设置相关定义（transport 无关的共享契约）。
- * IPC 通道常量仍保留在 Electron 端（apps/electron/src/types/）。
+ * 原 Electron IPC 通道常量已随桌面端删除（M4 迭代 11）。
  */
 
 import type { AgentEffort, ThinkingConfig } from './agent'

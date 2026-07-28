@@ -12,9 +12,6 @@
     "dev": "(cd apps/server && PROMA_DEV=1 bun src/index.ts) & (cd apps/web && bunx vite --host 127.0.0.1 --port 5174)",
     "dev:web": "bun run --filter='@proma/web' dev",
     "dev:server": "PROMA_DEV=1 bun run --filter='@proma/server' dev",
-    "electron:dev": "bun run --filter='@proma/electron' dev",
-    "electron:build": "bun run --filter='@proma/electron' build",
-    "electron:start": "bun run --filter='@proma/electron' start",
     "build": "bun run --filter='*' build",
     "typecheck": "bun run --filter='*' typecheck",
     "test": "bun test"
