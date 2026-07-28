@@ -14,6 +14,10 @@ import { randomUUID } from 'node:crypto'
 import { getConversationAttachmentsDir } from '@proma/server-core/config-paths'
 import { getMimeType } from '@proma/server-core/attachment-service'
 import { getUserScope } from '../utils/user-scope'
+import { createLogger } from '@proma/server-core/logger'
+
+/** 模块日志器 */
+const logger = createLogger('上传')
 
 const upload = new Hono()
 
@@ -91,7 +95,7 @@ upload.post('/upload', async (c) => {
   // 流式写入：Bun.write 直接接受 File 对象，内部流式处理，不会将整个文件加载到内存
   await Bun.write(fullPath, file)
 
-  console.log(`[上传] 已保存附件: ${file.name} → ${localPath} (${file.size} 字节)`)
+  logger.info('已保存附件', { filename: file.name, localPath, size: file.size })
 
   return c.json({
     id,
@@ -157,7 +161,7 @@ upload.delete('/attachments/:conversationId/:filename', (c) => {
   }
 
   unlinkSync(fullPath)
-  console.log(`[上传] 已删除附件: ${conversationId}/${filename}`)
+  logger.info('已删除附件', { conversationId, filename })
   return c.json({ ok: true })
 })
 

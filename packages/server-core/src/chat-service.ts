@@ -18,6 +18,7 @@ import {
 import type { ImageAttachmentData, ContinuationMessage } from '@proma/core'
 import { listChannels, resolveChannelRuntimeApiKey } from './channel-manager'
 import { appendMessage, updateConversationMeta, getConversationMessages } from './conversation-manager'
+import type { UserScope } from './config-paths'
 import { readAttachmentAsBase64, isImageAttachment } from './attachment-service'
 import { extractTextFromAttachment, isDocumentAttachment } from './document-parser'
 import { getFetchFn } from './proxy-fetch'
@@ -45,13 +46,13 @@ const MAX_TOOL_ROUNDS = 999
 
 // ===== 平台相关：图片附件读取器 =====
 
-function getImageAttachmentData(attachments?: FileAttachment[]): ImageAttachmentData[] {
+function getImageAttachmentData(attachments: FileAttachment[] | undefined, scope: UserScope): ImageAttachmentData[] {
   if (!attachments || attachments.length === 0) return []
   return attachments
     .filter((att) => isImageAttachment(att.mediaType))
     .map((att) => ({
       mediaType: att.mediaType,
-      data: readAttachmentAsBase64(att.localPath),
+      data: readAttachmentAsBase64(att.localPath, scope),
     }))
 }
 
@@ -59,7 +60,8 @@ function getImageAttachmentData(attachments?: FileAttachment[]): ImageAttachment
 
 async function enrichMessageWithDocuments(
   messageText: string,
-  attachments?: FileAttachment[],
+  attachments: FileAttachment[] | undefined,
+  scope: UserScope,
 ): Promise<string> {
   if (!attachments || attachments.length === 0) return messageText
   const docAttachments = attachments.filter((att) => isDocumentAttachment(att.mediaType))
@@ -68,7 +70,7 @@ async function enrichMessageWithDocuments(
   const parts: string[] = [messageText]
   for (const att of docAttachments) {
     try {
-      const text = await extractTextFromAttachment(att.localPath)
+      const text = await extractTextFromAttachment(att.localPath, scope)
       parts.push(text.trim()
         ? `\n<file name="${att.filename}">\n${text}\n</file>`
         : `\n<file name="${att.filename}">\n[文件内容为空]\n</file>`)
@@ -81,11 +83,11 @@ async function enrichMessageWithDocuments(
   return parts.join('')
 }
 
-async function enrichHistoryWithDocuments(history: ChatMessage[]): Promise<ChatMessage[]> {
+async function enrichHistoryWithDocuments(history: ChatMessage[], scope: UserScope): Promise<ChatMessage[]> {
   const enriched: ChatMessage[] = []
   for (const msg of history) {
     if (msg.role === 'user' && msg.attachments?.some((att) => isDocumentAttachment(att.mediaType))) {
-      const enrichedContent = await enrichMessageWithDocuments(msg.content, msg.attachments)
+      const enrichedContent = await enrichMessageWithDocuments(msg.content, msg.attachments, scope)
       enriched.push({ ...msg, content: enrichedContent })
       continue
     }
@@ -140,6 +142,7 @@ function filterHistory(
 export async function sendChatMessage(
   input: ChatSendInput,
   emit: ChatStreamEmitter,
+  scope: UserScope,
 ): Promise<void> {
   const {
     conversationId, userMessage, channelId,
@@ -170,7 +173,7 @@ export async function sendChatMessage(
   }
 
   // 3. 读取历史消息
-  const fullHistory = getConversationMessages(conversationId)
+  const fullHistory = getConversationMessages(conversationId, scope)
 
   // 4. 追加用户消息
   const userMsg: ChatMessage = {
@@ -180,12 +183,12 @@ export async function sendChatMessage(
     createdAt: Date.now(),
     attachments: attachments && attachments.length > 0 ? attachments : undefined,
   }
-  appendMessage(conversationId, userMsg)
+  appendMessage(conversationId, userMsg, scope)
 
   // 5. 过滤历史并提取文档附件文本
   const filteredHistory = filterHistory(fullHistory, contextDividers, contextLength)
-  const enrichedHistory = await enrichHistoryWithDocuments(filteredHistory)
-  const enrichedUserMessage = await enrichMessageWithDocuments(userMessage, attachments)
+  const enrichedHistory = await enrichHistoryWithDocuments(filteredHistory, scope)
+  const enrichedUserMessage = await enrichMessageWithDocuments(userMessage, attachments, scope)
 
   // 6. 创建 AbortController
   const controller = new AbortController()
@@ -231,7 +234,7 @@ export async function sendChatMessage(
         userMessage: enrichedUserMessage,
         systemMessage: effectiveSystemMessage,
         attachments,
-        readImageAttachments: getImageAttachmentData,
+        readImageAttachments: (attachments?: FileAttachment[]) => getImageAttachmentData(attachments, scope),
         thinkingEnabled,
         continuationMessages: continuationMessages.length > 0 ? continuationMessages : undefined,
       })
@@ -262,8 +265,8 @@ export async function sendChatMessage(
         toolActivities: accumulatedToolActivities.length > 0 ? accumulatedToolActivities : undefined,
         attachments: accumulatedGeneratedAttachments.length > 0 ? accumulatedGeneratedAttachments : undefined,
       }
-      appendMessage(conversationId, assistantMsg)
-      try { updateConversationMeta(conversationId, {}) } catch { /* 索引更新失败不影响主流程 */ }
+      appendMessage(conversationId, assistantMsg, scope)
+      try { updateConversationMeta(conversationId, {}, scope) } catch { /* 索引更新失败不影响主流程 */ }
     }
 
     emit({ type: 'complete', conversationId, model: modelId, messageId: (accumulatedContent.trim() || accumulatedGeneratedAttachments.length > 0) ? assistantMsgId : undefined })
@@ -276,8 +279,8 @@ export async function sendChatMessage(
           id: assistantMsgId, role: 'assistant', content: accumulatedContent,
           createdAt: Date.now(), model: modelId, reasoning: accumulatedReasoning || undefined, stopped: true,
           toolActivities: accumulatedToolActivities.length > 0 ? accumulatedToolActivities : undefined,
-        })
-        try { updateConversationMeta(conversationId, {}) } catch { /* noop */ }
+        }, scope)
+        try { updateConversationMeta(conversationId, {}, scope) } catch { /* noop */ }
         emit({ type: 'complete', conversationId, model: modelId, messageId: assistantMsgId })
       } else {
         emit({ type: 'complete', conversationId, model: modelId })
@@ -294,8 +297,8 @@ export async function sendChatMessage(
       createdAt: Date.now(), model: modelId, reasoning: accumulatedReasoning || undefined,
       stopped: true, error: errorMessage,
       toolActivities: accumulatedToolActivities.length > 0 ? accumulatedToolActivities : undefined,
-    })
-    try { updateConversationMeta(conversationId, {}) } catch { /* noop */ }
+    }, scope)
+    try { updateConversationMeta(conversationId, {}, scope) } catch { /* noop */ }
 
     emit({ type: 'error', conversationId, error: errorMessage })
   } finally {

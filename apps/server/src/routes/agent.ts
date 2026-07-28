@@ -66,7 +66,7 @@ import {
   removeWorktreeRepo,
 } from '@proma/server-core/agent-workspace-manager'
 import { setBuiltinMcpUserEnabled } from '@proma/server-core/builtin-mcp/settings'
-import { getWorkspaceSkillsDir, getAgentWorkspacesDir, getAgentSessionWorkspacePath, getWorkspaceFilesDir, getConfigDir, getUserSessionWorkspacesDir } from '@proma/server-core/config-paths'
+import { getWorkspaceSkillsDir, getAgentWorkspacesDir, getAgentSessionWorkspacePath, getWorkspaceFilesDir, getDataRoot, getUserSessionWorkspacesDir } from '@proma/server-core/config-paths'
 import type { UserScope } from '@proma/server-core/config-paths'
 import { getUserScope } from '../utils/user-scope'
 import { adminOnly } from '../middleware/role.ts'
@@ -75,6 +75,10 @@ import { permissionService } from '@proma/server-core/agent-permission-service'
 import { askUserService } from '@proma/server-core/agent-ask-user-service'
 import { exitPlanService } from '@proma/server-core/agent-exit-plan-service'
 import { orchestrator, streamSink } from '../engine'
+import { createLogger } from '@proma/server-core/logger'
+
+/** 模块日志器 */
+const logger = createLogger('Agent 路由')
 
 const agent = new Hono()
 
@@ -180,7 +184,7 @@ agent.post(`/${AGENT_IPC_CHANNELS.SEND_MESSAGE}`, async (c) => {
 
   // 异步执行，不等待完成（流式事件经 WS 推送）
   orchestrator.sendMessage(input, callbacks, scope).catch((err: unknown) => {
-    console.error('[Agent 路由] sendMessage 失败:', err)
+    logger.error('sendMessage 失败', { error: err })
   })
   return c.json({ ok: true })
 })
@@ -296,7 +300,7 @@ agent.post(`/${AGENT_IPC_CHANNELS.EXIT_PLAN_MODE_RESPOND}`, async (c) => {
         try {
           updateAgentSessionMeta(sessionId, { permissionMode: targetMode }, scope)
         } catch (err) {
-          console.warn(`[Agent 路由] ExitPlanMode 持久化权限模式失败: sessionId=${sessionId}`, err)
+          logger.warn('ExitPlanMode 持久化权限模式失败', { sessionId, error: err })
         }
       }
       streamSink.emit(sessionId, {
@@ -770,8 +774,8 @@ const PATH_BLACKLIST_STATIC = ['/etc', '/root', '/sys', '/proc', '/dev', '/boot'
 
 function assertPathSafe(targetPath: string): void {
   const resolved = resolve(targetPath)
-  // 静态系统目录 + 动态配置目录（~/.proma/）
-  const blacklist = [...PATH_BLACKLIST_STATIC, getConfigDir()]
+  // 静态系统目录 + Web 数据根目录（多用户场景覆盖真实数据根 ~/.proma-web/，避免挂载隔离绕过）
+  const blacklist = [...PATH_BLACKLIST_STATIC, getDataRoot()]
   for (const blocked of blacklist) {
     if (resolved === blocked || resolved.startsWith(blocked + '/')) {
       throw new Error(`不允许挂载受保护目录: ${blocked}`)
@@ -1219,7 +1223,7 @@ agent.post(`/${AGENT_IPC_CHANNELS.SAVE_FILES_TO_SESSION}`, async (c) => {
     mkdirSync(dirname(targetPath), { recursive: true })
 
     if (file.data.length * 0.75 > MAX_ATTACHMENT_SIZE) {
-      console.warn(`[Agent 路由] 文件超过 100MB 限制，跳过: ${file.filename}`)
+      logger.warn('文件超过 100MB 限制，跳过', { filename: file.filename })
       continue
     }
 
@@ -1263,7 +1267,7 @@ agent.post(`/${AGENT_IPC_CHANNELS.SAVE_FILES_TO_WORKSPACE}`, adminOnly, async (c
     mkdirSync(dirname(targetPath), { recursive: true })
 
     if (file.data.length * 0.75 > MAX_ATTACHMENT_SIZE) {
-      console.warn(`[Agent 路由] 工作区文件超过 100MB 限制，跳过: ${file.filename}`)
+      logger.warn('工作区文件超过 100MB 限制，跳过', { filename: file.filename })
       continue
     }
 
@@ -1277,14 +1281,14 @@ agent.post(`/${AGENT_IPC_CHANNELS.SAVE_FILES_TO_WORKSPACE}`, adminOnly, async (c
 /** POST /api/agent:get-task-output → GetTaskOutputResult（保留接口，暂未实现） */
 agent.post(`/${AGENT_IPC_CHANNELS.GET_TASK_OUTPUT}`, async (c) => {
   await c.req.json<GetTaskOutputInput>()
-  console.warn('[Agent 路由] GET_TASK_OUTPUT: 当前版本暂未实现，返回空输出')
+  logger.warn('GET_TASK_OUTPUT 当前版本暂未实现，返回空输出')
   return c.json({ output: '', isComplete: false } satisfies GetTaskOutputResult)
 })
 
 /** POST /api/agent:stop-task → { ok: true }（保留接口，暂未实现） */
 agent.post(`/${AGENT_IPC_CHANNELS.STOP_TASK}`, async (c) => {
   const input = await c.req.json<StopTaskInput>()
-  console.warn(`[Agent 路由] STOP_TASK: 任务停止功能待实现 (type=${input.type})`)
+  logger.warn('STOP_TASK 任务停止功能待实现', { type: input.type })
   return c.json({ ok: true })
 })
 

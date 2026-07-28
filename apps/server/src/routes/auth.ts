@@ -17,6 +17,7 @@ import type { AuthUser, ChangePasswordInput } from '@proma/shared'
 import { signAccessToken, signRefreshToken, verifyToken } from '../auth/jwt.ts'
 import { authMiddleware } from '../middleware/auth.ts'
 import { validatePassword } from '../utils/password.ts'
+import { recordAudit } from '@proma/server-core/audit-log'
 
 const auth = new Hono()
 
@@ -106,9 +107,24 @@ auth.post('/auth:login', async (c) => {
 
   const user = verifyUser(username, password)
   if (!user) {
+    // 登录失败留痕（含尝试的用户名，便于追溯暴力破解；不记密码）—— AC-7
+    recordAudit({
+      actor: username || 'unknown',
+      actorName: username,
+      action: 'auth:login',
+      result: 'failure',
+      detail: '用户名或密码错误',
+    })
     return c.json({ error: '用户名或密码错误' }, 401)
   }
 
+  // 登录成功留痕 —— AC-7
+  recordAudit({
+    actor: user.id,
+    actorName: user.username,
+    action: 'auth:login',
+    result: 'success',
+  })
   const tokens = await issueTokens(user)
   return c.json({ user: toPublicUser(user), ...tokens })
 })

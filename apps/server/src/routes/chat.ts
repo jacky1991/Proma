@@ -39,6 +39,10 @@ import {
 } from '@proma/server-core/chat-service'
 import { streamSink } from '../engine'
 import { getUserScope } from '../utils/user-scope'
+import { createLogger } from '@proma/server-core/logger'
+
+/** 模块日志器 */
+const logger = createLogger('Chat 路由')
 
 const chat = new Hono()
 
@@ -147,10 +151,11 @@ chat.post(`/${CHAT_IPC_CHANNELS.UPDATE_CONTEXT_DIVIDERS}`, async (c) => {
 /** POST /api/chat:send-message → { ok: true }（流式事件经 WS 推送） */
 chat.post(`/${CHAT_IPC_CHANNELS.SEND_MESSAGE}`, async (c) => {
   const input = await c.req.json<ChatSendInput>()
-  const ownerUserId = getUserScope(c).userId
+  const scope = getUserScope(c)
+  const ownerUserId = scope.userId
   // 异步执行，不等待完成（流式事件经 WS 推送，携带归属用户）
-  sendChatMessage(input, (event) => chatStreamEmitter(event, ownerUserId)).catch((err: unknown) => {
-    console.error('[Chat 路由] sendMessage 失败:', err)
+  sendChatMessage(input, (event) => chatStreamEmitter(event, ownerUserId), scope).catch((err: unknown) => {
+    logger.error('sendMessage 失败', { error: err })
   })
   return c.json({ ok: true })
 })
@@ -195,8 +200,9 @@ chat.post(`/${CHAT_IPC_CHANNELS.DELETE_ATTACHMENT}`, async (c) => {
 
 /** POST /api/chat:extract-attachment-text → string */
 chat.post(`/${CHAT_IPC_CHANNELS.EXTRACT_ATTACHMENT_TEXT}`, async (c) => {
+  const scope = getUserScope(c)
   const { localPath } = await c.req.json<{ localPath: string }>()
-  const text = await extractTextFromAttachment(localPath)
+  const text = await extractTextFromAttachment(localPath, scope)
   return c.json(text)
 })
 

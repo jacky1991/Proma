@@ -2434,6 +2434,11 @@ export class AgentOrchestrator {
     return this.activeSessions.has(sessionId)
   }
 
+  /** 当前活跃（正在处理中）的会话数（供运维指标端点 /api/metrics） */
+  getActiveSessionCount(): number {
+    return this.activeSessions.size
+  }
+
   /**
    * 查询会话归属用户 ID（未登记返回 undefined）
    *

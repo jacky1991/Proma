@@ -65,6 +65,8 @@ user.post('/user:reset-password', adminOnly, async (c) => {
     return c.json({ error: '用户不存在' }, 404)
   }
 
+  // 审计 target：被重置密码的用户 ID（供 adminOnly 记录）
+  c.set('auditTarget', userId)
   resetPassword(userId, newPassword)
   return c.json({ ok: true })
 })
@@ -100,6 +102,9 @@ user.post('/user:delete', adminOnly, async (c) => {
   if (!target) {
     return c.json({ error: '用户不存在' }, 404)
   }
+
+  // 审计 target：被删用户 ID（供 adminOnly 记录，AC-8）
+  c.set('auditTarget', userId)
 
   // 操作者 ID 取自全局认证中间件写入的用户上下文
   const operator = c.get('user')

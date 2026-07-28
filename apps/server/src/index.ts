@@ -8,14 +8,20 @@ import { verifyToken } from './auth/jwt'
 import { validateProductionEnv } from './utils/env'
 import { getDataRoot, getProxySettingsPath } from '@proma/server-core/config-paths'
 import { initAdminUser } from '@proma/server-core/user-manager'
+import { createLogger } from '@proma/server-core/logger'
+
+/** 模块日志器（启动期诊断与运行时日志统一出口） */
+const logger = createLogger('启动')
 
 // ─── 生产敏感配置强制校验（开发态 PROMA_DEV=1 跳过）───
 // 生产态必须显式设置 PROMA_JWT_SECRET 与 PROMA_SERVER_MASTER_KEY，缺失即退出：
 // 避免 JWT 回落公开默认密钥（可伪造任意 admin token）、渠道 API Key 明文落盘。
 const envCheck = validateProductionEnv()
 if (!envCheck.ok) {
-  console.error(`[启动] 生产模式缺少必需配置：${envCheck.missing.join(', ')}`)
-  console.error('[启动] 请设置上述环境变量后重启（开发模式可设 PROMA_DEV=1 跳过）')
+  logger.error('生产模式缺少必需配置，启动中止', {
+    missing: envCheck.missing,
+    hint: '设置上述环境变量后重启（开发模式可设 PROMA_DEV=1 跳过）',
+  })
   process.exit(1)
 }
 
@@ -44,15 +50,10 @@ if (existsSync(proxySettingsPath)) {
 }
 
 if (!adminPassword) {
-  console.error('')
-  console.error('[启动失败] 未配置 admin 密码。')
-  console.error(`  请在 ${proxySettingsPath} 中添加 "adminPassword" 字段：`)
-  console.error('  {')
-  console.error('    "adminPassword": "你的管理员密码",')
-  console.error('    "enabled": false,')
-  console.error('    ...')
-  console.error('  }')
-  console.error('')
+  logger.error('未配置 admin 密码，启动中止', {
+    path: proxySettingsPath,
+    hint: '请在 proxy-settings.json 中添加 adminPassword 字段，示例：{ "adminPassword": "你的管理员密码", "enabled": false }',
+  })
   process.exit(1)
 }
 
@@ -95,6 +96,8 @@ const server = Bun.serve({
   websocket: websocketHandlers,
 })
 
-console.log(`Proma server listening on http://127.0.0.1:${port}`)
-console.log(`  健康检查：GET  http://127.0.0.1:${port}/api/health`)
-console.log(`  WebSocket：ws://127.0.0.1:${port}/ws`)
+logger.info('Proma server 已启动', {
+  http: `http://127.0.0.1:${port}`,
+  health: 'GET /api/health',
+  ws: `ws://127.0.0.1:${port}/ws`,
+})

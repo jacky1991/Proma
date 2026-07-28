@@ -18,6 +18,10 @@ import { NodeAesGcmCryptoProvider, createNodeEnvProbe } from '@proma/server-core
 import { wsStreamSink } from './ws'
 import { startWorkspaceWatcher } from './workspace-watcher'
 import { startChatToolsWatcher } from './chat-tools-watcher'
+import { createLogger } from '@proma/server-core/logger'
+
+/** 模块日志器 */
+const logger = createLogger('引擎')
 
 // ===== 注入服务端端口实现 =====
 
@@ -47,7 +51,7 @@ const adapter = new PiAgentAdapter()  // M2 仅 Pi runtime
 const piBuiltinToolDeps: PiBuiltinToolDeps = {
   // 全部留空——不可用工具不会被注册到 Agent SDK，UI 不会显示
 }
-console.log('[引擎] 内置工具依赖: automation / collaboration / web-search 未注入（Agent 执行时不可用）')
+logger.info('内置工具依赖: automation / collaboration / web-search 未注入（Agent 执行时不可用）')
 
 const orchestrator = new AgentOrchestrator(adapter, eventBus, { piBuiltinToolDeps })
 

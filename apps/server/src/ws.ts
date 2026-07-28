@@ -20,6 +20,10 @@
 import type { ServerWebSocket } from 'bun'
 import { canAccessSession } from '@proma/server-core/agent-session-manager'
 import type { UserScope } from '@proma/server-core/config-paths'
+import { createLogger } from '@proma/server-core/logger'
+
+/** 模块日志器 */
+const logger = createLogger('WS')
 
 // ===== 类型 =====
 
@@ -123,7 +127,7 @@ function broadcastToSession(sessionId: string, frame: string): void {
     try {
       ws.send(frame)
     } catch (err) {
-      console.error('[WS] 推送失败:', err)
+      logger.error('推送失败', { error: err })
     }
   }
 }
@@ -150,7 +154,7 @@ function broadcastToWildcardSubscribers(event: BufferedEvent, frame: string): vo
     try {
       ws.send(frame)
     } catch (err) {
-      console.error('[WS] 通配推送失败:', err)
+      logger.error('通配推送失败', { error: err })
     }
   }
 }
@@ -168,11 +172,11 @@ function replayFrom(bufferKey: string, lastEventId: number, ws: ServerWebSocket<
     try {
       ws.send(serializeEvent(event))
     } catch (err) {
-      console.error('[WS] replay 推送失败:', err)
+      logger.error('replay 推送失败', { error: err })
     }
   }
   if (missed.length > 0) {
-    console.log(`[WS] replay: buffer=${bufferKey}, lastEventId=${lastEventId}, 补发 ${missed.length} 条`)
+    logger.info('replay 补发', { buffer: bufferKey, lastEventId, count: missed.length })
   }
 }
 
@@ -415,7 +419,7 @@ export class WsStreamSink {
     cleanupTimers.set(sessionId, setTimeout(() => {
       buffers.delete(sessionId)
       cleanupTimers.delete(sessionId)
-      console.log(`[WS] 清理会话缓冲: ${sessionId}`)
+      logger.debug('清理会话缓冲', { sessionId })
     }, BUFFER_CLEANUP_DELAY_MS))
   }
 }
@@ -446,9 +450,19 @@ export function disconnectUser(userId: string, reason = 'user deleted'): number 
     }
   }
   if (closed > 0) {
-    console.log(`[WS] 已断开用户 ${userId} 的 ${closed} 个连接（${reason}）`)
+    logger.info('已断开用户连接', { userId, closed, reason })
   }
   return closed
+}
+
+/** 当前活跃 WS 连接数（供运维指标端点 /api/metrics） */
+export function getConnectionCount(): number {
+  return allConnections.size
+}
+
+/** 当前有事件缓冲的会话数（含 '*' 全局缓冲，供运维指标端点 /api/metrics） */
+export function getBufferedSessionCount(): number {
+  return buffers.size
 }
 
 // ===== Bun WebSocket 处理器 =====
@@ -457,7 +471,7 @@ export const websocketHandlers = {
   open(ws: ServerWebSocket<WsState>) {
     ws.data.sessions = new Set()
     allConnections.add(ws)
-    console.log(`[WS] 新连接建立: ${ws.data.username} (${ws.data.userId})`)
+    logger.info('新连接建立', { username: ws.data.username, userId: ws.data.userId })
   },
 
   message(ws: ServerWebSocket<WsState>, message: string | Buffer) {
@@ -489,16 +503,16 @@ export const websocketHandlers = {
           replayFrom(sessionId === '*' ? '*' : sessionId, msg.lastEventId, ws)
         }
 
-        console.log(`[WS] 订阅: ${sessionId}${msg.lastEventId ? ` (lastEventId=${msg.lastEventId})` : ''}`)
+        logger.debug('订阅', { sessionId, lastEventId: msg.lastEventId })
       } else if (msg.type === 'unsubscribe') {
         const sessionId = msg.sessionId
         if (!sessionId) return
         ws.data.sessions.delete(sessionId)
         sessionConnections.get(sessionId)?.delete(ws)
-        console.log(`[WS] 取消订阅: ${sessionId}`)
+        logger.debug('取消订阅', { sessionId })
       }
     } catch (err) {
-      console.error('[WS] 消息解析失败:', err)
+      logger.error('消息解析失败', { error: err })
     }
   },
 
@@ -507,6 +521,6 @@ export const websocketHandlers = {
     for (const sessionId of ws.data.sessions) {
       sessionConnections.get(sessionId)?.delete(ws)
     }
-    console.log('[WS] 连接关闭')
+    logger.debug('连接关闭')
   },
 }

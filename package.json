@@ -45,6 +45,5 @@
     "@earendil-works/pi-coding-agent": "0.80.9",
     "@earendil-works/pi-tui": "0.80.9"
   },
-  "patchedDependencies": {
-  }
+  "patchedDependencies": {}
 }

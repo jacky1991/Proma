@@ -27,6 +27,12 @@ import { getAgentWorkspace, getWorkspaceAutoMemoryDir } from './agent-workspace-
 
 // 在模块加载时一次性设置 SDK 配置目录，避免在 forkSession 等异步调用中临时修改/恢复
 // process.env 导致的并发安全问题（异步操作的 await 间隙其他代码可能读到错误值）
+//
+// 注意：这是进程级兜底，指向全局 getDataRoot()/sdk-config/（无用户隔离）。
+// Web 多用户场景下，所有 in-process SDK 调用（fork/rewind 等）必须显式传
+// getSdkConfigDir(scope)，把 artifact 落到 users/{userId}/sdk-config/，不能依赖此 env；
+// 否则多用户 fork/rewind 数据会串到全局目录。子进程启动 SDK 时由 agent-orchestrator
+// 用 per-user CLAUDE_CONFIG_DIR 覆盖，不受此兜底影响。
 if (!process.env.CLAUDE_CONFIG_DIR) {
   process.env.CLAUDE_CONFIG_DIR = getSdkConfigDir()
 }
@@ -853,7 +859,7 @@ export async function forkAgentSession(input: ForkSessionInput, scope?: UserScop
     if (sourceJsonl) {
       // SDK 使用简单的字符替换计算 project-hash：path.replace(/[^a-zA-Z0-9]/g, '-')
       const destProjectHash = destDir.replace(/[^a-zA-Z0-9]/g, '-')
-      const sdkProjectsDir = join(getSdkConfigDir(), 'projects', destProjectHash)
+      const sdkProjectsDir = join(getSdkConfigDir(scope), 'projects', destProjectHash)
       if (!existsSync(sdkProjectsDir)) mkdirSync(sdkProjectsDir, { recursive: true })
       const destJsonl = join(sdkProjectsDir, `${forkResult.sessionId}.jsonl`)
       try {
@@ -930,7 +936,7 @@ async function forkPiAgentSession(sourceMeta: AgentSessionMeta, input: ForkSessi
 
   try {
     const sdk = await import('@earendil-works/pi-coding-agent')
-    const sessionDir = join(getSdkConfigDir(), 'sessions')
+    const sessionDir = join(getSdkConfigDir(scope), 'sessions')
     const sourceManager = sdk.SessionManager.open(sourceMeta.piSessionFile, sessionDir, sourceDir)
     const branchFile = sourceManager.createBranchedSession(entryId)
     if (!branchFile || !existsSync(branchFile)) {
@@ -978,10 +984,10 @@ export async function rewindPiAgentSession(sessionId: string, assistantMessageUu
     ? getAgentSessionWorkspacePath(getAgentWorkspace(meta.workspaceId)!.slug, meta.id, scope)
     : process.cwd()
   const sdk = await import('@earendil-works/pi-coding-agent')
-  const manager = sdk.SessionManager.open(meta.piSessionFile, join(getSdkConfigDir(), 'sessions'), cwd)
+  const manager = sdk.SessionManager.open(meta.piSessionFile, join(getSdkConfigDir(scope), 'sessions'), cwd)
   const branchFile = manager.createBranchedSession(entryId)
   if (!branchFile || !existsSync(branchFile)) throw new Error('Pi 未能生成回退 session artifact')
-  const rewindManager = sdk.SessionManager.open(branchFile, join(getSdkConfigDir(), 'sessions'), cwd)
+  const rewindManager = sdk.SessionManager.open(branchFile, join(getSdkConfigDir(scope), 'sessions'), cwd)
   const retainedBindings = Object.fromEntries(
     Object.entries(meta.piEntryBindings ?? {}).filter(([, mappedEntryId]) => Boolean(rewindManager.getEntry(mappedEntryId))),
   )

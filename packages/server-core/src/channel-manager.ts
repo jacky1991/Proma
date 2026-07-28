@@ -48,6 +48,13 @@ import {
   resolveOpenAIModelsUrl,
 } from '@proma/core'
 import { normalizeHttpResponse, normalizeRequestError } from './channel-test-error'
+import { createLogger } from './logger'
+
+/**
+ * 模块日志器（渐进迁移：本迭代覆盖加解密与配置 IO 敏感路径；
+ * 其余 CRUD / 模型拉取日志后续迭代迁移）
+ */
+const logger = createLogger('渠道管理')
 
 /** 当前配置版本 */
 const CONFIG_VERSION = 2
@@ -235,7 +242,7 @@ function readConfig(): ChannelsConfig {
     }
     return config
   } catch (error) {
-    console.error('[渠道管理] 读取配置文件失败:', error)
+    logger.error('读取渠道配置文件失败', { error })
     return { version: CONFIG_VERSION, channels: [] }
   }
 }
@@ -249,7 +256,7 @@ function writeConfig(config: ChannelsConfig): void {
   try {
     writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8')
   } catch (error) {
-    console.error('[渠道管理] 写入配置文件失败:', error)
+    logger.error('写入渠道配置文件失败', { error })
     throw new Error('写入渠道配置失败')
   }
 }
@@ -268,7 +275,7 @@ function writeConfig(config: ChannelsConfig): void {
 function encryptApiKey(plainKey: string): string {
   const crypto = getCryptoPort()
   if (!crypto.isAvailable()) {
-    console.warn('[渠道管理] 加密不可用，将以明文存储')
+    logger.warn('加密不可用，API Key 将以明文存储')
     return plainKey
   }
   return crypto.encryptString(plainKey)
@@ -290,7 +297,7 @@ function decryptKey(encryptedKey: string): string {
   try {
     return crypto.decryptString(encryptedKey)
   } catch (error) {
-    console.error('[渠道管理] 解密 API Key 失败:', error)
+    logger.error('解密 API Key 失败', { error })
     throw new Error('解密 API Key 失败')
   }
 }

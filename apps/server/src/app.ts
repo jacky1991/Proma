@@ -12,6 +12,10 @@ import { automation } from './routes/automation'
 import { auth } from './routes/auth'
 import { user } from './routes/user'
 import { authMiddleware, AUTH_EXEMPT_PATHS } from './middleware/auth'
+import { adminOnly } from './middleware/role'
+import { getConnectionCount, getBufferedSessionCount } from './ws'
+import { orchestrator } from './engine'
+import { getServerVersion } from './utils/version'
 
 const app = new Hono()
 
@@ -27,7 +31,7 @@ app.use(
  * GET /api/health → { ok: true, name, version }
  */
 app.get('/api/health', (c) =>
-  c.json({ ok: true, name: 'proma-server', version: '0.0.1' }),
+  c.json({ ok: true, name: 'proma-server', version: getServerVersion() }),
 )
 
 // 全局认证中间件：豁免路径（健康检查 / 注册 / 登录 / 刷新）直接放行，
@@ -38,6 +42,23 @@ app.use('/api/*', async (c, next) => {
   }
   return authMiddleware(c, next)
 })
+
+/**
+ * 运行时指标（仅管理员）
+ * GET /api/metrics → { wsConnections, activeSessions, bufferedSessions, uptimeSec, version }
+ *
+ * 不在 AUTH_EXEMPT_PATHS：需登录（全局 authMiddleware）+ 管理员（adminOnly），
+ * 避免向普通用户暴露内部规模信息（AC-5 / AC-6）。
+ */
+app.get('/api/metrics', adminOnly, (c) =>
+  c.json({
+    wsConnections: getConnectionCount(),
+    activeSessions: orchestrator.getActiveSessionCount(),
+    bufferedSessions: getBufferedSessionCount(),
+    uptimeSec: Math.floor(process.uptime()),
+    version: getServerVersion(),
+  }),
+)
 
 // 挂载认证路由（注册/登录/刷新已由 AUTH_EXEMPT_PATHS 豁免；/auth:me 与 /auth:change-password 自带行内中间件）
 app.route('/api', auth)

@@ -1,5 +1,5 @@
 import type { ElectronAPI } from './types'
-import type { AgentSessionMeta, AgentStreamEvent, AgentStreamCompletePayload, PermissionResponse, AskUserResponse, ExitPlanModeResponse, PendingRequestsSnapshot, AttachmentSaveInput, FileDialogResult, AgentQueueMessageInput, ForkSessionInput, RewindSessionInput, AgentAttachDirectoryInput, AgentAttachFileInput, WorkspaceAttachDirectoryInput, WorkspaceAttachFileInput, AgentSaveFilesInput, AgentSaveWorkspaceFilesInput, AgentSessionReferenceSearchInput, MoveSessionToWorkspaceInput, WorkspaceWorktreeRepo, FileAccessOptions, ChannelDirectTestInput, ChannelUpdateInput, CodexOAuthLoginResult, AuthUser, ChangePasswordInput, ResetUserPasswordInput, DeleteUserInput } from '@proma/shared'
+import type { AgentSessionMeta, AgentStreamEvent, AgentStreamCompletePayload, PermissionResponse, AskUserResponse, ExitPlanModeResponse, PendingRequestsSnapshot, AttachmentSaveInput, FileDialogResult, AgentQueueMessageInput, ForkSessionInput, RewindSessionInput, AgentAttachDirectoryInput, AgentAttachFileInput, WorkspaceAttachDirectoryInput, WorkspaceAttachFileInput, AgentSaveFilesInput, AgentSaveWorkspaceFilesInput, AgentSessionReferenceSearchInput, MoveSessionToWorkspaceInput, WorkspaceWorktreeRepo, FileAccessOptions, ChannelDirectTestInput, ChannelUpdateInput, CodexOAuthLoginResult, AuthUser, ChangePasswordInput, ResetUserPasswordInput, DeleteUserInput, StreamChunkEvent, StreamReasoningEvent, StreamCompleteEvent, StreamErrorEvent, StreamToolActivityEvent } from '@proma/shared'
 import { createHttpClient, type ShimConfig } from './http-client'
 import { createWsClient } from './ws-client'
 import { getStoredUser, clearTokens, getAccessToken } from './auth-store.ts'
@@ -156,16 +156,28 @@ export function createMigrated(config: ShimConfig): Partial<ElectronAPI> {
     generateTitle: (input: unknown) => invoke('chat:generate-title', input),
 
     // ===== Chat 流式订阅（走 WS） =====
-    onStreamChunk: (cb: (event: unknown) => void) =>
-      wsClient.on('chat:stream:chunk', cb),
-    onStreamReasoning: (cb: (event: unknown) => void) =>
-      wsClient.on('chat:stream:reasoning', cb),
-    onStreamComplete: (cb: (event: unknown) => void) =>
-      wsClient.on('chat:stream:complete', cb),
-    onStreamError: (cb: (event: unknown) => void) =>
-      wsClient.on('chat:stream:error', cb),
-    onStreamToolActivity: (cb: (event: unknown) => void) =>
-      wsClient.on('chat:stream:tool-activity', cb),
+    // ws-client 对所有事件透传 { sessionId, payload } 包装，
+    // 此处解包出 payload（即 StreamXxxEvent），与 Agent 域订阅保持一致
+    onStreamChunk: (cb: (event: StreamChunkEvent) => void) =>
+      wsClient.on('chat:stream:chunk', (msg: unknown) => {
+        cb((msg as { payload: StreamChunkEvent }).payload)
+      }),
+    onStreamReasoning: (cb: (event: StreamReasoningEvent) => void) =>
+      wsClient.on('chat:stream:reasoning', (msg: unknown) => {
+        cb((msg as { payload: StreamReasoningEvent }).payload)
+      }),
+    onStreamComplete: (cb: (event: StreamCompleteEvent) => void) =>
+      wsClient.on('chat:stream:complete', (msg: unknown) => {
+        cb((msg as { payload: StreamCompleteEvent }).payload)
+      }),
+    onStreamError: (cb: (event: StreamErrorEvent) => void) =>
+      wsClient.on('chat:stream:error', (msg: unknown) => {
+        cb((msg as { payload: StreamErrorEvent }).payload)
+      }),
+    onStreamToolActivity: (cb: (event: StreamToolActivityEvent) => void) =>
+      wsClient.on('chat:stream:tool-activity', (msg: unknown) => {
+        cb((msg as { payload: StreamToolActivityEvent }).payload)
+      }),
 
     // ===== Chat 附件管理 =====
     saveAttachment: (input: AttachmentSaveInput) => invoke('chat:save-attachment', input),

@@ -23,6 +23,10 @@ import {
   getReleaseByTag,
 } from '@proma/server-core/github-release-service'
 import type { ProxyConfig, GitHubReleaseListOptions } from '@proma/shared'
+import { createLogger } from '@proma/server-core/logger'
+
+/** 模块日志器 */
+const logger = createLogger('Settings')
 
 const settings = new Hono()
 
@@ -67,7 +71,7 @@ settings.post('/scratch-pad:load', (c) => {
     const content = readFileSync(path, 'utf-8')
     return c.json(content)
   } catch (err) {
-    console.error('[ScratchPad] 加载失败:', err)
+    logger.error('ScratchPad 加载失败', { error: err })
     return c.json('')
   }
 })
@@ -85,7 +89,7 @@ settings.post('/scratch-pad:save', async (c) => {
     writeFileSync(path, content ?? '', 'utf-8')
     return c.json(true)
   } catch (err) {
-    console.error('[ScratchPad] 保存失败:', err)
+    logger.error('ScratchPad 保存失败', { error: err })
     return c.json(false)
   }
 })

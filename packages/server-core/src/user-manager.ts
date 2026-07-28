@@ -13,6 +13,10 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { getDataRoot } from './config-paths.ts'
+import { createLogger } from './logger.ts'
+
+/** 模块日志器 */
+const logger = createLogger('用户管理')
 
 /** 用户角色 */
 export type UserRole = 'admin' | 'user'
@@ -59,7 +63,7 @@ function readUsers(): User[] {
     const data = JSON.parse(raw) as User[]
     return Array.isArray(data) ? data : []
   } catch (error) {
-    console.error('[用户管理] 读取用户索引失败:', error)
+    logger.error('读取用户索引失败', { error })
     return []
   }
 }
@@ -79,7 +83,7 @@ function writeUsers(users: User[]): void {
   try {
     writeFileSync(filePath, JSON.stringify(users, null, 2), 'utf-8')
   } catch (error) {
-    console.error('[用户管理] 写入用户索引失败:', error)
+    logger.error('写入用户索引失败', { error })
     throw new Error('写入用户索引失败')
   }
 }
@@ -120,7 +124,7 @@ export function createUser(username: string, password: string): User {
 
   users.push(user)
   writeUsers(users)
-  console.log(`[用户管理] 已创建用户: ${username}（role=${user.role}）`)
+  logger.info('已创建用户', { username, role: user.role })
   return user
 }
 
@@ -189,7 +193,7 @@ export function deleteUser(id: string, operatorId: string): void {
   const userDir = join(getDataRoot(), 'users', id)
   rmSync(userDir, { recursive: true, force: true })
 
-  console.log(`[用户管理] 已删除用户 ${target.username}（id=${id}），并清理私有数据目录`)
+  logger.info('已删除用户', { username: target.username, id })
 }
 
 /**
@@ -212,7 +216,7 @@ export function resetPassword(id: string, newPassword: string): void {
   user.updatedAt = Date.now()
 
   writeUsers(users)
-  console.log(`[用户管理] 已重置密码: ${user.username}`)
+  logger.info('已重置密码', { username: user.username })
 }
 
 /**
@@ -228,8 +232,8 @@ export function initAdminUser(password: string): void {
   const users = readUsers()
   const adminExists = users.some((u) => u.username === 'admin')
   if (adminExists) {
-    console.log(
-      '[用户管理] admin 账户已存在，跳过初始化（配置密码仅首次创建时生效，后续请通过重置密码功能修改）',
+    logger.info(
+      'admin 账户已存在，跳过初始化（配置密码仅首次创建时生效，后续请通过重置密码功能修改）',
     )
     return
   }
@@ -249,5 +253,5 @@ export function initAdminUser(password: string): void {
 
   users.push(admin)
   writeUsers(users)
-  console.log('[用户管理] 已创建内置 admin 账户')
+  logger.info('已创建内置 admin 账户')
 }
