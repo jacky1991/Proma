@@ -235,7 +235,7 @@ export const ChatMessageItem = React.memo(function ChatMessageItem({
                 </div>
               )}
 
-              {/* 生成的图片附件（如 Nano Banana 生图结果） */}
+              {/* 生成的图片附件 */}
               {message.attachments && message.attachments.length > 0 && (
                 <MessageAttachments attachments={message.attachments} onImageEditComplete={onImageEditComplete} />
               )}

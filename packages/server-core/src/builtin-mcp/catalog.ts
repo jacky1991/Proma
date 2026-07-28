@@ -8,7 +8,6 @@
  */
 
 import type { BuiltinMcpServerSummary } from '@proma/shared'
-import { getToolCredentials, getToolState } from '../chat-tool-config'
 import { getBuiltinMcpDefinitions, type BuiltinMcpDefinition } from './baseline'
 import { isBuiltinMcpDefaultDisabled, isBuiltinMcpUserEnabled } from './settings'
 
@@ -42,19 +41,6 @@ function resolveAvailability(
       enabled: true,
       available,
       availabilityReason: available ? undefined : '需要先选择工作区',
-    }
-  }
-
-  if (item.id === 'nano-banana') {
-    const state = getToolState('nano-banana')
-    const credentials = getToolCredentials('nano-banana')
-    const available = state.enabled && !!credentials.apiKey
-    return {
-      enabled: true,
-      available,
-      availabilityReason: available
-        ? undefined
-        : state.enabled ? '需要配置 Gemini API Key' : 'Nano Banana 未启用',
     }
   }
 

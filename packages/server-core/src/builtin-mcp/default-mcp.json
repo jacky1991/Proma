@@ -43,20 +43,6 @@
       ]
     },
     {
-      "id": "nano-banana",
-      "name": "nano_banana",
-      "displayName": "Nano Banana 生图",
-      "description": "通过 Gemini Image Generation 为 Agent 提供图片生成和编辑能力。",
-      "category": "media",
-      "kind": "internal",
-      "deletable": false,
-      "defaultEnabled": false,
-      "toggleable": true,
-      "tools": [
-        { "name": "generate_image", "description": "生成或编辑图片。" }
-      ]
-    },
-    {
       "id": "chrome-devtools",
       "name": "chrome_devtools",
       "displayName": "Chrome 浏览器",

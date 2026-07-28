@@ -2,7 +2,7 @@
  * Chat 工具注册表（server-core）
  *
  * 管理所有可用的 Chat 工具元数据：
- * - 内置工具（联网搜索、Agent 模式推荐、Nano Banana 生图）
+ * - 内置工具（联网搜索、Agent 模式推荐）
  * - 自定义工具（用户配置的 HTTP 工具）
  *
  * 提供统一接口获取工具列表（供路由层和 Electron 端共用）。
@@ -35,22 +35,13 @@ export const BUILTIN_TOOL_METAS: ChatToolMeta[] = [
     category: 'builtin',
     executorType: 'builtin',
   },
-  {
-    id: 'nano-banana',
-    name: 'Nano Banana',
-    description: 'AI 图片生成与编辑（基于 Gemini Image Generation）',
-    params: [{ name: 'prompt', type: 'string', description: '图片生成/编辑描述', required: true }],
-    icon: 'ImagePlus',
-    category: 'builtin',
-    executorType: 'builtin',
-  },
 ]
 
 /** 检查内置工具是否可用（凭据已配置） */
 function checkBuiltinAvailable(toolId: string, credentials: Record<string, string>): boolean {
   // agent-mode-recommend 无需凭据，始终可用
   if (toolId === 'agent-mode-recommend') return true
-  // web-search 和 nano-banana 需要 apiKey
+  // web-search 需要 apiKey
   return !!credentials.apiKey
 }
 
