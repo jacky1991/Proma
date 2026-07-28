@@ -9,6 +9,7 @@ import { upload } from './routes/upload'
 import { chatTool } from './routes/chat-tool'
 import { storage } from './routes/storage'
 import { automation } from './routes/automation'
+import { file } from './routes/file'
 import { auth } from './routes/auth'
 import { user } from './routes/user'
 import { authMiddleware, AUTH_EXEMPT_PATHS } from './middleware/auth'
@@ -76,5 +77,6 @@ app.route('/api', upload)
 app.route('/api', chatTool)
 app.route('/api', storage)
 app.route('/api', automation)
+app.route('/api', file)
 
 export { app }

@@ -993,8 +993,8 @@ agent.post(`/${AGENT_IPC_CHANNELS.UPDATE_SESSION_OPENAI_REASONING}`, async (c) =
 
 // ===== 迭代 5：挂载文件操作 =====
 
-/** 路径安全校验：确保路径在已授权目录内 */
-function assertAttachedPathAllowed(targetPath: string, access?: FileAccessOptions, scope?: UserScope): void {
+/** 路径安全校验：确保路径在已授权目录内（供其他文件类路由复用，多用户 scope 隔离红线） */
+export function assertAttachedPathAllowed(targetPath: string, access?: FileAccessOptions, scope?: UserScope): void {
   const resolved = resolve(targetPath)
   const allowedDirs: string[] = []
   const allowedFiles: string[] = []

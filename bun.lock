@@ -267,13 +267,18 @@
     },
     "packages/server-core": {
       "name": "@proma/server-core",
-      "version": "0.3.13",
+      "version": "0.3.14",
       "dependencies": {
         "@proma/core": "workspace:*",
         "@proma/shared": "workspace:*",
+        "@xmldom/xmldom": "^0.8.11",
+        "adm-zip": "^0.5.17",
         "iconv-lite": "^0.6.3",
+        "mammoth": "^1.12.0",
+        "officeparser": "4.2.0",
       },
       "devDependencies": {
+        "@types/adm-zip": "^0.5.8",
         "typescript": "^5.0.0",
       },
       "peerDependencies": {

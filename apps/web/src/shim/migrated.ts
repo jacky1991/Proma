@@ -344,6 +344,12 @@ export function createMigrated(config: ShimConfig): Partial<PromaClientAPI> {
     renameAttachedFile: (filePath: string, newName: string, access?: FileAccessOptions) => invoke('agent:rename-attached-file', { filePath, newName, access }),
     moveAttachedFile: (filePath: string, targetDir: string, access?: FileAccessOptions) => invoke('agent:move-attached-file', { filePath, targetDir, access }),
 
+    // ===== Office 内联预览（DOCX/XLSX/PPTX → HTML）=====
+    // 纯 Node 能力已迁至 server-core + /api/file:office-preview，access 透传供 scope 收紧。
+    // PDF（preparePdfPreview）/ 图片（resolveFilePath）依赖桌面协议，保持未迁移 reject，组件层 toast 兜底。
+    docxToHtml: (filePath: string, access?: FileAccessOptions) => invoke('file:office-preview', { filePath, access, kind: 'docx' }),
+    officeToHtml: (filePath: string, access?: FileAccessOptions) => invoke('file:office-preview', { filePath, access, kind: 'office' }),
+
     // ===== 迭代 5：Agent Worktree =====
     getWorktreeRepos: (workspaceSlug: string) => invoke('agent:get-worktree-repos', { workspaceSlug }),
     addWorktreeRepo: (workspaceSlug: string, repo: WorkspaceWorktreeRepo) => invoke('agent:add-worktree-repo', { workspaceSlug, repo }),

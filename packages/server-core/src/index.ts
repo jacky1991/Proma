@@ -30,3 +30,4 @@ export {
 // 核心域模块（迁移完成陆续在此 re-export，便于整体导入）
 export * from './safe-file'
 export * from './fs-retry'
+export * from './office-preview-service'
