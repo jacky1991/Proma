@@ -5,9 +5,10 @@
  * 所有用户配置存储在 ~/.proma/ 目录下。
  */
 
-import { join } from 'node:path'
-import { mkdirSync, existsSync, readFileSync } from 'node:fs'
+import { join, basename, dirname } from 'node:path'
+import { mkdirSync, existsSync, readFileSync, readdirSync, cpSync, rmSync } from 'node:fs'
 import { homedir } from 'node:os'
+import { fileURLToPath } from 'node:url'
 import { getEnvProbe } from './config'
 
 /**
@@ -564,11 +565,86 @@ export function getBundledCliPath(): string | undefined {
   return existsSync(cliPath) ? cliPath : undefined
 }
 
-// 注：内置默认 Skills 的 bundle 源目录已迁至 packages/server-core/default-skills/
+// 内置默认 Skills 的 bundle 源目录：packages/server-core/default-skills/
 // （随 Electron 桌面端删除一并迁移，M4 迭代 11）。
-// 原 Electron 端 seedDefaultSkills 的「bundle → ~/.proma/default-skills/」播种入口
-// 尚未在 Web 端重建；工作区升级逻辑 upgradeDefaultSkillsInWorkspaces 仍从
-// ~/.proma/default-skills/ 读取，老用户已有数据不受影响。
+// seedDefaultSkills 在 server 启动时把 bundle 播种到 ~/.proma-web/default-skills/，
+// upgradeDefaultSkillsInWorkspaces 再从那里 semver 升级同步到各工作区。
+
+/** 防御性目录基名集合：复制 default skills 时永远跳过这些目录，避免
+ *  .git 0444 文件、node_modules 文件爆炸等场景把启动期同步链路炸掉。 */
+const DEFAULT_SKILL_COPY_BLOCKLIST = new Set([
+  '.git',
+  '.DS_Store',
+  'node_modules',
+  'dist',
+  '.next',
+  '.cache',
+  '.turbo',
+  '__pycache__',
+])
+
+function defaultSkillCopyFilter(src: string): boolean {
+  return !DEFAULT_SKILL_COPY_BLOCKLIST.has(basename(src))
+}
+
+/** semver 比较：正数 a>b，0 相等，负数 a<b */
+function compareSemver(a: string, b: string): number {
+  const pa = a.split('.').map(Number)
+  const pb = b.split('.').map(Number)
+  for (let i = 0; i < 3; i++) {
+    const diff = (pa[i] ?? 0) - (pb[i] ?? 0)
+    if (diff !== 0) return diff
+  }
+  return 0
+}
+
+/**
+ * 从 bundle 源同步默认 Skills 到 ~/.proma-web/default-skills/
+ *
+ * bundle 源 = packages/server-core/default-skills/（ESM 定位 import.meta.url）。
+ * - 缺失的 Skill：直接复制
+ * - 已存在的 Skill：比较 SKILL.md 的 version，bundled 更新时才覆盖
+ *   （避免每次启动同步 4MB+ 文件阻塞启动）
+ */
+export function seedDefaultSkills(): void {
+  const bundledDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'default-skills')
+  if (!existsSync(bundledDir)) {
+    console.log('[配置] 未找到内置 default-skills 目录，跳过')
+    return
+  }
+
+  const userDir = getDefaultSkillsDir()
+  try {
+    const entries = readdirSync(bundledDir, { withFileTypes: true })
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue
+      const source = join(bundledDir, entry.name)
+      const target = join(userDir, entry.name)
+      try {
+        if (!existsSync(target)) {
+          cpSync(source, target, { recursive: true, filter: defaultSkillCopyFilter })
+          console.log(`[配置] 已同步默认 Skill: ${entry.name}`)
+          continue
+        }
+        const bundledVer = parseSkillVersion(source)
+        const existingVer = parseSkillVersion(target)
+        if (compareSemver(bundledVer, existingVer) > 0) {
+          // rm-then-cp：rmSync 不依赖目标文件写权限（只读 .git/objects/ 等
+          // 0444 文件用 cpSync({ force: true }) 无法覆盖会 EACCES，但
+          // rmSync({ force: true }) 只需父目录可写就能 unlink）。
+          rmSync(target, { recursive: true, force: true })
+          cpSync(source, target, { recursive: true, filter: defaultSkillCopyFilter })
+          console.log(`[配置] 已升级默认 Skill: ${entry.name} (${existingVer} → ${bundledVer})`)
+        }
+      } catch (err) {
+        // 单 skill 失败不影响其他 skill 同步，避免启动期被异常掀翻
+        console.warn(`[配置] 同步默认 Skill 失败 (${entry.name})，跳过:`, err)
+      }
+    }
+  } catch (err) {
+    console.warn('[配置] 同步默认 Skills 失败:', err)
+  }
+}
 
 /**
  * 获取微信配置文件路径

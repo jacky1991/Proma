@@ -6,7 +6,8 @@ import { app } from './app'
 import { websocketHandlers } from './ws'
 import { verifyToken } from './auth/jwt'
 import { validateProductionEnv } from './utils/env'
-import { getDataRoot, getProxySettingsPath } from '@proma/server-core/config-paths'
+import { getDataRoot, getProxySettingsPath, seedDefaultSkills } from '@proma/server-core/config-paths'
+import { upgradeDefaultSkillsInWorkspaces } from '@proma/server-core/agent-workspace-manager'
 import { initAdminUser } from '@proma/server-core/user-manager'
 import { createLogger } from '@proma/server-core/logger'
 
@@ -58,6 +59,15 @@ if (!adminPassword) {
 }
 
 initAdminUser(adminPassword)
+
+// 同步内置默认 Skills：bundle(packages/server-core/default-skills) → ~/.proma-web/default-skills/ → 各工作区
+// 失败不阻塞启动（单 skill 异常已在内部吞掉，此处仅兜底整体异常）
+try {
+  seedDefaultSkills()
+  upgradeDefaultSkillsInWorkspaces()
+} catch (err) {
+  logger.error('同步默认 Skills 失败', { error: err })
+}
 
 // ─── 启动 HTTP + WebSocket 服务器 ───
 const port = Number(process.env.PORT ?? 3000)
