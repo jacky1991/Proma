@@ -46,7 +46,7 @@ const adapter = new PiAgentAdapter()  // M2 仅 Pi runtime
  *
  * M3 按需接入：
  * - web-search：注入 Tavily/SerpAPI 实现
- * - automation：注入定时任务触发器（依赖 automation-scheduler 服务端化）
+ * - automation：注入定时任务触发器（automation-scheduler 已服务端化，见 apps/server/src/automation-scheduler.ts；agent 内置工具注入仍待 M3）
  * - collaboration：评估是否为 IM bridge 相关（已 🚫 Out），若是则不注入
  */
 const piBuiltinToolDeps: PiBuiltinToolDeps = {
