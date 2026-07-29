@@ -34,6 +34,8 @@ export const safeDefaults: Record<string, unknown> = {
   getSystemPrompts: () => Promise.resolve([]),
   listChatTools: () => Promise.resolve([]),
   listWorkspaceFiles: () => Promise.resolve([]),
+  // 飞书绑定：Web 端尚未迁移飞书集成，定时任务表单进入空态（无可选绑定）而非报错
+  listFeishuBindings: () => Promise.resolve([]),
 
   // Agent 状态清理：Web 端无实际状态需要清理，no-op
   clearAgentCompletionState: () => Promise.resolve(),

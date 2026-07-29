@@ -22,20 +22,27 @@ export function getSkillGroupTitle(skill: SkillMeta): string {
 }
 
 export function groupSkills(skills: SkillMeta[]): SkillGroup[] {
-  const groups = new Map<string, SkillMeta[]>()
+  // 聚合 key 用小写归一化：避免 "proma" 与 "Proma" 这类仅大小写不同的 group
+  // 被拆成两个分组——它们的 id（= title.toLowerCase()）会相同，导致 React key 冲突。
+  // 显示用的 title 保留首次遇到的原始写法。
+  const groups = new Map<string, { title: string; skills: SkillMeta[] }>()
 
   for (const skill of skills) {
     const title = getSkillGroupTitle(skill)
-    const group = groups.get(title) ?? []
-    group.push(skill)
-    groups.set(title, group)
+    const key = title.toLowerCase()
+    const existing = groups.get(key)
+    if (existing) {
+      existing.skills.push(skill)
+    } else {
+      groups.set(key, { title, skills: [skill] })
+    }
   }
 
-  return [...groups.entries()]
-    .map(([title, groupSkills]) => ({
+  return [...groups.values()]
+    .map(({ title, skills }) => ({
       id: title.toLowerCase(),
       title,
-      skills: groupSkills,
+      skills,
     }))
     .sort((a, b) => compareGroupTitle(a.title, b.title))
 }
