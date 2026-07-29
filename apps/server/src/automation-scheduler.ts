@@ -218,11 +218,24 @@ export async function runAutomation(automation: Automation, scope: UserScope): P
         logger.warn(`${automation.name} 执行超时，强制结束`)
       }, RUN_TIMEOUT_MS)
 
+      // 控制事件转发到 WS：前端依赖 stream-complete 清除 running 状态。
+      // 编排层 eventBus 只转发流式内容消息，run-started / stream-complete /
+      // title-updated / stream-error 这些控制信号由 callbacks 手动 emit（同 agent.ts:SEND_MESSAGE）。
       const callbacks: SessionCallbacks = {
-        onError: (error) => finish('error', error),
-        onComplete: () => finish('success'),
-        onTitleUpdated: () => { /* 子会话标题由编排层经 WS 推送，无需特殊处理 */ },
-        onRunStarted: () => { /* 起始信号由编排层经 WS 推送 */ },
+        onError: (error) => {
+          sinkRef?.emit(targetSessionId, { type: 'stream-error', error }, undefined, scope.userId)
+          finish('error', error)
+        },
+        onComplete: (messages, opts) => {
+          sinkRef?.emit(targetSessionId, { type: 'stream-complete', messages, ...opts }, undefined, scope.userId)
+          finish('success')
+        },
+        onTitleUpdated: (title) => {
+          sinkRef?.emit(targetSessionId, { type: 'title-updated', title }, undefined, scope.userId)
+        },
+        onRunStarted: (opts) => {
+          sinkRef?.emit(targetSessionId, { type: 'run-started', ...opts }, undefined, scope.userId)
+        },
       }
 
       orchestrator.sendMessage(
