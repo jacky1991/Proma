@@ -304,14 +304,6 @@ export interface PromaClientAPI {
   /** 搜索对话消息内容 */
   searchConversationMessages: (query: string) => Promise<MessageSearchResult[]>
 
-  // ===== 教程 =====
-
-  /** 获取教程内容 */
-  getTutorialContent: () => Promise<string | null>
-
-  /** 创建欢迎对话（含教程附件） */
-  createWelcomeConversation: () => Promise<ConversationMeta | null>
-
   // ===== 消息发送 =====
 
   /** 发送消息（触发 AI 流式响应） */

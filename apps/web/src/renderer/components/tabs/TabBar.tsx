@@ -139,7 +139,7 @@ export function TabBar(): React.ReactElement {
           agentWorkspaceId: session.workspaceId,
         }).catch(console.error)
       }
-    } else if (tab.type === 'scratch' || tab.type === 'tutorial') {
+    } else if (tab.type === 'scratch') {
       setCurrentConversationId(null)
       if (appMode !== 'agent') {
         setCurrentAgentSessionId(null)

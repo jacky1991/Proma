@@ -6,7 +6,7 @@
  */
 
 /** 标签页类型（Settings 不作为 Tab，保留独立视图） */
-export type TabType = 'chat' | 'agent' | 'scratch' | 'preview' | 'tutorial'
+export type TabType = 'chat' | 'agent' | 'scratch' | 'preview'
 
 /** 标签页数据 */
 export interface TabItem {

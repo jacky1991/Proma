@@ -264,8 +264,6 @@ export function createMigrated(config: ShimConfig): Partial<PromaClientAPI> {
     // ===== Chat 辅助功能 =====
     toggleArchiveConversation: (id: string) => invoke('chat:toggle-archive', { id }),
     searchConversationMessages: (query: string) => invoke('chat:search-messages', { query }),
-    getTutorialContent: () => invoke('chat:get-tutorial-content'),
-    createWelcomeConversation: () => invoke('chat:create-welcome-conversation'),
 
     // ===== Agent 上下文挂载（会话级） =====
     attachDirectory: (input: AgentAttachDirectoryInput) => invoke('agent:attach-directory', input),
@@ -570,8 +568,6 @@ export const migratedNames: ReadonlySet<string> = new Set([
   // Chat 辅助功能
   'toggleArchiveConversation',
   'searchConversationMessages',
-  'getTutorialContent',
-  'createWelcomeConversation',
   // Agent 上下文挂载（会话级）
   'attachDirectory',
   'detachDirectory',

@@ -23,7 +23,6 @@ import { EnvironmentCheckCard } from '@/components/environment/EnvironmentCheckC
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { ReleaseNotesViewer } from './ReleaseNotesViewer'
-import { VersionHistory } from './VersionHistory'
 
 /** 从 package.json 构建时由 Vite define 注入 */
 declare const __APP_VERSION__: string
@@ -450,38 +449,12 @@ export function AboutSettings(): React.ReactElement {
           <span className="text-sm text-muted-foreground font-mono">{APP_VERSION}</span>
         </SettingsRow>
         <SettingsRow label="运行时">
-          <span className="text-sm text-muted-foreground">Electron + React</span>
-        </SettingsRow>
-        <SettingsRow
-          label="开源协议"
-          description="社区版基于 AGPL-3.0 开源，商业授权请联系 erlichliu@gmail.com"
-        >
-          <a
-            href="https://www.gnu.org/licenses/agpl-3.0.html"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-sm text-primary hover:underline"
-          >
-            AGPL-3.0
-          </a>
-        </SettingsRow>
-        <SettingsRow label="项目地址">
-          <a
-            href="https://github.com/ErlichLiu/Proma.git"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-sm text-primary hover:underline"
-          >
-            github.com/ErlichLiu/Proma
-          </a>
+          <span className="text-sm text-muted-foreground">Bun + React</span>
         </SettingsRow>
       </SettingsCard>
 
       {/* 自动更新卡片（updater 不可用时不渲染） */}
       <UpdateCard />
-
-      {/* 版本历史 */}
-      <VersionHistory />
 
       {/* 环境检测卡片 */}
       <EnvironmentCard />

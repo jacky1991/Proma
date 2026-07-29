@@ -10,7 +10,7 @@
 
 import { useMemo, useState } from 'react'
 import { useAtomValue, useSetAtom } from 'jotai'
-import { GraduationCap, ChevronRight, ChevronLeft, HardDriveDownload, Users } from 'lucide-react'
+import { ChevronRight, ChevronLeft, HardDriveDownload, Users } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { EnvironmentCheckPanel } from '@/components/environment/EnvironmentCheckPanel'
 import { isShellEnvironmentOkAtom } from '@/atoms/environment'
@@ -18,7 +18,7 @@ import { detectIsWindows } from '@/lib/platform'
 import { migrationImportDialogOpenAtom } from '@/atoms/migration-atoms'
 
 interface OnboardingViewProps {
-  onComplete: (openTutorial?: boolean) => void
+  onComplete: () => void
 }
 
 export function OnboardingView({ onComplete }: OnboardingViewProps) {
@@ -27,9 +27,9 @@ export function OnboardingView({ onComplete }: OnboardingViewProps) {
   const shellOk = useAtomValue(isShellEnvironmentOkAtom)
   const setMigrationImportDialogOpen = useSetAtom(migrationImportDialogOpenAtom)
 
-  const handleFinish = async (openTutorial?: boolean) => {
+  const handleFinish = async () => {
     await window.electronAPI.updateSettings({ onboardingCompleted: true })
-    onComplete(openTutorial)
+    onComplete()
   }
 
   const handleNextFromWelcome = () => {
@@ -57,21 +57,6 @@ export function OnboardingView({ onComplete }: OnboardingViewProps) {
 
           <div className="w-full max-w-2xl">
             <div className="space-y-3">
-              <button
-                onClick={() => handleFinish(true)}
-                className="w-full rounded-xl bg-gradient-to-r from-primary/5 via-primary/10 to-primary/5 border border-primary/15 p-4 flex items-center gap-4 hover:from-primary/10 hover:via-primary/15 hover:to-primary/10 transition-colors text-left"
-              >
-                <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
-                  <GraduationCap size={20} className="text-primary" />
-                </div>
-                <div className="flex-1">
-                  <h3 className="text-sm font-semibold text-foreground">查看使用教程</h3>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    了解 Proma 的全部功能和使用技巧
-                  </p>
-                </div>
-              </button>
-
               <p className="text-sm text-muted-foreground pt-2">
                 自己或身边的人已经在用 Proma？直接导入现有配置
               </p>

@@ -6,7 +6,7 @@
  */
 
 import * as React from "react";
-import { useAtom, useAtomValue, useSetAtom } from "jotai";
+import { useAtom, useAtomValue } from "jotai";
 import { cn } from "@/lib/utils";
 import {
   Settings,
@@ -16,7 +16,6 @@ import {
   Globe,
   BookOpen,
   Wrench,
-  GraduationCap,
   X,
   HardDrive,
   CircleUser,
@@ -24,11 +23,10 @@ import {
 } from "lucide-react";
 import { isWebRuntime } from "@/lib/web-runtime";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { settingsTabAtom, channelFormDirtyAtom, settingsCloseRequestedAtom, settingsOpenAtom } from "@/atoms/settings-tab";
+import { settingsTabAtom, channelFormDirtyAtom, settingsCloseRequestedAtom } from "@/atoms/settings-tab";
 import type { SettingsTab } from "@/atoms/settings-tab";
 import { canManageAtom } from "@/atoms/auth";
 import { hasUpdateAtom } from "@/atoms/updater";
-import { tabsAtom, activeTabIdAtom, openTab, TUTORIAL_TAB_ID } from "@/atoms/tab-atoms";
 import { hasEnvironmentIssuesAtom } from "@/atoms/environment";
 import {
   AlertDialog,
@@ -92,12 +90,6 @@ const TOOLS_TAB: TabItem = {
   label: "Chat 工具",
   icon: <Wrench size={16} />,
 };
-const TUTORIAL_TAB: TabItem = {
-  id: "tutorial",
-  label: "Proma 教程",
-  icon: <GraduationCap size={16} />,
-};
-
 /** 尾部 Tabs（storage 管理员专属：底层能力未迁移 Web，路由层无暴露面，去留随 M4 桌面清理再议） */
 const TAIL_TABS: TabItem[] = [
   { id: "storage", label: "磁盘管理", icon: <HardDrive size={16} />, adminOnly: true },
@@ -111,7 +103,6 @@ const ALL_TABS: TabItem[] = [
   ACCOUNT_TAB,
   USERS_TAB,
   TOOLS_TAB,
-  TUTORIAL_TAB,
   ...TAIL_TABS,
 ];
 
@@ -139,7 +130,6 @@ function renderTabContent(tab: SettingsTab): React.ReactElement {
     case "storage":
       return <StorageSettings />;
     default:
-      // tutorial 等特殊 tab 由 handleTabChange 拦截打开主区 Tab，不会在此渲染
       return <GeneralSettings />;
   }
 }
@@ -154,12 +144,9 @@ export function SettingsPanel({
   const [activeTab, setActiveTab] = useAtom(settingsTabAtom);
   const channelFormDirty = useAtomValue(channelFormDirtyAtom);
   const [closeRequested, setCloseRequested] = useAtom(settingsCloseRequestedAtom);
-  const setSettingsOpen = useSetAtom(settingsOpenAtom);
   const canManage = useAtomValue(canManageAtom);
   const hasUpdate = useAtomValue(hasUpdateAtom);
   const hasEnvironmentIssues = useAtomValue(hasEnvironmentIssuesAtom);
-  const [mainTabs, setMainTabs] = useAtom(tabsAtom);
-  const setMainActiveTabId = useSetAtom(activeTabIdAtom);
 
   /** 统一的退出拦截对话框状态 */
   type PendingAction = { type: 'tab'; tabId: SettingsTab } | { type: 'close' } | null
@@ -182,15 +169,8 @@ export function SettingsPanel({
     setPendingAction(null)
   }
 
-  /** 切换标签页时检测是否有未保存内容，tutorial 特殊处理：打开 New Tab 并关闭设置 */
+  /** 切换标签页时检测是否有未保存内容 */
   const handleTabChange = (tabId: SettingsTab): void => {
-    if (tabId === 'tutorial') {
-      const result = openTab(mainTabs, { type: 'tutorial', sessionId: TUTORIAL_TAB_ID, title: 'Proma 使用教程' })
-      setMainTabs(result.tabs)
-      setMainActiveTabId(result.activeTabId)
-      setSettingsOpen(false)
-      return
-    }
     if (tabId === activeTab) return
     if (activeTab === 'channels' && channelFormDirty) {
       setPendingAction({ type: 'tab', tabId })

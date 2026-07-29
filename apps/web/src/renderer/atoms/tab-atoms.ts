@@ -28,9 +28,8 @@ export type { TabItem, TabType }
 /** Scratch Pad 专用的固定 sessionId */
 export const SCRATCH_PAD_ID = '__scratch-pad__'
 
-/** 教程 Tab 固定 ID */
+/** 教程 Tab 固定 ID（教程入口已移除，仅保留用于 getPersistentTabs 过滤老持久化数据中残留的 tutorial tab） */
 export const TUTORIAL_TAB_ID = '__tutorial__'
-export const TUTORIAL_TAB_TITLE = 'Proma 使用教程'
 
 /** 会话预览 Tab 的 ID 前缀：运行时临时入口，不参与持久化 */
 const PREVIEW_TAB_PREFIX = '__preview__:'
@@ -238,19 +237,6 @@ export function openTab(
     return {
       tabs: [scratchTab],
       activeTabId: SCRATCH_PAD_ID,
-    }
-  }
-
-  if (item.type === 'tutorial') {
-    const tutorialTab: TabItem = tabs.find((t) => t.id === TUTORIAL_TAB_ID) ?? {
-      id: TUTORIAL_TAB_ID,
-      type: 'tutorial',
-      sessionId: TUTORIAL_TAB_ID,
-      title: TUTORIAL_TAB_TITLE,
-    }
-    return {
-      tabs: [scratchTab, tutorialTab],
-      activeTabId: TUTORIAL_TAB_ID,
     }
   }
 

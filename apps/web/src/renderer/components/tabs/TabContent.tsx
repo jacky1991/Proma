@@ -8,12 +8,9 @@
 import * as React from 'react'
 import { useAtomValue } from 'jotai'
 import { tabsAtom } from '@/atoms/tab-atoms'
-import { markdownTocOpenAtom } from '@/atoms/markdown-toc'
 import { ChatView } from '@/components/chat'
 import { AgentView } from '@/components/agent'
 import { PreviewTabContent } from '@/components/diff/PreviewTabContent'
-import { MarkdownRichEditor } from '@/components/diff/MarkdownRichEditor'
-import { MarkdownToc } from '@/components/diff/MarkdownToc'
 import { ScratchPadView } from '@/components/scratch-pad/ScratchPadView'
 import { TabErrorBoundary } from './TabErrorBoundary'
 
@@ -44,10 +41,6 @@ export function TabContent({ tabId }: TabContentProps): React.ReactElement {
     return <ScratchPadView />
   }
 
-  if (tab.type === 'tutorial') {
-    return <TutorialTabContent />
-  }
-
   if (tab.type === 'chat') {
     return (
       <TabErrorBoundary key={tab.sessionId} sessionId={tab.sessionId}>
@@ -68,51 +61,5 @@ export function TabContent({ tabId }: TabContentProps): React.ReactElement {
     <TabErrorBoundary key={tab.sessionId} sessionId={tab.sessionId}>
       <AgentView sessionId={tab.sessionId} />
     </TabErrorBoundary>
-  )
-}
-
-function TutorialTabContent(): React.ReactElement {
-  const [content, setContent] = React.useState('')
-  const [loadState, setLoadState] = React.useState<'loading' | 'ready' | 'error'>('loading')
-  const tocOpen = useAtomValue(markdownTocOpenAtom)
-  const scrollRef = React.useRef<HTMLDivElement>(null)
-
-  React.useEffect(() => {
-    window.electronAPI.getTutorialContent()
-      .then((result) => {
-        if (result === null) {
-          setLoadState('error')
-          return
-        }
-        setContent(result)
-        setLoadState('ready')
-      })
-      .catch((error) => {
-        console.error(error)
-        setLoadState('error')
-      })
-  }, [])
-
-  if (loadState === 'loading') {
-    return <div className="flex h-full items-center justify-center text-xs text-muted-foreground">加载中...</div>
-  }
-
-  if (loadState === 'error') {
-    return <div className="flex h-full items-center justify-center text-xs text-muted-foreground">教程加载失败</div>
-  }
-
-  return (
-    <div className="relative flex h-full min-h-0 overflow-hidden">
-      <MarkdownToc containerRef={scrollRef as React.RefObject<HTMLElement>} contentKey={content.slice(0, 100)} enabled={tocOpen} />
-      <div ref={scrollRef} className="flex-1 min-w-0 overflow-y-auto p-8">
-        <MarkdownRichEditor
-          value={content}
-          editing={false}
-          onChange={() => {}}
-          onSave={() => {}}
-          onCancel={() => {}}
-        />
-      </div>
-    </div>
   )
 }

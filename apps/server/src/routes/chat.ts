@@ -26,10 +26,6 @@ import {
   deleteAttachment,
 } from '@proma/server-core/attachment-service'
 import { extractTextFromAttachment } from '@proma/server-core/document-parser'
-import {
-  getTutorialContent,
-  createWelcomeConversation,
-} from '@proma/server-core/tutorial-service'
 import type { AttachmentSaveInput, ConversationMeta } from '@proma/shared'
 import {
   sendChatMessage,
@@ -229,17 +225,6 @@ chat.post(`/${CHAT_IPC_CHANNELS.SEARCH_MESSAGES}`, async (c) => {
   const scope = getUserScope(c)
   const { query } = await c.req.json<{ query: string }>()
   return c.json(await searchConversationMessages(query, scope))
-})
-
-/** POST /api/chat:get-tutorial-content → string | null */
-chat.post(`/${CHAT_IPC_CHANNELS.GET_TUTORIAL_CONTENT}`, (c) => {
-  return c.json(getTutorialContent())
-})
-
-/** POST /api/chat:create-welcome-conversation → ConversationMeta | null */
-chat.post(`/${CHAT_IPC_CHANNELS.CREATE_WELCOME_CONVERSATION}`, (c) => {
-  const scope = getUserScope(c)
-  return c.json(createWelcomeConversation(scope))
 })
 
 export { chat }
