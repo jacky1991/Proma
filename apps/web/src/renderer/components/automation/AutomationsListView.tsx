@@ -24,6 +24,7 @@ import {
   automationToDraft,
   createEmptyDraft,
 } from '@/atoms/automation-atoms'
+import { isAdminAtom } from '@/atoms/auth'
 import type { Automation } from '@proma/shared'
 
 /** 把调度配置格式化为可读文案 */
@@ -55,6 +56,7 @@ function formatSchedule(a: Automation): string {
 }
 
 export function AutomationsListView(): React.ReactElement {
+  const isAdmin = useAtomValue(isAdminAtom)
   const automations = useAtomValue(automationsAtom)
   const setAutomations = useSetAtom(automationsAtom)
   const setForm = useSetAtom(automationFormAtom)
@@ -63,6 +65,16 @@ export function AutomationsListView(): React.ReactElement {
     const list = await window.electronAPI.listAutomations()
     setAutomations(list)
   }, [setAutomations])
+
+  // 定时任务完全管理员专属：非管理员只看提示，不渲染任何写操作（server 已 adminOnly 兜底）
+  if (!isAdmin) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center gap-2 text-center px-8">
+        <div className="text-[15px] font-medium text-foreground/80">需要管理员权限</div>
+        <div className="text-[13px] text-foreground/50">定时任务仅对管理员开放。</div>
+      </div>
+    )
+  }
 
   const current = automations.filter((a) => a.active)
   // 已完成（once 跑完 / 跑满 maxRuns 自动停用，带 completedAt）单独成组，区别于用户手动暂停 / 草稿

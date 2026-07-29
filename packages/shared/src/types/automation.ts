@@ -91,6 +91,8 @@ export interface Automation {
   maxRuns?: number
   /** 本任务运行时使用的 Agent runtime；新任务默认 pi，历史任务缺省仍按 claude 兼容。 */
   agentRuntime?: import('./agent-provider').AgentRuntime
+  /** 任务创建者（管理员 userId）；自动调度跑出的子会话归属此用户 */
+  ownerUserId?: string
   /** AI 渠道 ID */
   channelId: string
   /** 模型 ID（可选，继承来源会话或渠道默认） */
@@ -150,6 +152,8 @@ export interface CreateAutomationInput {
   maxRuns?: number
   /** 本任务运行时使用的 Agent runtime；新建任务不传则为 pi。 */
   agentRuntime?: import('./agent-provider').AgentRuntime
+  /** 任务创建者（管理员 userId），由路由按触发者注入；自动调度据此归属子会话 */
+  ownerUserId?: string
   channelId: string
   modelId?: string
   workspaceId?: string

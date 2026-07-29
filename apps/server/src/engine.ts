@@ -18,6 +18,7 @@ import { NodeAesGcmCryptoProvider, createNodeEnvProbe } from '@proma/server-core
 import { wsStreamSink } from './ws'
 import { startWorkspaceWatcher } from './workspace-watcher'
 import { startChatToolsWatcher } from './chat-tools-watcher'
+import { startScheduler } from './automation-scheduler'
 import { createLogger } from '@proma/server-core/logger'
 
 /** 模块日志器 */
@@ -71,3 +72,7 @@ export { eventBus, adapter, orchestrator, wsStreamSink as streamSink }
 
 startWorkspaceWatcher(wsStreamSink)
 startChatToolsWatcher(wsStreamSink)
+
+// ===== 定时任务调度器 → 自动到期触发 =====
+// 注入 orchestrator + wsStreamSink；手动 run-now 走 automation 路由调 runAutomationNow
+startScheduler(orchestrator, wsStreamSink)

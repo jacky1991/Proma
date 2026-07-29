@@ -248,6 +248,7 @@ export function createAutomation(input: CreateAutomationInput): Automation {
     scheduledAt: input.scheduledAt,
     maxRuns: normalizeMaxRuns(input.maxRuns),
     agentRuntime: input.agentRuntime ?? 'pi',
+    ownerUserId: input.ownerUserId,
     channelId: input.channelId,
     modelId: input.modelId,
     workspaceId: input.workspaceId,

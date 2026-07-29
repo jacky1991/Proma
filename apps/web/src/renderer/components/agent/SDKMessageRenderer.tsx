@@ -59,6 +59,7 @@ import { agentSessionsAtom } from '@/atoms/agent-atoms'
 import { activeSessionIdAtom } from '@/atoms/tab-atoms'
 import { automationsAtom, automationFormAtom, automationToDraft } from '@/atoms/automation-atoms'
 import { activeViewAtom } from '@/atoms/active-view'
+import { isAdminAtom } from '@/atoms/auth'
 import { environmentCheckDialogOpenAtom } from '@/atoms/environment'
 import { settingsOpenAtom, settingsTabAtom } from '@/atoms/settings-tab'
 import { useOpenPreview } from '@/components/diff/preview-opener'
@@ -849,12 +850,16 @@ const SCHEDULED_RUN_MARKER = '<!--PROMA_SCHEDULED_RUN-->'
 
 // stripScheduledRunMarker 已迁移至 @proma/session-core（本文件从该包 import 使用）
 
-function ScheduledRunBadge(): React.ReactElement {
+function ScheduledRunBadge(): React.ReactElement | null {
+  const isAdmin = useAtomValue(isAdminAtom)
   const activeSessionId = useAtomValue(activeSessionIdAtom)
   const sessions = useAtomValue(agentSessionsAtom)
   const automations = useAtomValue(automationsAtom)
   const setForm = useSetAtom(automationFormAtom)
   const setActiveView = useSetAtom(activeViewAtom)
+
+  // 定时任务完全管理员专属：非管理员不渲染入口徽章
+  if (!isAdmin) return null
 
   const session = sessions.find((s) => s.id === activeSessionId)
   const automation = session?.sourceAutomationId && !session.sourceDelegationId
