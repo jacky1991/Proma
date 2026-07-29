@@ -18,7 +18,7 @@ const DEFAULT_INTERFACE_VARIANT = 'modern' as const
  * 应用设置（server-core 视角）
  *
  * 仅声明 server-core 实际读写的核心字段；其余字段（themeStyle / agentChannelId /
- * voiceDictation / tabState 等桌面或 UI 字段）经 index signature 透传，不在此强类型化。
+ * tabState 等桌面或 UI 字段）经 index signature 透传，不在此强类型化。
  * Electron 端 lib/settings-service.ts re-export 时会还原为完整 AppSettings 类型。
  */
 export interface AppSettings {

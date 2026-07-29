@@ -1737,16 +1737,6 @@
   margin-top: 4px;
 }
 
-/* ===== 语音输入浮窗拖动区域 ===== */
-.voice-dictation-drag-region {
-  -webkit-app-region: drag;
-  cursor: move;
-}
-
-.voice-dictation-no-drag {
-  -webkit-app-region: no-drag;
-}
-
 /* ===== Tiptap 可编辑表格样式 ===== */
 .ProseMirror table,
 .ProseMirror table.markdown-table {

@@ -86,9 +86,8 @@ import 'katex/dist/katex.min.css'
 
 // ===== 窗口类型检测 =====
 const isQuickTaskWindow = new URLSearchParams(window.location.search).get('window') === 'quick-task'
-const isVoiceDictationWindow = new URLSearchParams(window.location.search).get('window') === 'voice-dictation'
 const isDetachedPreviewWindow = new URLSearchParams(window.location.search).get('window') === 'detached-preview'
-const isMainWindow = !isQuickTaskWindow && !isVoiceDictationWindow && !isDetachedPreviewWindow
+const isMainWindow = !isQuickTaskWindow && !isDetachedPreviewWindow
 
 // 仅主窗口禁用页面级滚动；独立浮窗各自管理自己的内容高度和滚动。
 if (isMainWindow) {
@@ -911,16 +910,6 @@ if (isQuickTaskWindow) {
       <React.StrictMode>
         <ThemeInitializer />
         <QuickTaskApp />
-      </React.StrictMode>
-    )
-  })
-} else if (isVoiceDictationWindow) {
-  import('./components/voice-dictation/VoiceDictationApp').then(({ VoiceDictationApp }) => {
-    ReactDOM.createRoot(document.getElementById('root')!).render(
-      <React.StrictMode>
-        <ThemeInitializer />
-        <VoiceDictationApp />
-        <Toaster position="bottom-right" />
       </React.StrictMode>
     )
   })

@@ -159,22 +159,10 @@ import type {
 } from './runtime'
 import type {
   AppSettings,
-  MicPermissionResult,
   QuickTaskOpenSessionData,
   QuickTaskSubmitInput,
   TrayCreateSessionData,
   TrayOpenAgentSessionData,
-  VoiceDictationAudioChunkInput,
-  VoiceDictationCommitInput,
-  VoiceDictationCommitResult,
-  VoiceDictationResizeInput,
-  VoiceDictationSettings,
-  VoiceDictationSettingsUpdate,
-  VoiceDictationStartInput,
-  VoiceDictationStateEvent,
-  VoiceDictationStopInput,
-  VoiceDictationTestResult,
-  VoiceDictationTranscriptEvent,
 } from './settings'
 import type {
   SystemPrompt,
@@ -1023,46 +1011,6 @@ export interface PromaClientAPI {
   onQuickTaskFocus: (callback: () => void) => () => void
   /** 订阅快速任务打开会话事件（主窗口接收，由渲染进程负责创建会话） */
   onQuickTaskOpenSession: (callback: (data: QuickTaskOpenSessionData) => void) => () => void
-
-  // ===== 语音输入 =====
-
-  /** 获取语音输入设置 */
-  getVoiceDictationSettings: () => Promise<VoiceDictationSettings>
-  /** 更新语音输入设置 */
-  updateVoiceDictationSettings: (updates: VoiceDictationSettingsUpdate) => Promise<VoiceDictationSettings>
-  /** 测试语音输入连接 */
-  testVoiceDictationConnection: (updates?: VoiceDictationSettingsUpdate) => Promise<VoiceDictationTestResult>
-  /** 唤起或停止语音输入浮窗 */
-  toggleVoiceDictation: () => Promise<void>
-  /** 开始语音输入会话 */
-  startVoiceDictation: (input: VoiceDictationStartInput) => Promise<void>
-  /** 发送语音音频分片 */
-  sendVoiceDictationAudio: (input: VoiceDictationAudioChunkInput) => Promise<void>
-  /** 停止语音输入会话 */
-  stopVoiceDictation: (input: VoiceDictationStopInput) => Promise<void>
-  /** 取消语音输入会话 */
-  cancelVoiceDictation: (input: VoiceDictationStopInput) => Promise<void>
-  /** 输出最终语音文本 */
-  commitVoiceDictation: (input: VoiceDictationCommitInput) => Promise<VoiceDictationCommitResult>
-  /** 隐藏语音输入窗口 */
-  hideVoiceDictation: () => Promise<void>
-  /** 调整语音输入窗口高度 */
-  resizeVoiceDictation: (input: VoiceDictationResizeInput) => Promise<void>
-  /** 订阅语音输入窗口显示事件 */
-  onVoiceDictationShown: (callback: () => void) => () => void
-  /** 订阅语音输入停止请求事件 */
-  onVoiceDictationToggleStop: (callback: () => void) => () => void
-  /** 订阅语音输入转写事件 */
-  onVoiceDictationTranscript: (callback: (event: VoiceDictationTranscriptEvent) => void) => () => void
-  /** 订阅语音输入状态事件 */
-  onVoiceDictationState: (callback: (event: VoiceDictationStateEvent) => void) => () => void
-  /** 订阅主窗口插入语音文本事件 */
-  onVoiceDictationInsertText: (callback: (data: { text: string }) => void) => () => void
-
-  /** 检查麦克风权限状态 */
-  checkMicrophonePermission: () => Promise<MicPermissionResult>
-  /** 请求麦克风权限（仅 macOS 有效） */
-  requestMicrophonePermission: () => Promise<MicPermissionResult>
 
   // ===== 菜单栏 =====
 

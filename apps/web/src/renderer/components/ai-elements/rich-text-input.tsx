@@ -31,11 +31,6 @@ import { richTextRenderingEnabledAtom } from '@/atoms/ui-preferences'
 import { createFileMentionSuggestion } from '@/components/file-browser/file-mention-suggestion'
 import { createSkillMentionSuggestion, createMcpMentionSuggestion, createSessionMentionSuggestion } from '@/components/agent/mention-suggestions'
 import { shouldConvertClipboardTextToAttachment } from '@/lib/clipboard-text-attachment'
-import {
-  VOICE_DICTATION_INSERT_EVENT,
-  getLastFocusedVoiceInputId,
-  setLastFocusedVoiceInputId,
-} from '@/lib/voice-input-focus'
 
 // ===== 行数计算 =====
 
@@ -371,7 +366,6 @@ export function RichTextInput({
       // 监听 IME 输入状态
       handleDOMEvents: {
         focus: () => {
-          setLastFocusedVoiceInputId(inputIdRef.current)
           return false
         },
         compositionstart: () => {
@@ -674,25 +668,6 @@ export function RichTextInput({
       return () => clearTimeout(timer)
     }
   }, [editor, disabled, autoFocusTrigger])
-
-  // 语音输入回填：优先插入到当前编辑器的光标位置。
-  useEffect(() => {
-    if (!editor || disabled) return
-
-    const handler = (event: Event): void => {
-      if (getLastFocusedVoiceInputId() !== inputIdRef.current) return
-
-      const customEvent = event as CustomEvent<{ text?: string }>
-      const text = customEvent.detail?.text?.trim()
-      if (!text) return
-
-      editor.chain().focus().insertContent(text).run()
-      event.preventDefault()
-    }
-
-    window.addEventListener(VOICE_DICTATION_INSERT_EVENT, handler)
-    return () => window.removeEventListener(VOICE_DICTATION_INSERT_EVENT, handler)
-  }, [editor, disabled])
 
   // 是否显示折叠按钮：启用 collapsible 且内容已自动扩展
   const showCollapseToggle = collapsible && isExpanded
