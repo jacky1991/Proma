@@ -864,6 +864,8 @@ export interface SkillMeta {
   importSource?: SkillImportSource
   /** 是否有可用更新（源 Skill 版本 > importSource.sourceVersion） */
   hasUpdate?: boolean
+  /** 是否为内置技能（来自全局 default-skills，只读不可删除/改写） */
+  isBuiltin?: boolean
 }
 
 /** 其他工作区 Skill 分组（导入对话框用） */

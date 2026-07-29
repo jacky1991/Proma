@@ -18,6 +18,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { SettingsCard } from '@/components/settings/primitives'
 import { SkillFilesPanel } from '@/components/settings/SkillFilesPanel'
 import { cn } from '@/lib/utils'
+import { isWebRuntime } from '@/lib/web-runtime'
 import type { SkillMeta } from '@proma/shared'
 import { extractSkillBody, rebuildSkillMd } from './skillMdUtils'
 
@@ -172,14 +173,16 @@ function SkillDetailBody({
               {updating ? '更新中' : '更新'}
             </Button>
           )}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button size="sm" variant="ghost" onClick={onOpenFolder}>
-                <FolderOpen size={14} />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="top">打开目录</TooltipContent>
-          </Tooltip>
+          {!isWebRuntime() && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button size="sm" variant="ghost" onClick={onOpenFolder}>
+                  <FolderOpen size={14} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top">打开目录</TooltipContent>
+            </Tooltip>
+          )}
           {!isBuiltin && (
             <Tooltip>
               <TooltipTrigger asChild>
@@ -207,7 +210,16 @@ function SkillDetailBody({
             <div className="space-y-2">
             <div className="flex items-center justify-between">
               <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">元数据</h4>
-              {!isEditingMeta ? (
+              {isEditingMeta ? (
+                <div className="flex items-center gap-2">
+                  <Button size="sm" variant="ghost" onClick={() => setIsEditingMeta(false)} disabled={saving}>
+                    <X size={14} /> 取消
+                  </Button>
+                  <Button size="sm" onClick={() => void saveMeta()} disabled={saving}>
+                    <Save size={14} /> {saving ? '保存中...' : '保存'}
+                  </Button>
+                </div>
+              ) : !isBuiltin ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button
@@ -220,16 +232,7 @@ function SkillDetailBody({
                   </TooltipTrigger>
                   <TooltipContent side="top">编辑</TooltipContent>
                 </Tooltip>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <Button size="sm" variant="ghost" onClick={() => setIsEditingMeta(false)} disabled={saving}>
-                    <X size={14} /> 取消
-                  </Button>
-                  <Button size="sm" onClick={() => void saveMeta()} disabled={saving}>
-                    <Save size={14} /> {saving ? '保存中...' : '保存'}
-                  </Button>
-                </div>
-              )}
+              ) : null}
             </div>
             <SettingsCard divided>
               {isEditingMeta ? (
@@ -266,7 +269,16 @@ function SkillDetailBody({
               <div className="flex flex-col">
                 <div className="flex min-h-[28px] shrink-0 items-center justify-between px-1 pb-2">
                   <div className="font-mono text-xs text-muted-foreground">SKILL.md</div>
-                  {!isEditingBody ? (
+                  {isEditingBody ? (
+                    <div className="flex items-center gap-1">
+                      <Button size="sm" variant="ghost" onClick={() => setIsEditingBody(false)} disabled={saving}>
+                        <X size={14} /> 取消
+                      </Button>
+                      <Button size="sm" onClick={() => void saveBody()} disabled={saving}>
+                        <Save size={14} /> {saving ? '保存中...' : '保存'}
+                      </Button>
+                    </div>
+                  ) : !isBuiltin ? (
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <button
@@ -279,16 +291,7 @@ function SkillDetailBody({
                       </TooltipTrigger>
                       <TooltipContent side="top">编辑</TooltipContent>
                     </Tooltip>
-                  ) : (
-                    <div className="flex items-center gap-1">
-                      <Button size="sm" variant="ghost" onClick={() => setIsEditingBody(false)} disabled={saving}>
-                        <X size={14} /> 取消
-                      </Button>
-                      <Button size="sm" onClick={() => void saveBody()} disabled={saving}>
-                        <Save size={14} /> {saving ? '保存中...' : '保存'}
-                      </Button>
-                    </div>
-                  )}
+                  ) : null}
                 </div>
                 <SettingsCard divided={false}>
                   <div className="p-4">

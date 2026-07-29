@@ -112,6 +112,8 @@ export interface PiAgentQueryOptions extends AgentQueryInput {
   /** Proma 聚合的附加目录；Pi 内置工具 factory 不接收多 root 参数，编排层会把它们注入 systemPrompt。 */
   additionalDirectories?: string[]
   additionalSkillPaths?: string[]
+  /** 用户个人禁用的 Skill slug 黑名单（方案 A：内置共享 + 个人启停） */
+  disabledSkillSlugs?: string[]
   /** 当前用户输入显式引用的 Skill name（兼容历史 slug 已在编排层归一化） */
   skillMentions?: string[]
   proxyUrl?: string
@@ -590,13 +592,45 @@ function isPromaSkillPath(path: string | undefined, allowedRoots: string[]): boo
   return allowedRoots.some((root) => isPathWithinRoot(guardedPath, root))
 }
 
-function createPromaSkillsOverride(additionalSkillPaths: string[] | undefined): (base: SkillLoadResult) => SkillLoadResult {
+function createPromaSkillsOverride(
+  additionalSkillPaths: string[] | undefined,
+  disabledSkillSlugs?: string[],
+): (base: SkillLoadResult) => SkillLoadResult {
   const allowedRoots = buildAllowedSkillRoots(additionalSkillPaths)
-  return (base) => ({
-    skills: base.skills.filter((skill) =>
-      isPromaSkillPath(skill.filePath, allowedRoots) || isPromaSkillPath(skill.baseDir, allowedRoots)),
-    diagnostics: base.diagnostics.filter((diagnostic) => isPromaSkillPath(diagnostic.path, allowedRoots)),
-  })
+  const disabledSet = new Set(disabledSkillSlugs ?? [])
+  // additionalSkillPaths = [内置全局目录, 用户自建目录]；用户自建目录用于 shadow 去重（自建覆盖内置同名）
+  const customRoots = additionalSkillPaths && additionalSkillPaths.length > 1
+    ? buildAllowedSkillRoots([additionalSkillPaths[1]!])
+    : []
+
+  return (base) => {
+    // 第一遍：收集用户自建目录下的 skill alias，用于让自建 shadow 内置同名
+    const customAliases = new Set<string>()
+    if (customRoots.length > 0) {
+      for (const skill of base.skills) {
+        if (isPromaSkillPath(skill.baseDir, customRoots) || isPromaSkillPath(skill.filePath, customRoots)) {
+          for (const alias of skillCommandAliases(skill)) customAliases.add(alias)
+        }
+      }
+    }
+
+    const skills = base.skills.filter((skill) => {
+      // 路径白名单
+      if (!(isPromaSkillPath(skill.filePath, allowedRoots) || isPromaSkillPath(skill.baseDir, allowedRoots))) return false
+      // 黑名单：用户个人禁用的 skill
+      const aliases = skillCommandAliases(skill)
+      if (aliases.some((alias) => disabledSet.has(alias))) return false
+      // shadow 去重：内置技能若与某用户自建同名，丢弃内置（自建胜出，避免 Pi 加载两份）
+      const isCustom = isPromaSkillPath(skill.baseDir, customRoots) || isPromaSkillPath(skill.filePath, customRoots)
+      if (!isCustom && aliases.some((alias) => customAliases.has(alias))) return false
+      return true
+    })
+
+    return {
+      skills,
+      diagnostics: base.diagnostics.filter((diagnostic) => isPromaSkillPath(diagnostic.path, allowedRoots)),
+    }
+  }
 }
 
 function stripSkillFrontmatter(content: string): string {
@@ -1244,7 +1278,7 @@ export class PiAgentAdapter implements AgentProviderAdapter {
         settingsManager,
         noSkills: true,
         additionalSkillPaths: input.additionalSkillPaths ?? [],
-        skillsOverride: createPromaSkillsOverride(input.additionalSkillPaths),
+        skillsOverride: createPromaSkillsOverride(input.additionalSkillPaths, input.disabledSkillSlugs),
         agentsFilesOverride: createPromaAgentsFilesOverride(),
         ...((input.provider === 'openai-codex' || input.provider === 'openai-responses')
           && model.reasoning

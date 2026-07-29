@@ -516,6 +516,65 @@ export function getDefaultSkillsDir(): string {
 }
 
 /**
+ * 获取用户自建 Skills 目录路径（方案 A：内置共享 + 用户自建隔离）
+ *
+ * - 传入 scope（Web 端）：{dataRoot}/users/{userId}/agent-workspaces/{slug}/skills/
+ *   存放该用户自己创建/导入的技能，与全局内置技能隔离。
+ * - 未传 scope（桌面端）：回退到工作区全局 skills 目录，行为不变。
+ *
+ * 如果目录不存在则自动创建。
+ */
+export function getUserCustomSkillsDir(slug: string, scope?: UserScope): string {
+  if (!scope) return getWorkspaceSkillsDir(slug)
+  const dir = join(getUserSessionWorkspacesDir(scope), slug, 'skills')
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true })
+  }
+  return dir
+}
+
+/**
+ * 获取用户 Skills 启停状态文件路径（黑名单语义）
+ *
+ * 存储该用户对技能（含内置）的个人启停偏好，内容为 `{ disabledSlugs: string[] }`。
+ * - 传入 scope：{dataRoot}/users/{userId}/agent-workspaces/{slug}/skills-state.json
+ * - 未传 scope：工作区全局目录下（桌面端兼容）
+ */
+export function getWorkspaceSkillsStatePath(slug: string, scope?: UserScope): string {
+  if (!scope) return join(getAgentWorkspacePath(slug), 'skills-state.json')
+  return join(getUserSessionWorkspacesDir(scope), slug, 'skills-state.json')
+}
+
+/**
+ * 获取用户个人 Auto Memory 目录路径（.claude/memory/）
+ *
+ * - 传入 scope：{dataRoot}/users/{userId}/agent-workspaces/{slug}/.claude/memory/
+ *   个人长期记忆按用户隔离。
+ * - 未传 scope：工作区全局目录下的 .claude/memory/，行为不变。
+ *
+ * 如果目录不存在则自动创建。
+ */
+export function getUserAutoMemoryDir(slug: string, scope?: UserScope): string {
+  if (!scope) return join(getAgentWorkspacePath(slug), '.claude', 'memory')
+  const dir = join(getUserSessionWorkspacesDir(scope), slug, '.claude', 'memory')
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true })
+  }
+  return dir
+}
+
+/**
+ * 获取 legacy 工作区 Skills 目录路径（迁移期只读源）
+ *
+ * 多用户改造前，自建技能散落在工作区全局 skills/ 下。
+ * 迁移后该目录应为空；迁移期作为只读 fallback 防丢数据。
+ * 语义上等于 getWorkspaceSkillsDir(slug)，单独导出仅为自文档化。
+ */
+export function getLegacyWorkspaceSkillsDir(slug: string): string {
+  return getWorkspaceSkillsDir(slug)
+}
+
+/**
  * 从 SKILL.md 的 YAML frontmatter 中解析 version 字段
  *
  * 无 version 字段时返回 '0.0.0'（确保旧 Skill 会被更新）。

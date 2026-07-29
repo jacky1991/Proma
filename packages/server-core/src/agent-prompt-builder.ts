@@ -13,7 +13,7 @@ import type { AgentRuntime, PromaPermissionMode } from '@proma/shared'
 import { join } from 'node:path'
 import { getUserProfile } from './user-profile-service'
 import { getWorkspaceMcpConfig } from './agent-workspace-manager'
-import { getDataRoot, getSdkConfigDir, resolveAgentSessionWorkspacePath, type UserScope } from './config-paths'
+import { getDataRoot, getSdkConfigDir, resolveAgentSessionWorkspacePath, getUserAutoMemoryDir, type UserScope } from './config-paths'
 
 // ===== 工具使用指南（可复用常量） =====
 
@@ -42,7 +42,8 @@ interface SystemPromptContext {
 function buildWorkspacePromptPaths(workspaceSlug: string, sessionId: string, scope?: UserScope) {
   const dataRoot = getDataRoot()
   const workspaceRoot = join(dataRoot, 'agent-workspaces', workspaceSlug)
-  const autoMemoryDir = join(workspaceRoot, '.claude', 'memory')
+  // auto memory 按用户隔离（Web 多用户）；CLAUDE.md 保持工作区全局共享（仅 admin 可写）
+  const autoMemoryDir = scope ? getUserAutoMemoryDir(workspaceSlug, scope) : join(workspaceRoot, '.claude', 'memory')
 
   return {
     workspaceRoot,

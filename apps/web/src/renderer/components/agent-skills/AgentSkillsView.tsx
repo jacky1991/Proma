@@ -10,7 +10,7 @@
  */
 
 import * as React from 'react'
-import { useAtom, useSetAtom } from 'jotai'
+import { useAtom, useSetAtom, useAtomValue } from 'jotai'
 import { toast } from 'sonner'
 import { Blocks, ChevronDown, ChevronRight, Search, Plus, Store, FolderOpen, Check, Sparkles, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -24,6 +24,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { agentPendingPromptAtom, workspaceCapabilitiesVersionAtom } from '@/atoms/agent-atoms'
 import { agentSkillsTabAtom } from '@/atoms/active-view'
 import { settingsOpenAtom, settingsTabAtom, toolSettingsFocusAtom, type ToolSettingsFocus } from '@/atoms/settings-tab'
+import { canManageAtom } from '@/atoms/auth'
 import { useProjectActions } from '@/hooks/useProjectActions'
 import { useCreateSession } from '@/hooks/useCreateSession'
 import type { BuiltinMcpServerSummary, McpServerEntry, SkillMeta } from '@proma/shared'
@@ -148,6 +149,19 @@ export function AgentSkillsView(): React.ReactElement {
   )
   const memoryCount = (data.capabilities?.memory.claudeMd.exists ? 1 : 0) + (data.capabilities?.memory.autoMemory.fileCount ?? 0)
 
+  // MCP 配置为管理员专属（全局共享资源），普通用户隐藏 MCP tab
+  const canManage = useAtomValue(canManageAtom)
+  const tabs = [
+    { value: 'skills' as const, label: 'Skills', count: data.skills.filter((s) => s.enabled).length },
+    ...(canManage ? [{ value: 'mcp' as const, label: 'MCP', count: mcpCount }] : []),
+    { value: 'memory' as const, label: '记忆', count: memoryCount },
+  ]
+  const activeTabIndex = Math.max(0, tabs.findIndex((t) => t.value === tab))
+  React.useEffect(() => {
+    // 角色非管理员但持久化 tab 为 mcp 时，回退到 skills
+    if (!canManage && tab === 'mcp') setTab('skills')
+  }, [canManage, tab, setTab])
+
   const selectedSkill = data.skills.find((s) => s.slug === selectedSkillSlug) ?? null
   const selectedIsBuiltin = selectedSkill ? data.defaultSkillSlugs.has(selectedSkill.slug) : false
 
@@ -266,23 +280,18 @@ export function AgentSkillsView(): React.ReactElement {
         {/* Skills / MCP / 记忆切换 */}
         <div className="relative flex h-8 items-stretch rounded-xl bg-muted p-0.5">
           <div
-            className={cn(
-              'absolute bottom-0.5 top-0.5 w-[calc(33.333%-3px)] rounded-lg bg-background shadow-sm transition-transform duration-300 ease-in-out',
-              tab === 'skills' && 'translate-x-0',
-              tab === 'mcp' && 'translate-x-full',
-              tab === 'memory' && 'translate-x-[200%]',
-            )}
+            className="absolute bottom-0.5 top-0.5 rounded-lg bg-background shadow-sm transition-transform duration-300 ease-in-out"
+            style={{
+              width: `calc(${100 / tabs.length}% - 3px)`,
+              transform: `translateX(${activeTabIndex * 100}%)`,
+            }}
           />
-          {([
-            { value: 'skills' as const, label: 'Skills', count: data.skills.length },
-            { value: 'mcp' as const, label: 'MCP', count: mcpCount },
-            { value: 'memory' as const, label: '记忆', count: memoryCount },
-          ]).map(({ value, label, count }) => (
+          {tabs.map(({ value, label, count }) => (
             <button
               key={value}
               onClick={() => setTab(value)}
               className={cn(
-                'relative z-[1] flex min-w-[96px] items-center justify-center gap-1.5 rounded-lg px-4 text-sm font-medium transition-colors duration-200',
+                'relative z-[1] flex min-w-[96px] flex-1 items-center justify-center gap-1.5 rounded-lg px-4 text-sm font-medium transition-colors duration-200',
                 tab === value ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
               )}
             >

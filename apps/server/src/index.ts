@@ -8,6 +8,7 @@ import { verifyToken } from './auth/jwt'
 import { validateProductionEnv } from './utils/env'
 import { getDataRoot, getProxySettingsPath, seedDefaultSkills } from '@proma/server-core/config-paths'
 import { upgradeDefaultSkillsInWorkspaces } from '@proma/server-core/agent-workspace-manager'
+import { migrateSkillsMemoryToUserScope } from '@proma/server-core/migration/index'
 import { initAdminUser } from '@proma/server-core/user-manager'
 import { createLogger } from '@proma/server-core/logger'
 
@@ -65,6 +66,7 @@ initAdminUser(adminPassword)
 try {
   seedDefaultSkills()
   upgradeDefaultSkillsInWorkspaces()
+  migrateSkillsMemoryToUserScope()
 } catch (err) {
   logger.error('同步默认 Skills 失败', { error: err })
 }

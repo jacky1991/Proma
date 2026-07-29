@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { useSetAtom } from 'jotai'
+import { useSetAtom, useAtomValue } from 'jotai'
 import { toast } from 'sonner'
 import { BookOpen, Brain, ChevronDown, ChevronRight, Code2, Eye, FileText, FolderOpen, Loader2, RefreshCw, Save, Sparkles } from 'lucide-react'
 import type { SkillFileNode, WorkspaceMemorySummary } from '@proma/shared'
@@ -10,6 +10,7 @@ import { DefaultAppOpenButton } from '@/components/diff/DefaultAppOpenButton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { MessageResponse } from '@/components/ai-elements/message'
 import { agentPendingPromptAtom } from '@/atoms/agent-atoms'
+import { isAdminAtom } from '@/atoms/auth'
 import { useCreateSession } from '@/hooks/useCreateSession'
 import { cn } from '@/lib/utils'
 
@@ -133,6 +134,7 @@ function withVirtualMemoryIndex(nodes: SkillFileNode[]): SkillFileNode[] {
 export function WorkspaceMemoryTab({ workspaceSlug, search }: WorkspaceMemoryTabProps): React.ReactElement {
   const { createAgent } = useCreateSession()
   const setPendingPrompt = useSetAtom(agentPendingPromptAtom)
+  const isAdmin = useAtomValue(isAdminAtom)
   const [summary, setSummary] = React.useState<WorkspaceMemorySummary | null>(null)
   const [autoFiles, setAutoFiles] = React.useState<SkillFileNode[]>([])
   const [selected, setSelected] = React.useState<SelectedMemoryFile | null>(null)
@@ -404,15 +406,17 @@ export function WorkspaceMemoryTab({ workspaceSlug, search }: WorkspaceMemoryTab
   return (
     <div className="flex flex-col gap-5">
       <div className="grid gap-3 lg:grid-cols-2">
-        <MemoryStatCard
-          icon={<BookOpen size={18} />}
-          title="项目指令"
-          subtitle="工作区根目录 CLAUDE.md"
-          value={summary.claudeMd.exists ? formatBytes(summary.claudeMd.size) : '尚未创建'}
-          detail={`更新于 ${formatTime(summary.claudeMd.updatedAt)}`}
-          active={selected?.kind === 'claude'}
-          onClick={() => void openClaude(summary)}
-        />
+        {isAdmin && (
+          <MemoryStatCard
+            icon={<BookOpen size={18} />}
+            title="项目指令"
+            subtitle="工作区根目录 CLAUDE.md"
+            value={summary.claudeMd.exists ? formatBytes(summary.claudeMd.size) : '尚未创建'}
+            detail={`更新于 ${formatTime(summary.claudeMd.updatedAt)}`}
+            active={selected?.kind === 'claude'}
+            onClick={() => void openClaude(summary)}
+          />
+        )}
         <MemoryStatCard
           icon={<Brain size={18} />}
           title="自动记忆"
@@ -472,13 +476,15 @@ export function WorkspaceMemoryTab({ workspaceSlug, search }: WorkspaceMemoryTab
               </button>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-2">
-              <FileButton
-                active={selected?.kind === 'claude'}
-                icon={<FileText size={14} />}
-                label="CLAUDE.md"
-                meta="工作区项目指令"
-                onClick={() => void openClaude(summary)}
-              />
+              {isAdmin && (
+                <FileButton
+                  active={selected?.kind === 'claude'}
+                  icon={<FileText size={14} />}
+                  label="CLAUDE.md"
+                  meta="工作区项目指令"
+                  onClick={() => void openClaude(summary)}
+                />
+              )}
               <div className="mt-3 px-2 pb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground/70">
                 Auto Memory
               </div>

@@ -66,7 +66,7 @@ import {
   removeWorktreeRepo,
 } from '@proma/server-core/agent-workspace-manager'
 import { setBuiltinMcpUserEnabled } from '@proma/server-core/builtin-mcp/settings'
-import { getWorkspaceSkillsDir, getAgentWorkspacesDir, getAgentSessionWorkspacePath, getWorkspaceFilesDir, getDataRoot, getUserSessionWorkspacesDir } from '@proma/server-core/config-paths'
+import { getWorkspaceSkillsDir, getUserCustomSkillsDir, getAgentWorkspacesDir, getAgentSessionWorkspacePath, getWorkspaceFilesDir, getDataRoot, getUserSessionWorkspacesDir } from '@proma/server-core/config-paths'
 import type { UserScope } from '@proma/server-core/config-paths'
 import { getUserScope } from '../utils/user-scope'
 import { adminOnly } from '../middleware/role.ts'
@@ -240,7 +240,7 @@ agent.post(`/${AGENT_IPC_CHANNELS.REORDER_WORKSPACES}`, adminOnly, async (c) => 
 /** POST /api/agent:get-capabilities → WorkspaceCapabilities */
 agent.post(`/${AGENT_IPC_CHANNELS.GET_CAPABILITIES}`, async (c) => {
   const { workspaceSlug } = await c.req.json()
-  return c.json(getWorkspaceCapabilities(workspaceSlug))
+  return c.json(getWorkspaceCapabilities(workspaceSlug, getUserScope(c)))
 })
 
 // ===== 权限 / AskUser / ExitPlanMode 双向交互 =====
@@ -324,8 +324,8 @@ agent.post(`/${AGENT_IPC_CHANNELS.GET_PENDING_REQUESTS}`, (c) => {
 
 // ===== MCP 配置 =====
 
-/** POST /api/agent:get-mcp-config → WorkspaceMcpConfig */
-agent.post(`/${AGENT_IPC_CHANNELS.GET_MCP_CONFIG}`, async (c) => {
+/** POST /api/agent:get-mcp-config → WorkspaceMcpConfig（仅管理员：含命令/参数/env 等敏感配置） */
+agent.post(`/${AGENT_IPC_CHANNELS.GET_MCP_CONFIG}`, adminOnly, async (c) => {
   const { workspaceSlug } = await c.req.json()
   return c.json(getWorkspaceMcpConfig(workspaceSlug))
 })
@@ -360,29 +360,29 @@ agent.post(`/${AGENT_IPC_CHANNELS.SET_BUILTIN_MCP_ENABLED}`, adminOnly, async (c
 
 // ===== Skills 管理 =====
 
-/** POST /api/agent:get-skills → SkillMeta[] */
+/** POST /api/agent:get-skills → SkillMeta[]（含启用+禁用，按用户隔离） */
 agent.post(`/${AGENT_IPC_CHANNELS.GET_SKILLS}`, async (c) => {
   const { workspaceSlug } = await c.req.json()
-  return c.json(getAllWorkspaceSkills(workspaceSlug))
+  return c.json(getAllWorkspaceSkills(workspaceSlug, getUserScope(c)))
 })
 
-/** POST /api/agent:get-skills-dir → string */
+/** POST /api/agent:get-skills-dir → string（用户自建技能目录） */
 agent.post(`/${AGENT_IPC_CHANNELS.GET_SKILLS_DIR}`, async (c) => {
   const { workspaceSlug } = await c.req.json()
-  return c.json(getWorkspaceSkillsDir(workspaceSlug))
+  return c.json(getUserCustomSkillsDir(workspaceSlug, getUserScope(c)))
 })
 
-/** POST /api/agent:delete-skill → { ok: true }（仅管理员：全局共享资源写操作） */
-agent.post(`/${AGENT_IPC_CHANNELS.DELETE_SKILL}`, adminOnly, async (c) => {
+/** POST /api/agent:delete-skill → { ok: true }（用户可删除自己的自建技能；内置由 service 拦截） */
+agent.post(`/${AGENT_IPC_CHANNELS.DELETE_SKILL}`, async (c) => {
   const { workspaceSlug, skillSlug } = await c.req.json()
-  deleteWorkspaceSkill(workspaceSlug, skillSlug)
+  deleteWorkspaceSkill(workspaceSlug, skillSlug, getUserScope(c))
   return c.json({ ok: true })
 })
 
-/** POST /api/agent:toggle-skill → { ok: true }（仅管理员：全局共享资源写操作） */
-agent.post(`/${AGENT_IPC_CHANNELS.TOGGLE_SKILL}`, adminOnly, async (c) => {
+/** POST /api/agent:toggle-skill → { ok: true }（用户个人启停，黑名单 per-user） */
+agent.post(`/${AGENT_IPC_CHANNELS.TOGGLE_SKILL}`, async (c) => {
   const { workspaceSlug, skillSlug, enabled } = await c.req.json()
-  toggleWorkspaceSkill(workspaceSlug, skillSlug, enabled)
+  toggleWorkspaceSkill(workspaceSlug, skillSlug, enabled, getUserScope(c))
   return c.json({ ok: true })
 })
 
@@ -397,28 +397,28 @@ agent.post(`/${AGENT_IPC_CHANNELS.GET_DEFAULT_SKILL_SLUGS}`, (c) => {
   return c.json(getDefaultSkillSlugs())
 })
 
-/** POST /api/agent:import-skill-from-workspace → SkillMeta（仅管理员：全局共享资源写操作） */
+/** POST /api/agent:import-skill-from-workspace → SkillMeta（仅管理员：跨工作区导入） */
 agent.post(`/${AGENT_IPC_CHANNELS.IMPORT_SKILL_FROM_WORKSPACE}`, adminOnly, async (c) => {
   const { targetSlug, sourceSlug, skillSlug } = await c.req.json()
-  return c.json(importSkillFromWorkspace(targetSlug, sourceSlug, skillSlug))
+  return c.json(importSkillFromWorkspace(targetSlug, sourceSlug, skillSlug, getUserScope(c)))
 })
 
-/** POST /api/agent:update-skill-from-source → SkillMeta（仅管理员：全局共享资源写操作） */
-agent.post(`/${AGENT_IPC_CHANNELS.UPDATE_SKILL_FROM_SOURCE}`, adminOnly, async (c) => {
+/** POST /api/agent:update-skill-from-source → SkillMeta（用户可更新自己的自建技能） */
+agent.post(`/${AGENT_IPC_CHANNELS.UPDATE_SKILL_FROM_SOURCE}`, async (c) => {
   const { targetSlug, skillSlug } = await c.req.json()
-  return c.json(updateSkillFromSource(targetSlug, skillSlug))
+  return c.json(updateSkillFromSource(targetSlug, skillSlug, getUserScope(c)))
 })
 
 /** POST /api/agent:read-skill-content → string */
 agent.post(`/${AGENT_IPC_CHANNELS.READ_SKILL_CONTENT}`, async (c) => {
   const { workspaceSlug, skillSlug } = await c.req.json()
-  return c.json(readWorkspaceSkillContent(workspaceSlug, skillSlug))
+  return c.json(readWorkspaceSkillContent(workspaceSlug, skillSlug, getUserScope(c)))
 })
 
-/** POST /api/agent:write-skill-content → { ok: true }（仅管理员：全局共享资源写操作） */
-agent.post(`/${AGENT_IPC_CHANNELS.WRITE_SKILL_CONTENT}`, adminOnly, async (c) => {
+/** POST /api/agent:write-skill-content → { ok: true }（用户可编辑自建技能；内置由 service 拦截） */
+agent.post(`/${AGENT_IPC_CHANNELS.WRITE_SKILL_CONTENT}`, async (c) => {
   const { workspaceSlug, skillSlug, content } = await c.req.json()
-  writeWorkspaceSkillContent(workspaceSlug, skillSlug, content)
+  writeWorkspaceSkillContent(workspaceSlug, skillSlug, content, getUserScope(c))
   return c.json({ ok: true })
 })
 
@@ -427,80 +427,80 @@ agent.post(`/${AGENT_IPC_CHANNELS.WRITE_SKILL_CONTENT}`, adminOnly, async (c) =>
 /** POST /api/agent:list-skill-files → SkillFileNode[] */
 agent.post(`/${AGENT_IPC_CHANNELS.LIST_SKILL_FILES}`, async (c) => {
   const { workspaceSlug, skillSlug } = await c.req.json()
-  return c.json(listSkillFiles(workspaceSlug, skillSlug))
+  return c.json(listSkillFiles(workspaceSlug, skillSlug, getUserScope(c)))
 })
 
 /** POST /api/agent:read-skill-file → SkillFileContent */
 agent.post(`/${AGENT_IPC_CHANNELS.READ_SKILL_FILE}`, async (c) => {
   const { workspaceSlug, skillSlug, relativePath } = await c.req.json()
-  return c.json(readSkillFile(workspaceSlug, skillSlug, relativePath))
+  return c.json(readSkillFile(workspaceSlug, skillSlug, relativePath, getUserScope(c)))
 })
 
-/** POST /api/agent:write-skill-file → { ok: true }（仅管理员：全局共享资源写操作） */
-agent.post(`/${AGENT_IPC_CHANNELS.WRITE_SKILL_FILE}`, adminOnly, async (c) => {
+/** POST /api/agent:write-skill-file → { ok: true }（用户可编辑自建技能文件；内置由 service 拦截） */
+agent.post(`/${AGENT_IPC_CHANNELS.WRITE_SKILL_FILE}`, async (c) => {
   const { workspaceSlug, skillSlug, relativePath, content } = await c.req.json()
-  writeSkillFile(workspaceSlug, skillSlug, relativePath, content)
+  writeSkillFile(workspaceSlug, skillSlug, relativePath, content, getUserScope(c))
   return c.json({ ok: true })
 })
 
-/** POST /api/agent:create-skill-entry → { ok: true }（仅管理员：全局共享资源写操作） */
-agent.post(`/${AGENT_IPC_CHANNELS.CREATE_SKILL_ENTRY}`, adminOnly, async (c) => {
+/** POST /api/agent:create-skill-entry → { ok: true }（用户可在自建技能下创建子项） */
+agent.post(`/${AGENT_IPC_CHANNELS.CREATE_SKILL_ENTRY}`, async (c) => {
   const { workspaceSlug, skillSlug, relativePath, type } = await c.req.json()
-  createSkillEntry(workspaceSlug, skillSlug, relativePath, type)
+  createSkillEntry(workspaceSlug, skillSlug, relativePath, type, getUserScope(c))
   return c.json({ ok: true })
 })
 
-/** POST /api/agent:delete-skill-entry → { ok: true }（仅管理员：全局共享资源写操作） */
-agent.post(`/${AGENT_IPC_CHANNELS.DELETE_SKILL_ENTRY}`, adminOnly, async (c) => {
+/** POST /api/agent:delete-skill-entry → { ok: true }（用户可删除自建技能子项） */
+agent.post(`/${AGENT_IPC_CHANNELS.DELETE_SKILL_ENTRY}`, async (c) => {
   const { workspaceSlug, skillSlug, relativePath } = await c.req.json()
-  deleteSkillEntry(workspaceSlug, skillSlug, relativePath)
+  deleteSkillEntry(workspaceSlug, skillSlug, relativePath, getUserScope(c))
   return c.json({ ok: true })
 })
 
-/** POST /api/agent:rename-skill-entry → { ok: true }（仅管理员：全局共享资源写操作） */
-agent.post(`/${AGENT_IPC_CHANNELS.RENAME_SKILL_ENTRY}`, adminOnly, async (c) => {
+/** POST /api/agent:rename-skill-entry → { ok: true }（用户可重命名自建技能子项） */
+agent.post(`/${AGENT_IPC_CHANNELS.RENAME_SKILL_ENTRY}`, async (c) => {
   const { workspaceSlug, skillSlug, fromRelative, toRelative } = await c.req.json()
-  renameSkillEntry(workspaceSlug, skillSlug, fromRelative, toRelative)
+  renameSkillEntry(workspaceSlug, skillSlug, fromRelative, toRelative, getUserScope(c))
   return c.json({ ok: true })
 })
 
 // ===== 工作区记忆文件 =====
 
-/** POST /api/agent:get-workspace-memory-summary → WorkspaceMemorySummary */
+/** POST /api/agent:get-workspace-memory-summary → WorkspaceMemorySummary（auto memory 按用户隔离） */
 agent.post(`/${AGENT_IPC_CHANNELS.GET_WORKSPACE_MEMORY_SUMMARY}`, async (c) => {
   const { workspaceSlug } = await c.req.json()
-  return c.json(getWorkspaceMemorySummary(workspaceSlug))
+  return c.json(getWorkspaceMemorySummary(workspaceSlug, getUserScope(c)))
 })
 
-/** POST /api/agent:read-workspace-claude-md → SkillFileContent */
-agent.post(`/${AGENT_IPC_CHANNELS.READ_WORKSPACE_CLAUDE_MD}`, async (c) => {
+/** POST /api/agent:read-workspace-claude-md → SkillFileContent（仅管理员：CLAUDE.md 为团队共享项目指令） */
+agent.post(`/${AGENT_IPC_CHANNELS.READ_WORKSPACE_CLAUDE_MD}`, adminOnly, async (c) => {
   const { workspaceSlug } = await c.req.json()
   return c.json(readWorkspaceClaudeMd(workspaceSlug))
 })
 
-/** POST /api/agent:write-workspace-claude-md → { ok: true }（仅管理员：全局共享资源写操作） */
+/** POST /api/agent:write-workspace-claude-md → { ok: true }（仅管理员：全局共享项目指令） */
 agent.post(`/${AGENT_IPC_CHANNELS.WRITE_WORKSPACE_CLAUDE_MD}`, adminOnly, async (c) => {
   const { workspaceSlug, content } = await c.req.json()
   writeWorkspaceClaudeMd(workspaceSlug, content)
   return c.json({ ok: true })
 })
 
-/** POST /api/agent:list-workspace-auto-memory-files → SkillFileNode[] */
+/** POST /api/agent:list-workspace-auto-memory-files → SkillFileNode[]（按用户隔离） */
 agent.post(`/${AGENT_IPC_CHANNELS.LIST_WORKSPACE_AUTO_MEMORY_FILES}`, async (c) => {
   const { workspaceSlug } = await c.req.json()
-  return c.json(listWorkspaceAutoMemoryFiles(workspaceSlug))
+  return c.json(listWorkspaceAutoMemoryFiles(workspaceSlug, getUserScope(c)))
 })
 
-/** POST /api/agent:read-workspace-auto-memory-file → SkillFileContent */
+/** POST /api/agent:read-workspace-auto-memory-file → SkillFileContent（按用户隔离） */
 agent.post(`/${AGENT_IPC_CHANNELS.READ_WORKSPACE_AUTO_MEMORY_FILE}`, async (c) => {
   const { workspaceSlug, relativePath } = await c.req.json()
-  return c.json(readWorkspaceAutoMemoryFile(workspaceSlug, relativePath))
+  return c.json(readWorkspaceAutoMemoryFile(workspaceSlug, relativePath, getUserScope(c)))
 })
 
-/** POST /api/agent:write-workspace-auto-memory-file → { ok: true }（仅管理员：全局共享资源写操作） */
-agent.post(`/${AGENT_IPC_CHANNELS.WRITE_WORKSPACE_AUTO_MEMORY_FILE}`, adminOnly, async (c) => {
+/** POST /api/agent:write-workspace-auto-memory-file → { ok: true }（用户可读写自己的个人记忆） */
+agent.post(`/${AGENT_IPC_CHANNELS.WRITE_WORKSPACE_AUTO_MEMORY_FILE}`, async (c) => {
   const { workspaceSlug, relativePath, content } = await c.req.json()
-  writeWorkspaceAutoMemoryFile(workspaceSlug, relativePath, content)
+  writeWorkspaceAutoMemoryFile(workspaceSlug, relativePath, content, getUserScope(c))
   return c.json({ ok: true })
 })
 

@@ -7,3 +7,6 @@ export type { MigrationResult } from './migrate-to-multi-user.ts'
 
 export { needsSdkConfigMigration, migrateSdkConfigToUsers } from './migrate-sdk-config-to-users.ts'
 export type { SdkConfigMigrationResult } from './migrate-sdk-config-to-users.ts'
+
+export { migrateSkillsMemoryToUserScope } from './migrate-skills-memory-to-user-scope.ts'
+export type { SkillsMemoryMigrationResult } from './migrate-skills-memory-to-user-scope.ts'
