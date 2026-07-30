@@ -17,8 +17,12 @@ import { adminOnly } from './middleware/role'
 import { getConnectionCount, getBufferedSessionCount } from './ws'
 import { orchestrator } from './engine'
 import { getServerVersion } from './utils/version'
+import { createLogger } from '@proma/server-core/logger'
 
 const app = new Hono()
+
+/** 模块日志器 */
+const logger = createLogger('服务器')
 
 // 开发期 CORS：允许 web 端（127.0.0.1:5174）直连。
 // dev 期 vite 已做 /api 代理（同源），此处仅为直连场景兜底。
@@ -78,5 +82,24 @@ app.route('/api', chatTool)
 app.route('/api', storage)
 app.route('/api', automation)
 app.route('/api', file)
+
+/**
+ * 全局错误处理
+ *
+ * service 层（@proma/server-core/*）在参数校验、权限边界等场景抛出的 Error，
+ * 统一透传中文 message 为 `{ error }` + 400，让前端 http-client 能取到 body.error 展示。
+ * 未识别的异常返回 500 + 通用文案，避免泄漏堆栈等内部信息。
+ *
+ * 未加此前，任何路由 handler 内的 throw 都会被 Hono 默认处理器吞成不透明 500
+ * （非 `{error}` 响应体），导致用户只看到「HTTP 500」而看不到原因。
+ */
+app.onError((err, c) => {
+  if (err instanceof Error) {
+    logger.warn('请求处理失败', { path: c.req.path, message: err.message })
+    return c.json({ error: err.message }, 400)
+  }
+  logger.error('未处理异常', { path: c.req.path, error: String(err) })
+  return c.json({ error: '服务器内部错误' }, 500)
+})
 
 export { app }

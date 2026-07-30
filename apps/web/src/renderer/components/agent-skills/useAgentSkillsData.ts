@@ -14,7 +14,7 @@ import {
   currentAgentWorkspaceIdAtom,
   workspaceCapabilitiesVersionAtom,
 } from '@/atoms/agent-atoms'
-import type { BuiltinMcpServerSummary, SkillMeta, WorkspaceCapabilities, WorkspaceMcpConfig } from '@proma/shared'
+import type { BuiltinMcpServerSummary, SkillsGroupConfig, SkillMeta, WorkspaceCapabilities, WorkspaceMcpConfig } from '@proma/shared'
 
 export interface AgentSkillsData {
   /** 当前工作区（未选中时为 null） */
@@ -25,13 +25,18 @@ export interface AgentSkillsData {
   skills: SkillMeta[]
   defaultSkillSlugs: Set<string>
   skillsDir: string
+  /** 用户技能分组配置（groups + assignments） */
+  groupsConfig: SkillsGroupConfig
   mcpConfig: WorkspaceMcpConfig
   capabilities: WorkspaceCapabilities | null
   builtinMcpServers: BuiltinMcpServerSummary[]
-  updatingSkill: string | null
   toggleSkill: (slug: string, enabled: boolean) => Promise<void>
   deleteSkill: (slug: string, name: string) => Promise<boolean>
-  updateSkill: (slug: string) => Promise<void>
+  uploadSkill: (file: File) => Promise<number>
+  createGroup: (name: string) => Promise<void>
+  renameGroup: (groupId: string, name: string) => Promise<void>
+  deleteGroup: (groupId: string) => Promise<void>
+  setSkillAssignment: (slug: string, groupId: string | null) => Promise<void>
   toggleMcp: (name: string, enabled: boolean) => Promise<void>
   toggleBuiltinMcp: (id: string, enabled: boolean) => Promise<void>
   deleteMcp: (name: string) => Promise<void>
@@ -53,7 +58,7 @@ export function useAgentSkillsData(): AgentSkillsData {
   const [mcpConfig, setMcpConfig] = React.useState<WorkspaceMcpConfig>({ servers: {} })
   const [capabilities, setCapabilities] = React.useState<WorkspaceCapabilities | null>(null)
   const [builtinMcpServers, setBuiltinMcpServers] = React.useState<BuiltinMcpServerSummary[]>([])
-  const [updatingSkill, setUpdatingSkill] = React.useState<string | null>(null)
+  const [groupsConfig, setGroupsConfig] = React.useState<SkillsGroupConfig>({ groups: [], assignments: {} })
 
   const loadData = React.useCallback(async () => {
     if (!workspaceSlug) {
@@ -61,16 +66,18 @@ export function useAgentSkillsData(): AgentSkillsData {
       setMcpConfig({ servers: {} })
       setCapabilities(null)
       setBuiltinMcpServers([])
+      setGroupsConfig({ groups: [], assignments: {} })
       setLoading(false)
       return
     }
     try {
-      const [config, skillList, dir, defaultSlugs, capabilities] = await Promise.all([
+      const [config, skillList, dir, defaultSlugs, capabilities, groupsCfg] = await Promise.all([
         window.electronAPI.getWorkspaceMcpConfig(workspaceSlug),
         window.electronAPI.getWorkspaceSkills(workspaceSlug),
         window.electronAPI.getWorkspaceSkillsDir(workspaceSlug),
         window.electronAPI.getDefaultSkillSlugs(),
         window.electronAPI.getWorkspaceCapabilities(workspaceSlug),
+        window.electronAPI.getSkillGroups(workspaceSlug),
       ])
       setMcpConfig(config)
       setSkills(skillList)
@@ -78,6 +85,7 @@ export function useAgentSkillsData(): AgentSkillsData {
       setDefaultSkillSlugs(new Set(defaultSlugs))
       setCapabilities(capabilities)
       setBuiltinMcpServers(capabilities.builtinMcpServers)
+      setGroupsConfig(groupsCfg)
     } catch (error) {
       console.error('[Agent 技能] 加载工作区配置失败:', error)
     } finally {
@@ -116,22 +124,80 @@ export function useAgentSkillsData(): AgentSkillsData {
     }
   }, [workspaceSlug, bumpCapabilitiesVersion])
 
-  const updateSkill = React.useCallback(async (slug: string) => {
-    if (!workspaceSlug || updatingSkill) return
-    setUpdatingSkill(slug)
+  const uploadSkill = React.useCallback(async (file: File): Promise<number> => {
+    if (!workspaceSlug) return 0
     try {
-      const updated = await window.electronAPI.updateSkillFromSource(workspaceSlug, slug)
-      setSkills((prev) => prev.map((s) => (s.slug === slug ? updated : s)))
+      const { skills: installed } = await window.electronAPI.uploadSkillZip(workspaceSlug, file)
+      // 重新拉取技能列表，保持与后端一致
+      const skillList = await window.electronAPI.getWorkspaceSkills(workspaceSlug)
+      setSkills(skillList)
       bumpCapabilitiesVersion((v) => v + 1)
-      toast.success(`已同步更新 Skill：${updated.name}`)
+      toast.success(`已安装 ${installed.length} 个技能：${file.name}`)
+      return installed.length
     } catch (error) {
-      console.error('[Agent 技能] 更新 Skill 失败:', error)
+      console.error('[Agent 技能] 上传 Skill 失败:', error)
       const message = error instanceof Error ? error.message : '未知错误'
-      toast.error('更新 Skill 失败', { description: message })
-    } finally {
-      setUpdatingSkill(null)
+      toast.error('上传 Skill 失败', { description: message })
+      return 0
     }
-  }, [workspaceSlug, updatingSkill, bumpCapabilitiesVersion])
+  }, [workspaceSlug, bumpCapabilitiesVersion])
+
+  const createGroup = React.useCallback(async (name: string): Promise<void> => {
+    if (!workspaceSlug) return
+    try {
+      const group = await window.electronAPI.createSkillGroup(workspaceSlug, name)
+      setGroupsConfig((prev) => ({ ...prev, groups: [...prev.groups, group] }))
+      toast.success(`已新建分组：${group.name}`)
+    } catch (error) {
+      console.error('[Agent 技能] 新建分组失败:', error)
+      toast.error(error instanceof Error ? error.message : '新建分组失败')
+    }
+  }, [workspaceSlug])
+
+  const renameGroup = React.useCallback(async (groupId: string, name: string): Promise<void> => {
+    if (!workspaceSlug) return
+    try {
+      await window.electronAPI.renameSkillGroup(workspaceSlug, groupId, name)
+      setGroupsConfig((prev) => ({
+        ...prev,
+        groups: prev.groups.map((g) => (g.id === groupId ? { ...g, name } : g)),
+      }))
+    } catch (error) {
+      console.error('[Agent 技能] 重命名分组失败:', error)
+      toast.error(error instanceof Error ? error.message : '重命名分组失败')
+    }
+  }, [workspaceSlug])
+
+  const deleteGroup = React.useCallback(async (groupId: string): Promise<void> => {
+    if (!workspaceSlug) return
+    try {
+      await window.electronAPI.deleteSkillGroup(workspaceSlug, groupId)
+      setGroupsConfig((prev) => ({
+        groups: prev.groups.filter((g) => g.id !== groupId),
+        assignments: Object.fromEntries(Object.entries(prev.assignments).filter(([, gid]) => gid !== groupId)),
+      }))
+      toast.success('已删除分组')
+    } catch (error) {
+      console.error('[Agent 技能] 删除分组失败:', error)
+      toast.error(error instanceof Error ? error.message : '删除分组失败')
+    }
+  }, [workspaceSlug])
+
+  const setSkillAssignment = React.useCallback(async (slug: string, groupId: string | null): Promise<void> => {
+    if (!workspaceSlug) return
+    try {
+      await window.electronAPI.setSkillAssignment(workspaceSlug, slug, groupId)
+      setGroupsConfig((prev) => {
+        const assignments = { ...prev.assignments }
+        if (groupId) assignments[slug] = groupId
+        else delete assignments[slug]
+        return { ...prev, assignments }
+      })
+    } catch (error) {
+      console.error('[Agent 技能] 调整分组失败:', error)
+      toast.error(error instanceof Error ? error.message : '调整分组失败')
+    }
+  }, [workspaceSlug])
 
   const toggleMcp = React.useCallback(async (name: string, enabled: boolean) => {
     try {
@@ -187,13 +253,17 @@ export function useAgentSkillsData(): AgentSkillsData {
     skills,
     defaultSkillSlugs,
     skillsDir,
+    groupsConfig,
     mcpConfig,
     capabilities,
     builtinMcpServers,
-    updatingSkill,
     toggleSkill,
     deleteSkill,
-    updateSkill,
+    uploadSkill,
+    createGroup,
+    renameGroup,
+    deleteGroup,
+    setSkillAssignment,
     toggleMcp,
     toggleBuiltinMcp,
     deleteMcp,

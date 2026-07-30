@@ -12,7 +12,7 @@
 import * as React from 'react'
 import { useAtom, useSetAtom, useAtomValue } from 'jotai'
 import { toast } from 'sonner'
-import { Blocks, ChevronDown, ChevronRight, Search, Plus, Store, FolderOpen, Check, Sparkles, Loader2 } from 'lucide-react'
+import { Blocks, ChevronDown, ChevronRight, Search, Plus, Upload, FolderOpen, Check, Loader2, Pencil, Trash2, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
@@ -21,80 +21,28 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
-import { agentPendingPromptAtom, workspaceCapabilitiesVersionAtom } from '@/atoms/agent-atoms'
+import { workspaceCapabilitiesVersionAtom } from '@/atoms/agent-atoms'
 import { agentSkillsTabAtom } from '@/atoms/active-view'
 import { settingsOpenAtom, settingsTabAtom, toolSettingsFocusAtom, type ToolSettingsFocus } from '@/atoms/settings-tab'
 import { canManageAtom } from '@/atoms/auth'
 import { useProjectActions } from '@/hooks/useProjectActions'
-import { useCreateSession } from '@/hooks/useCreateSession'
-import type { BuiltinMcpServerSummary, McpServerEntry, SkillMeta } from '@proma/shared'
+import type { BuiltinMcpServerSummary, McpServerEntry, SkillMeta, SkillsGroupConfig } from '@proma/shared'
 import { useAgentSkillsData } from './useAgentSkillsData'
 import { SkillCard } from './SkillCard'
 import { McpCard } from './McpCard'
 import { SkillDetailSheet } from './SkillDetailSheet'
 import { McpDetailSheet } from './McpDetailSheet'
 import { BuiltinMcpDetailSheet } from './BuiltinMcpDetailSheet'
-import { ImportSkillDialog } from './ImportSkillDialog'
 import { WorkspaceMemoryTab } from './WorkspaceMemoryTab'
-import { groupSkills } from './skillGrouping'
-
-function buildSkillClassificationPrompt(input: {
-  workspaceName: string
-  skillsDir: string
-  skills: SkillMeta[]
-}): string {
-  const skillList = input.skills
-    .map((skill) => {
-      const meta: string[] = []
-      if (skill.group) meta.push(`group=${skill.group}`)
-      return `- ${skill.slug} (${skill.name})${meta.length > 0 ? ` [${meta.join('; ')}]` : ''}`
-    })
-    .join('\n')
-
-  return `请帮我整理当前工作区 Skills 的分组。
-
-工作区：${input.workspaceName || '当前工作区'}
-Skills 目录：${input.skillsDir}
-
-当前已安装 Skills：
-${skillList || '- 暂无'}
-
-目标：
-1. 逐个读取 Skills 目录下每个子目录的 SKILL.md，基于实际 description 和正文内容判断用途，不要只靠 slug、文件夹名或固定前缀猜分类。
-2. 为每个 Skill 补全或修正 frontmatter 中的 group：
-   - group 是一个简短、稳定的一级分组，直接用人类可读名称，例如 "Lark"、"文档"、"演示文稿"、"规划协作"。这些只是例子，不是固定枚举；请根据实际内容归纳。
-   - 分组数量要克制，优先让用户能快速折叠/浏览，不要把每个细分场景都做成新组。
-3. 只修改每个 SKILL.md 的 YAML frontmatter；保留 name、description、version、license、icon 等已有字段，不要改正文内容。
-4. 对已有 group 做增量修订：明显准确的保留，不准确、缺失或过粗的再调整。
-5. 同一平台或同一能力域的 Skills 应该归到同一个 group。
-6. 如果某个 Skill 内容证据不足，放入 "未分组"，不要编造用途。
-7. 只处理上述 Skills 目录内的 Skill，不要修改仓库 bundled default-skills、README、AGENTS.md 或其他 unrelated 文件。
-
-写入格式示例：
-
----
-name: example
-description: ...
-group: Lark
-version: "1.0.0"
----
-
-完成后请回复：
-- 修改了多少个 Skill
-- 使用了哪些 group，各自包含哪些 Skill
-- 哪些 Skill 的分类不确定，以及原因
-- 是否有需要用户确认或后续合并同类项的建议`
-}
+import { groupUserSkills, type UserSkillGroup } from './skillGrouping'
 
 export function AgentSkillsView(): React.ReactElement {
   const data = useAgentSkillsData()
   const bumpCapabilities = useSetAtom(workspaceCapabilitiesVersionAtom)
-  const setPendingPrompt = useSetAtom(agentPendingPromptAtom)
   const setSettingsOpen = useSetAtom(settingsOpenAtom)
   const setSettingsTab = useSetAtom(settingsTabAtom)
   const setToolSettingsFocus = useSetAtom(toolSettingsFocusAtom)
   const { workspaces, currentWorkspaceId, selectProject } = useProjectActions()
-  const { createAgent } = useCreateSession()
 
   const [tab, setTab] = useAtom(agentSkillsTabAtom)
   const [search, setSearch] = React.useState('')
@@ -102,13 +50,16 @@ export function AgentSkillsView(): React.ReactElement {
   const [mcpSheetOpen, setMcpSheetOpen] = React.useState(false)
   const [editingMcp, setEditingMcp] = React.useState<{ name: string; entry: McpServerEntry } | null>(null)
   const [selectedBuiltinMcp, setSelectedBuiltinMcp] = React.useState<BuiltinMcpServerSummary | null>(null)
-  const [showImport, setShowImport] = React.useState(false)
   const [wsPopoverOpen, setWsPopoverOpen] = React.useState(false)
   const [pendingDeleteSkill, setPendingDeleteSkill] = React.useState<SkillMeta | null>(null)
   const [pendingDeleteMcpName, setPendingDeleteMcpName] = React.useState<string | null>(null)
   const [isDeletingSkill, setIsDeletingSkill] = React.useState(false)
   const [isDeletingMcp, setIsDeletingMcp] = React.useState(false)
-  const [classifyingSkills, setClassifyingSkills] = React.useState(false)
+  const [isUploading, setIsUploading] = React.useState(false)
+  const [newGroupName, setNewGroupName] = React.useState('')
+  const [renamingGroup, setRenamingGroup] = React.useState<{ id: string; name: string } | null>(null)
+  const [pendingDeleteGroup, setPendingDeleteGroup] = React.useState<{ id: string; name: string } | null>(null)
+  const fileInputRef = React.useRef<HTMLInputElement>(null)
 
   const q = search.trim().toLowerCase()
 
@@ -124,7 +75,6 @@ export function AgentSkillsView(): React.ReactElement {
 
   const customSkills = filteredSkills.filter((s) => !data.defaultSkillSlugs.has(s.slug))
   const builtinSkills = filteredSkills.filter((s) => data.defaultSkillSlugs.has(s.slug))
-  const updateCount = data.skills.filter((s) => s.hasUpdate).length
 
   const userMcpEntries = React.useMemo(() => {
     return Object.entries(data.mcpConfig.servers ?? {})
@@ -181,35 +131,42 @@ export function AgentSkillsView(): React.ReactElement {
     setSelectedBuiltinMcp(null)
   }, [setSettingsOpen, setSettingsTab, setToolSettingsFocus])
 
-  const handleClassifySkills = React.useCallback(async (): Promise<void> => {
-    if (classifyingSkills) return
-    if (!data.skillsDir) {
-      toast.error('无法定位当前工作区 Skills 目录')
-      return
-    }
-    setClassifyingSkills(true)
+  const handleUploadClick = (): void => {
+    fileInputRef.current?.click()
+  }
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
+    const file = e.target.files?.[0]
+    e.target.value = '' // 允许重复选择同一文件
+    if (!file) return
+    setIsUploading(true)
     try {
-      const sessionId = await createAgent()
-      if (!sessionId) {
-        toast.error('创建 Agent 会话失败')
-        return
-      }
-      setPendingPrompt({
-        sessionId,
-        message: buildSkillClassificationPrompt({
-          workspaceName: data.workspaceName,
-          skillsDir: data.skillsDir,
-          skills: data.skills,
-        }),
-      })
-      toast.success('已创建 Skills 分类整理会话')
-    } catch (error) {
-      console.error('[Agent 技能] 创建 Skills 分类会话失败:', error)
-      toast.error(error instanceof Error ? error.message : '创建 Skills 分类会话失败')
+      await data.uploadSkill(file)
     } finally {
-      setClassifyingSkills(false)
+      setIsUploading(false)
     }
-  }, [classifyingSkills, createAgent, data.skills, data.skillsDir, data.workspaceName, setPendingPrompt])
+  }
+
+  const handleCreateGroup = async (): Promise<void> => {
+    const name = newGroupName.trim()
+    if (!name) return
+    await data.createGroup(name)
+    setNewGroupName('')
+  }
+
+  const handleCommitRenameGroup = async (): Promise<void> => {
+    if (!renamingGroup) return
+    const name = renamingGroup.name.trim()
+    if (!name) { setRenamingGroup(null); return }
+    await data.renameGroup(renamingGroup.id, name)
+    setRenamingGroup(null)
+  }
+
+  const handleDeleteGroup = async (): Promise<void> => {
+    if (!pendingDeleteGroup) return
+    await data.deleteGroup(pendingDeleteGroup.id)
+    setPendingDeleteGroup(null)
+  }
 
   if (!data.hasWorkspace) {
     return (
@@ -312,47 +269,24 @@ export function AgentSkillsView(): React.ReactElement {
           />
         </div>
 
-        {/* 社区市场（占位） */}
-        {tab === 'skills' && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                disabled
-                className="flex h-8 cursor-not-allowed items-center gap-1.5 rounded-lg border border-dashed border-border/60 px-3 text-[13px] font-medium text-foreground/35"
-              >
-                <Store size={14} />
-                <span>社区市场</span>
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">即将上线：一键浏览、安装与更新社区 Skills</TooltipContent>
-          </Tooltip>
-        )}
-
-        {/* Skills：从其他工作区导入 */}
+        {/* Skills：上传 zip 技能包 */}
         {tab === 'skills' && (
           <>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  onClick={() => void handleClassifySkills()}
-                  disabled={classifyingSkills || data.skills.length === 0}
-                  className="flex h-8 items-center gap-1.5 rounded-lg border border-border/60 bg-content-area px-3 text-[13px] font-medium text-foreground/80 shadow-sm transition-colors hover:bg-foreground/[0.04] disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {classifyingSkills ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                  <span>AI 分类</span>
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">创建 Agent 会话，读取 SKILL.md 内容并补全 group</TooltipContent>
-            </Tooltip>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".zip"
+              onChange={(e) => void handleFileChange(e)}
+              className="hidden"
+            />
             <button
               type="button"
-              onClick={() => setShowImport(true)}
-              className="flex h-8 items-center gap-1.5 rounded-lg border border-border/60 bg-content-area px-3 text-[13px] font-medium text-foreground/80 shadow-sm transition-colors hover:bg-foreground/[0.04]"
+              onClick={handleUploadClick}
+              disabled={isUploading}
+              className="flex h-8 items-center gap-1.5 rounded-lg border border-border/60 bg-content-area px-3 text-[13px] font-medium text-foreground/80 shadow-sm transition-colors hover:bg-foreground/[0.04] disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <Plus size={14} />
-              <span>导入</span>
+              {isUploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+              <span>{isUploading ? '上传中...' : '上传技能'}</span>
             </button>
           </>
         )}
@@ -379,13 +313,18 @@ export function AgentSkillsView(): React.ReactElement {
             <SkillsTab
               customSkills={customSkills}
               builtinSkills={builtinSkills}
+              groupsConfig={data.groupsConfig}
               total={data.skills.length}
-              updateCount={updateCount}
-              updatingSkill={data.updatingSkill}
               isBuiltin={(slug) => data.defaultSkillSlugs.has(slug)}
               onOpen={setSelectedSkillSlug}
               onToggle={data.toggleSkill}
-              onUpdate={data.updateSkill}
+              newGroupName={newGroupName}
+              setNewGroupName={setNewGroupName}
+              onCreateGroup={handleCreateGroup}
+              renamingGroup={renamingGroup}
+              setRenamingGroup={setRenamingGroup}
+              onCommitRenameGroup={handleCommitRenameGroup}
+              onRequestDeleteGroup={(id, name) => setPendingDeleteGroup({ id, name })}
             />
           ) : tab === 'mcp' ? (
             <McpTab
@@ -410,10 +349,10 @@ export function AgentSkillsView(): React.ReactElement {
         skill={selectedSkill}
         workspaceSlug={data.workspaceSlug}
         isBuiltin={selectedIsBuiltin}
-        updating={data.updatingSkill === selectedSkill?.slug}
+        groupsConfig={data.groupsConfig}
         onOpenChange={(open) => { if (!open) setSelectedSkillSlug(null) }}
         onToggle={(enabled) => selectedSkill && data.toggleSkill(selectedSkill.slug, enabled)}
-        onUpdate={() => selectedSkill && data.updateSkill(selectedSkill.slug)}
+        onSetAssignment={(groupId) => selectedSkill && data.setSkillAssignment(selectedSkill.slug, groupId)}
         onRequestDelete={() => selectedSkill && setPendingDeleteSkill(selectedSkill)}
         onOpenFolder={() => selectedSkill && openSkillFolder(selectedSkill.slug)}
         onChanged={() => bumpCapabilities((v) => v + 1)}
@@ -472,12 +411,14 @@ export function AgentSkillsView(): React.ReactElement {
         onConfigure={configureBuiltinMcp}
       />
 
-      <ImportSkillDialog
-        open={showImport}
-        onOpenChange={setShowImport}
-        workspaceSlug={data.workspaceSlug}
-        installedSkills={data.skills}
-        onImported={() => bumpCapabilities((v) => v + 1)}
+      {/* 分组删除确认 */}
+      <ConfirmDialog
+        open={pendingDeleteGroup !== null}
+        onOpenChange={(open) => { if (!open) setPendingDeleteGroup(null) }}
+        title={`确认删除分组「${pendingDeleteGroup?.name}」？`}
+        description="组内技能将自动归入「未分组」，不会删除技能本身。"
+        confirmLabel="删除"
+        onConfirm={handleDeleteGroup}
       />
     </div>
   )
@@ -488,104 +429,207 @@ export function AgentSkillsView(): React.ReactElement {
 interface SkillsTabProps {
   customSkills: SkillMeta[]
   builtinSkills: SkillMeta[]
+  groupsConfig: SkillsGroupConfig
   total: number
-  updateCount: number
-  updatingSkill: string | null
   isBuiltin: (slug: string) => boolean
   onOpen: (slug: string) => void
   onToggle: (slug: string, enabled: boolean) => void
-  onUpdate: (slug: string) => void
+  newGroupName: string
+  setNewGroupName: (v: string) => void
+  onCreateGroup: () => void
+  renamingGroup: { id: string; name: string } | null
+  setRenamingGroup: (v: { id: string; name: string } | null) => void
+  onCommitRenameGroup: () => void
+  onRequestDeleteGroup: (id: string, name: string) => void
 }
 
-function SkillsTab({
-  customSkills,
-  builtinSkills,
-  total,
-  updateCount,
-  updatingSkill,
-  isBuiltin,
-  onOpen,
-  onToggle,
-  onUpdate,
-}: SkillsTabProps): React.ReactElement {
-  if (total === 0) {
-    return <EmptyState icon={<Blocks className="size-8 text-foreground/30" />} title="暂无 Skill" hint="可以在 Agent 模式下让 Proma 帮你联网查找并安装 Skill，或从其他工作区导入。" />
+function SkillsTab(props: SkillsTabProps): React.ReactElement {
+  if (props.total === 0) {
+    return <EmptyState icon={<Blocks className="size-8 text-foreground/30" />} title="暂无 Skill" hint="点击右上角「上传技能」，上传 zip 技能包来安装用户技能。" />
   }
-  if (customSkills.length === 0 && builtinSkills.length === 0) {
+  if (props.customSkills.length === 0 && props.builtinSkills.length === 0) {
     return <EmptyState icon={<Search className="size-8 text-foreground/30" />} title="没有匹配的 Skill" hint="试试更换搜索关键词。" />
   }
 
   return (
     <div className="flex flex-col gap-8">
-      {updateCount > 0 && (
-        <div className="flex items-center gap-2 rounded-lg border border-blue-500/20 bg-blue-500/[0.06] px-3 py-2 text-[13px] text-blue-600 dark:text-blue-400">
-          有 {updateCount} 个 Skill 可更新到来源最新版本
-        </div>
+      {props.customSkills.length > 0 && (
+        <UserSkillsSection
+          skills={props.customSkills}
+          groupsConfig={props.groupsConfig}
+          isBuiltin={props.isBuiltin}
+          onOpen={props.onOpen}
+          onToggle={props.onToggle}
+          newGroupName={props.newGroupName}
+          setNewGroupName={props.setNewGroupName}
+          onCreateGroup={props.onCreateGroup}
+          renamingGroup={props.renamingGroup}
+          setRenamingGroup={props.setRenamingGroup}
+          onCommitRenameGroup={props.onCommitRenameGroup}
+          onRequestDeleteGroup={props.onRequestDeleteGroup}
+        />
       )}
-      {customSkills.length > 0 && (
-        <SkillSection title="我的 Skills" skills={customSkills} isBuiltin={isBuiltin} updatingSkill={updatingSkill} onOpen={onOpen} onToggle={onToggle} onUpdate={onUpdate} />
-      )}
-      {builtinSkills.length > 0 && (
-        <SkillSection title="PROMA 内置" skills={builtinSkills} isBuiltin={isBuiltin} updatingSkill={updatingSkill} onOpen={onOpen} onToggle={onToggle} onUpdate={onUpdate} />
+      {props.builtinSkills.length > 0 && (
+        <BuiltinSkillsSection
+          skills={props.builtinSkills}
+          isBuiltin={props.isBuiltin}
+          onOpen={props.onOpen}
+          onToggle={props.onToggle}
+        />
       )}
     </div>
   )
 }
 
-interface SkillSectionProps {
-  title: string
+/** 内置技能：平铺卡片网格，仅启用/禁用，不分组 */
+function BuiltinSkillsSection({
+  skills,
+  isBuiltin,
+  onOpen,
+  onToggle,
+}: {
   skills: SkillMeta[]
   isBuiltin: (slug: string) => boolean
-  updatingSkill: string | null
   onOpen: (slug: string) => void
   onToggle: (slug: string, enabled: boolean) => void
-  onUpdate: (slug: string) => void
+}): React.ReactElement {
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center gap-2 px-1">
+        <span className="text-[13px] font-medium text-foreground/55">PROMA 内置</span>
+        <span className="text-[12px] tabular-nums text-foreground/35">{skills.length}</span>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {skills.map((skill) => (
+          <SkillCard
+            key={skill.slug}
+            skill={skill}
+            isBuiltin={isBuiltin(skill.slug)}
+            onOpen={() => onOpen(skill.slug)}
+            onToggle={(enabled) => onToggle(skill.slug, enabled)}
+          />
+        ))}
+      </div>
+    </div>
+  )
 }
 
-function SkillSection({ title, skills, isBuiltin, updatingSkill, onOpen, onToggle, onUpdate }: SkillSectionProps): React.ReactElement {
+/** 用户技能：按 groupsConfig 分组折叠展示，支持新建/重命名/删除分组 */
+function UserSkillsSection({
+  skills,
+  groupsConfig,
+  isBuiltin,
+  onOpen,
+  onToggle,
+  newGroupName,
+  setNewGroupName,
+  onCreateGroup,
+  renamingGroup,
+  setRenamingGroup,
+  onCommitRenameGroup,
+  onRequestDeleteGroup,
+}: Omit<SkillsTabProps, 'customSkills' | 'builtinSkills' | 'total'> & { skills: SkillMeta[] }): React.ReactElement {
   const [collapsedGroups, setCollapsedGroups] = React.useState<Set<string>>(new Set())
-  const groups = React.useMemo(() => groupSkills(skills), [skills])
+  const groups = React.useMemo(() => groupUserSkills(skills, groupsConfig), [skills, groupsConfig])
 
-  const toggleGroup = React.useCallback((groupId: string): void => {
+  const toggleGroup = (key: string): void => {
     setCollapsedGroups((prev) => {
       const next = new Set(prev)
-      if (next.has(groupId)) next.delete(groupId)
-      else next.add(groupId)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
       return next
     })
-  }, [])
+  }
 
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center gap-2 px-1">
-        <span className="text-[13px] font-medium text-foreground/55">{title}</span>
+        <span className="text-[13px] font-medium text-foreground/55">用户技能</span>
         <span className="text-[12px] tabular-nums text-foreground/35">{skills.length}</span>
+        {/* 新建分组 */}
+        <div className="ml-auto flex items-center gap-2">
+          <input
+            value={newGroupName}
+            onChange={(e) => setNewGroupName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') void onCreateGroup() }}
+            placeholder="新分组名称"
+            className="h-8 w-44 rounded-lg border border-border/60 bg-content-area px-3 text-[13px] text-foreground placeholder:text-foreground/35 focus:outline-none focus:border-primary/40"
+          />
+          <button
+            type="button"
+            onClick={() => void onCreateGroup()}
+            disabled={!newGroupName.trim()}
+            className="flex h-8 items-center gap-1.5 rounded-lg border border-border/60 bg-content-area px-3 text-[13px] font-medium text-foreground/80 transition-colors hover:bg-foreground/[0.04] disabled:opacity-50"
+          >
+            <Plus size={14} />
+            <span>新建分组</span>
+          </button>
+        </div>
       </div>
+
       <div className="flex flex-col gap-4">
-        {groups.map((group) => {
-          const collapsed = collapsedGroups.has(group.id)
+        {groups.map((g) => {
+          const key = g.group?.id ?? '__ungrouped__'
+          const collapsed = collapsedGroups.has(key)
+          const isUngrouped = g.group === null
+          const isRenaming = !!g.group && renamingGroup?.id === g.group.id
           return (
-            <div key={group.id} className="flex flex-col gap-3">
-              <button
-                type="button"
-                onClick={() => toggleGroup(group.id)}
-                className="flex h-8 items-center gap-2 rounded-lg px-1 text-left text-[13px] font-medium text-foreground/65 transition-colors hover:bg-foreground/[0.04] hover:text-foreground"
-              >
-                <ChevronRight size={14} className={cn('text-foreground/35 transition-transform', !collapsed && 'rotate-90')} />
-                <span>{group.title}</span>
-                <span className="text-[12px] tabular-nums text-foreground/35">{group.skills.length}</span>
-              </button>
+            <div key={key} className="group/row flex flex-col gap-3">
+              <div className="flex h-8 items-center gap-1 px-1">
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(key)}
+                  className="flex items-center gap-2 rounded-lg text-left text-[13px] font-medium text-foreground/65 transition-colors hover:bg-foreground/[0.04] hover:text-foreground"
+                >
+                  <ChevronRight size={14} className={cn('text-foreground/35 transition-transform', !collapsed && 'rotate-90')} />
+                  {isRenaming && g.group ? (
+                    <input
+                      autoFocus
+                      value={renamingGroup!.name}
+                      onChange={(e) => setRenamingGroup({ id: g.group!.id, name: e.target.value })}
+                      onBlur={() => void onCommitRenameGroup()}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') void onCommitRenameGroup()
+                        else if (e.key === 'Escape') setRenamingGroup(null)
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                      className="rounded border border-border bg-background px-1 text-[13px]"
+                    />
+                  ) : (
+                    <span>{isUngrouped ? '未分组' : g.group!.name}</span>
+                  )}
+                  <span className="text-[12px] tabular-nums text-foreground/35">{g.skills.length}</span>
+                </button>
+                {!isUngrouped && !isRenaming && g.group && (
+                  <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover/row:opacity-100">
+                    <button
+                      type="button"
+                      onClick={() => setRenamingGroup({ id: g.group!.id, name: g.group!.name })}
+                      className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                      title="重命名分组"
+                    >
+                      <Pencil size={12} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onRequestDeleteGroup(g.group!.id, g.group!.name)}
+                      className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-destructive"
+                      title="删除分组"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                )}
+              </div>
               {!collapsed && (
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {group.skills.map((skill) => (
+                  {g.skills.map((skill) => (
                     <SkillCard
                       key={skill.slug}
                       skill={skill}
                       isBuiltin={isBuiltin(skill.slug)}
-                      updating={updatingSkill === skill.slug}
                       onOpen={() => onOpen(skill.slug)}
                       onToggle={(enabled) => onToggle(skill.slug, enabled)}
-                      onUpdate={() => onUpdate(skill.slug)}
                     />
                   ))}
                 </div>

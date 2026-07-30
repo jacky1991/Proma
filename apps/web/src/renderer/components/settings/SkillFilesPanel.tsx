@@ -29,6 +29,8 @@ import { cn } from '@/lib/utils'
 interface SkillFilesPanelProps {
   workspaceSlug: string
   skillSlug: string
+  /** 只读模式（内置技能）：隐藏所有写操作，仅展示文件树与内容 */
+  readOnly?: boolean
   /** 文件总数（不含目录）变化时通知父组件，用于 Tab 徽章 */
   onFileCountChange?: (count: number) => void
 }
@@ -51,7 +53,7 @@ function countTree(nodes: SkillFileNode[]): { files: number; dirs: number } {
   return { files, dirs }
 }
 
-export function SkillFilesPanel({ workspaceSlug, skillSlug, onFileCountChange }: SkillFilesPanelProps): React.ReactElement {
+export function SkillFilesPanel({ workspaceSlug, skillSlug, readOnly = false, onFileCountChange }: SkillFilesPanelProps): React.ReactElement {
   const [tree, setTree] = React.useState<SkillFileNode[]>([])
   const [loading, setLoading] = React.useState(true)
   const [expanded, setExpanded] = React.useState<Set<string>>(new Set())
@@ -235,22 +237,26 @@ export function SkillFilesPanel({ workspaceSlug, skillSlug, onFileCountChange }:
               })()}
         </div>
         <div className="flex items-center gap-1">
-          <button
-            type="button"
-            title="新建文件（根目录）"
-            onClick={() => startCreate('file', '')}
-            className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <FilePlus size={14} />
-          </button>
-          <button
-            type="button"
-            title="新建目录（根目录）"
-            onClick={() => startCreate('directory', '')}
-            className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <FolderPlus size={14} />
-          </button>
+          {!readOnly && (
+            <>
+              <button
+                type="button"
+                title="新建文件（根目录）"
+                onClick={() => startCreate('file', '')}
+                className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <FilePlus size={14} />
+              </button>
+              <button
+                type="button"
+                title="新建目录（根目录）"
+                onClick={() => startCreate('directory', '')}
+                className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <FolderPlus size={14} />
+              </button>
+            </>
+          )}
           <button
             type="button"
             title="刷新"
@@ -271,14 +277,16 @@ export function SkillFilesPanel({ workspaceSlug, skillSlug, onFileCountChange }:
             ) : tree.length === 0 && !creating ? (
               <div className="px-2 py-6 text-xs text-muted-foreground flex flex-col items-center gap-3 text-center">
                 <div>该 Skill 暂无其他资源文件</div>
-                <div className="flex gap-2">
-                  <Button size="sm" variant="outline" onClick={() => startCreate('file', '')}>
-                    <FilePlus size={12} /> 新建文件
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => startCreate('directory', '')}>
-                    <FolderPlus size={12} /> 新建目录
-                  </Button>
-                </div>
+                {!readOnly && (
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" onClick={() => startCreate('file', '')}>
+                      <FilePlus size={12} /> 新建文件
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => startCreate('directory', '')}>
+                      <FolderPlus size={12} /> 新建目录
+                    </Button>
+                  </div>
+                )}
               </div>
             ) : (
               <FileTree
@@ -290,6 +298,7 @@ export function SkillFilesPanel({ workspaceSlug, skillSlug, onFileCountChange }:
                 setRenameValue={setRenameValue}
                 onCommitRename={commitRename}
                 onCancelRename={() => setRenaming(null)}
+                readOnly={readOnly}
                 onToggle={toggleExpand}
                 onSelect={(node) => {
                   if (node.type === 'file') void openFile(node.relativePath)
@@ -337,28 +346,30 @@ export function SkillFilesPanel({ workspaceSlug, skillSlug, onFileCountChange }:
                     <span className="text-[10px] text-muted-foreground">
                       {formatSize(fileContent.size)}
                     </span>
-                    {!editing ? (
-                      <Button size="sm" variant="ghost" onClick={() => setEditing(true)} className="h-7">
-                        <Pencil size={12} /> 编辑
-                      </Button>
-                    ) : (
-                      <>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => {
-                            setEditText(fileContent.content ?? '')
-                            setEditing(false)
-                          }}
-                          disabled={saving}
-                          className="h-7"
-                        >
-                          <X size={12} /> 取消
+                    {!readOnly && (
+                      !editing ? (
+                        <Button size="sm" variant="ghost" onClick={() => setEditing(true)} className="h-7">
+                          <Pencil size={12} /> 编辑
                         </Button>
-                        <Button size="sm" onClick={() => void saveFile()} disabled={saving} className="h-7">
-                          <Save size={12} /> {saving ? '保存中...' : '保存'}
-                        </Button>
-                      </>
+                      ) : (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              setEditText(fileContent.content ?? '')
+                              setEditing(false)
+                            }}
+                            disabled={saving}
+                            className="h-7"
+                          >
+                            <X size={12} /> 取消
+                          </Button>
+                          <Button size="sm" onClick={() => void saveFile()} disabled={saving} className="h-7">
+                            <Save size={12} /> {saving ? '保存中...' : '保存'}
+                          </Button>
+                        </>
+                      )
                     )}
                   </div>
                 </div>
@@ -404,6 +415,7 @@ interface FileTreeProps {
   setCreateName: (v: string) => void
   onCommitCreate: () => void
   onCancelCreate: () => void
+  readOnly?: boolean
 }
 
 function FileTree(props: FileTreeProps): React.ReactElement {
@@ -478,7 +490,7 @@ function TreeNode(props: TreeNodeProps): React.ReactElement {
         )}
 
         {/* Action buttons */}
-        {!isRenaming && (
+        {!isRenaming && !props.readOnly && (
           <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 shrink-0 transition-opacity">
             {node.type === 'directory' && (
               <>

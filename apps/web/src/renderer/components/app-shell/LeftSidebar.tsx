@@ -249,17 +249,15 @@ function AutomationSidebarEntry({ count, active, onClick }: AutomationSidebarEnt
 
 interface SkillsSidebarEntryProps {
   count: number
-  updateCount: number
   active: boolean
   onClick: () => void
 }
 
-function SkillsSidebarEntry({ count, updateCount, active, onClick }: SkillsSidebarEntryProps): React.ReactElement {
-  const hasUpdate = updateCount > 0
+function SkillsSidebarEntry({ count, active, onClick }: SkillsSidebarEntryProps): React.ReactElement {
   return (
     <button
       type="button"
-      aria-label={`Agent 技能，${count} 个能力${hasUpdate ? `，${updateCount} 个可更新` : ''}`}
+      aria-label={`Agent 技能，${count} 个能力`}
       onClick={onClick}
       className={cn(
         'group w-full flex items-center justify-between px-3 py-2 rounded-md text-[13px] transition-colors duration-100 titlebar-no-drag',
@@ -277,11 +275,9 @@ function SkillsSidebarEntry({ count, updateCount, active, onClick }: SkillsSideb
       <span
         className={cn(
           'ml-2 flex h-5 min-w-[22px] flex-shrink-0 items-center justify-center rounded-full px-1.5 text-[11px] font-medium tabular-nums',
-          hasUpdate
-            ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400'
-            : active
-              ? 'bg-accent-foreground/[0.26] text-primary-foreground'
-              : 'bg-foreground/[0.045] text-foreground/[0.42] group-hover:text-foreground/65',
+          active
+            ? 'bg-accent-foreground/[0.26] text-primary-foreground'
+            : 'bg-foreground/[0.045] text-foreground/[0.42] group-hover:text-foreground/65',
         )}
       >
         {formatAutomationCount(count)}
@@ -2519,9 +2515,6 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
                   )}
                 >
                   <Blocks size={16} />
-                  {(capabilities?.skills.filter((s) => s.hasUpdate).length ?? 0) > 0 && (
-                    <span className="absolute -top-1 -right-1 size-2.5 rounded-full bg-blue-500" />
-                  )}
                 </button>
               </TooltipTrigger>
               <TooltipContent side="right">Agent 技能</TooltipContent>
@@ -2664,7 +2657,6 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
         <div className="px-3 pb-0.5">
           <SkillsSidebarEntry
             count={capabilities?.skills.length ?? 0}
-            updateCount={capabilities?.skills.filter((s) => s.hasUpdate).length ?? 0}
             active={activeView === 'agent-skills'}
             onClick={handleOpenSkills}
           />

@@ -1,54 +1,32 @@
-import type { SkillMeta } from '@proma/shared'
+import type { SkillMeta, SkillGroupDef, SkillsGroupConfig } from '@proma/shared'
 
-export interface SkillGroup {
-  id: string
-  title: string
+export interface UserSkillGroup {
+  /** 分组定义；null = 未分组 */
+  group: SkillGroupDef | null
   skills: SkillMeta[]
 }
 
-const UNGROUPED_TITLE = '未分组'
-
-function normalizeGroup(value: string): string {
-  return value.trim().replace(/^["']|["']$/g, '')
-}
-
-export function getSkillGroupTitle(skill: SkillMeta): string {
-  if (skill.group) {
-    const group = normalizeGroup(skill.group)
-    if (group) return group
-  }
-
-  return UNGROUPED_TITLE
-}
-
-export function groupSkills(skills: SkillMeta[]): SkillGroup[] {
-  // 聚合 key 用小写归一化：避免 "proma" 与 "Proma" 这类仅大小写不同的 group
-  // 被拆成两个分组——它们的 id（= title.toLowerCase()）会相同，导致 React key 冲突。
-  // 显示用的 title 保留首次遇到的原始写法。
-  const groups = new Map<string, { title: string; skills: SkillMeta[] }>()
+/**
+ * 按用户分组配置（groups + assignments）归集用户技能。
+ *
+ * 分组归属来自独立的 skills-groups.json 映射，不读取 SKILL.md 的 group 字段。
+ * - 已分配的技能按 groups 的 order 升序排列
+ * - 未分配的技能统一归入「未分组」，排在最后
+ * - 空分组（无技能）也保留，便于 UI 展示并允许改名/删除
+ */
+export function groupUserSkills(skills: SkillMeta[], config: SkillsGroupConfig): UserSkillGroup[] {
+  const grouped = new Map<string, SkillMeta[]>()
+  for (const g of config.groups) grouped.set(g.id, [])
+  const ungrouped: SkillMeta[] = []
 
   for (const skill of skills) {
-    const title = getSkillGroupTitle(skill)
-    const key = title.toLowerCase()
-    const existing = groups.get(key)
-    if (existing) {
-      existing.skills.push(skill)
-    } else {
-      groups.set(key, { title, skills: [skill] })
-    }
+    const gid = config.assignments[skill.slug]
+    if (gid && grouped.has(gid)) grouped.get(gid)!.push(skill)
+    else ungrouped.push(skill)
   }
 
-  return [...groups.values()]
-    .map(({ title, skills }) => ({
-      id: title.toLowerCase(),
-      title,
-      skills,
-    }))
-    .sort((a, b) => compareGroupTitle(a.title, b.title))
-}
-
-function compareGroupTitle(a: string, b: string): number {
-  if (a === UNGROUPED_TITLE && b !== UNGROUPED_TITLE) return 1
-  if (b === UNGROUPED_TITLE && a !== UNGROUPED_TITLE) return -1
-  return a.localeCompare(b, 'zh-CN')
+  const ordered = [...config.groups].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+  const result: UserSkillGroup[] = ordered.map((g) => ({ group: g, skills: grouped.get(g.id) ?? [] }))
+  if (ungrouped.length > 0) result.push({ group: null, skills: ungrouped })
+  return result
 }

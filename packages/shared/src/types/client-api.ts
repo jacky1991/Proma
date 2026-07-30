@@ -35,7 +35,6 @@ import type {
   GetTaskOutputResult,
   McpServerEntry,
   MoveSessionToWorkspaceInput,
-  OtherWorkspaceSkillsGroup,
   PendingRequestsSnapshot,
   PermissionResponse,
   PromaPermissionMode,
@@ -44,6 +43,8 @@ import type {
   SDKMessage,
   SkillFileContent,
   SkillFileNode,
+  SkillGroupDef,
+  SkillsGroupConfig,
   SkillMeta,
   StopTaskInput,
   WorkspaceAttachDirectoryInput,
@@ -580,17 +581,26 @@ export interface PromaClientAPI {
   /** 切换工作区 Skill 启用/禁用 */
   toggleWorkspaceSkill: (workspaceSlug: string, skillSlug: string, enabled: boolean) => Promise<void>
 
-  /** 获取其他工作区的 Skill 列表 */
-  getOtherWorkspaceSkills: (currentSlug: string) => Promise<OtherWorkspaceSkillsGroup[]>
-
   /** 获取默认 Skills 的 slug 列表（来自 ~/.proma/default-skills/） */
   getDefaultSkillSlugs: () => Promise<string[]>
 
-  /** 从其他工作区导入 Skill */
-  importSkillFromWorkspace: (targetSlug: string, sourceSlug: string, skillSlug: string) => Promise<SkillMeta>
+  /** 获取用户技能分组配置（groups + assignments） */
+  getSkillGroups: (workspaceSlug: string) => Promise<SkillsGroupConfig>
 
-  /** 从源工作区同步更新已导入的 Skill */
-  updateSkillFromSource: (targetSlug: string, skillSlug: string) => Promise<SkillMeta>
+  /** 新建用户技能分组 */
+  createSkillGroup: (workspaceSlug: string, name: string) => Promise<SkillGroupDef>
+
+  /** 重命名用户技能分组 */
+  renameSkillGroup: (workspaceSlug: string, groupId: string, name: string) => Promise<void>
+
+  /** 删除用户技能分组（组内技能归"未分组"） */
+  deleteSkillGroup: (workspaceSlug: string, groupId: string) => Promise<void>
+
+  /** 设置技能所属分组（groupId=null 移到未分组） */
+  setSkillAssignment: (workspaceSlug: string, skillSlug: string, groupId: string | null) => Promise<void>
+
+  /** 上传 zip 技能包并解压到用户技能目录 */
+  uploadSkillZip: (workspaceSlug: string, file: File) => Promise<{ skills: SkillMeta[] }>
 
   /** 读取 SKILL.md 全文内容 */
   readSkillContent: (workspaceSlug: string, skillSlug: string) => Promise<string>

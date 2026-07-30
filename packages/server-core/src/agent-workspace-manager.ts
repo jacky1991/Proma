@@ -6,12 +6,14 @@
  * - 工作区目录：~/.proma/agent-workspaces/{slug}/（Agent 的 cwd）
  */
 
-import { readFileSync, writeFileSync, existsSync, readdirSync, cpSync, mkdirSync, statSync, openSync, readSync, closeSync, realpathSync } from 'node:fs'
+import { readFileSync, writeFileSync, existsSync, readdirSync, cpSync, mkdirSync, statSync, openSync, readSync, closeSync, realpathSync, mkdtempSync } from 'node:fs'
 import type { Dirent } from 'node:fs'
 import { rmSyncWithRetry, renameWithRetry } from './fs-retry'
 import { writeJsonFileAtomic, readJsonFileSafe } from './safe-file'
 import { randomUUID } from 'node:crypto'
 import { join, resolve, relative, isAbsolute, dirname, basename } from 'node:path'
+import { tmpdir } from 'node:os'
+import AdmZip from 'adm-zip'
 import {
   getAgentWorkspacesIndexPath,
   getAgentWorkspacesDir,
@@ -22,16 +24,16 @@ import {
   getDefaultSkillsDir,
   getUserCustomSkillsDir,
   getWorkspaceSkillsStatePath,
+  getSkillsGroupsPath,
   getLegacyWorkspaceSkillsDir,
   getUserAutoMemoryDir,
-  parseSkillVersion,
   type UserScope,
 } from './config-paths'
 import { findAllGitRoots, normalizeGitRoot } from './git-diff-service'
 import { listBuiltinMcpServers } from './builtin-mcp/catalog'
 import { RESERVED_BUILTIN_KEYS } from './builtin-mcp/baseline'
 import { inferMcpTransportType, normalizeMcpTransportType } from '@proma/shared'
-import type { AgentWorkspace, WorkspaceMcpConfig, SkillMeta, SkillImportSource, OtherWorkspaceSkillsGroup, WorkspaceCapabilities, SkillFileNode, SkillFileContent, WorkspaceMemorySummary } from '@proma/shared'
+import type { AgentWorkspace, WorkspaceMcpConfig, SkillMeta, SkillGroupDef, SkillsGroupConfig, WorkspaceCapabilities, SkillFileNode, SkillFileContent, WorkspaceMemorySummary } from '@proma/shared'
 
 interface AgentWorkspacesIndex {
   version: number
@@ -667,17 +669,6 @@ function scanSkillsInDir(dir: string): SkillMeta[] {
         const content = readFileSync(skillMdPath, 'utf-8')
         const meta = parseSkillFrontmatter(content, entry.name, true)
 
-        // 如果是导入的 Skill，读取来源信息并检测更新
-        const importSource = readSkillImportSource(join(dir, entry.name))
-        if (importSource) {
-          meta.importSource = importSource
-          const sourceSkillDir = resolveSkillDir(importSource.sourceWorkspaceSlug, entry.name)
-          if (sourceSkillDir) {
-            const currentSourceVersion = parseSkillVersion(sourceSkillDir)
-            meta.hasUpdate = isNewerVersion(currentSourceVersion, importSource.sourceVersion)
-          }
-        }
-
         skills.push(meta)
       } catch {
         console.warn(`[Agent 工作区] 解析 Skill 失败: ${entry.name}`)
@@ -775,173 +766,197 @@ export function toggleWorkspaceSkill(workspaceSlug: string, skillSlug: string, e
   console.log(`[Agent 工作区] Skill ${enabled ? '启用' : '禁用'}: ${workspaceSlug}/${skillSlug}`)
 }
 
-/**
- * 获取其他工作区的 Skill 列表，按工作区分组返回。
- */
-export function getOtherWorkspaceSkills(currentSlug: string): OtherWorkspaceSkillsGroup[] {
-  const workspaces = listAgentWorkspaces()
-  const result: OtherWorkspaceSkillsGroup[] = []
-
-  for (const workspace of workspaces) {
-    if (workspace.slug === currentSlug) continue
-
-    const skills = getAllWorkspaceSkills(workspace.slug)
-    if (skills.length === 0) continue
-
-    result.push({
-      workspaceName: workspace.name,
-      workspaceSlug: workspace.slug,
-      skills,
-    })
-  }
-
-  return result
-}
+// ===== 用户技能分组（独立配置 + 映射表，不修改 SKILL.md）=====
 
 /**
- * 从其他工作区导入 Skill 到当前工作区。
+ * 获取用户技能分组配置（groups + assignments）。
  *
- * 复制目录并记录来源元数据（.source.json），支持后续版本检测和同步更新。
+ * 分组是纯 UI 层归属概念，独立存于 skills-groups.json，不写入技能文件。
+ * 缺失或损坏返回空配置。
  */
-export function importSkillFromWorkspace(
-  targetSlug: string,
-  sourceSlug: string,
-  skillSlug: string,
-  scope?: UserScope,
-): SkillMeta {
-  const sourcePath = resolveSkillDir(sourceSlug, skillSlug)
-
-  if (!sourcePath) {
-    throw new Error(`源工作区中不存在 Skill: ${skillSlug}`)
+export function getSkillsGroupConfig(workspaceSlug: string, scope?: UserScope): SkillsGroupConfig {
+  const configPath = getSkillsGroupsPath(workspaceSlug, scope)
+  const data = readJsonFileSafe<SkillsGroupConfig>(configPath)
+  if (!data) return { groups: [], assignments: {} }
+  return {
+    groups: Array.isArray(data.groups) ? data.groups : [],
+    assignments: data.assignments && typeof data.assignments === 'object' ? data.assignments : {},
   }
+}
 
-  // P0 修复：复制前校验源 SKILL.md 存在，避免产生孤立目录
-  const sourceSkillMdPath = join(sourcePath, 'SKILL.md')
-  if (!existsSync(sourceSkillMdPath)) {
-    throw new Error(`源 Skill 缺少 SKILL.md: ${skillSlug}`)
+/** 原子写入分组配置 */
+function saveSkillsGroupConfig(workspaceSlug: string, config: SkillsGroupConfig, scope?: UserScope): void {
+  const configPath = getSkillsGroupsPath(workspaceSlug, scope)
+  mkdirSync(dirname(configPath), { recursive: true })
+  writeJsonFileAtomic(configPath, config)
+}
+
+/** 新建分组：名称非空且不与已有分组（大小写不敏感）重名；order 追加末尾 */
+export function createSkillGroup(workspaceSlug: string, name: string, scope?: UserScope): SkillGroupDef {
+  const trimmed = name.trim()
+  if (!trimmed) throw new Error('分组名称不能为空')
+  const config = getSkillsGroupConfig(workspaceSlug, scope)
+  const key = trimmed.toLowerCase()
+  if (config.groups.some((g) => g.name.toLowerCase() === key)) {
+    throw new Error(`已存在同名分组: ${trimmed}`)
   }
+  const maxOrder = config.groups.reduce((max, g) => Math.max(max, g.order ?? 0), -1)
+  const group: SkillGroupDef = { id: randomUUID(), name: trimmed, order: maxOrder + 1 }
+  config.groups.push(group)
+  saveSkillsGroupConfig(workspaceSlug, config, scope)
+  console.log(`[Agent 工作区] 已新建技能分组: ${workspaceSlug}/${trimmed}`)
+  return group
+}
 
-  // 目标落到用户自建目录（scope 存在时为用户私有，否则回退工作区 skills/）
-  const targetPath = join(getUserCustomSkillsDir(targetSlug, scope), skillSlug)
-
-  if (existsSync(targetPath)) {
-    throw new Error(`当前工作区已存在同名 Skill: ${skillSlug}`)
+/** 重命名分组：groupId 必须存在；名称大小写不敏感去重 */
+export function renameSkillGroup(workspaceSlug: string, groupId: string, name: string, scope?: UserScope): void {
+  const trimmed = name.trim()
+  if (!trimmed) throw new Error('分组名称不能为空')
+  const config = getSkillsGroupConfig(workspaceSlug, scope)
+  const target = config.groups.find((g) => g.id === groupId)
+  if (!target) throw new Error(`分组不存在: ${groupId}`)
+  const key = trimmed.toLowerCase()
+  if (config.groups.some((g) => g.id !== groupId && g.name.toLowerCase() === key)) {
+    throw new Error(`已存在同名分组: ${trimmed}`)
   }
-  // 无 scope（桌面端兼容）：额外检查 inactive 目录
-  if (!scope && existsSync(join(getInactiveSkillsDir(targetSlug), skillSlug))) {
-    throw new Error(`当前工作区已存在同名 Skill: ${skillSlug}`)
-  }
-
-  cpSync(sourcePath, targetPath, { recursive: true })
-
-  // 写入来源元数据
-  const sourceWorkspace = listAgentWorkspaces().find((w) => w.slug === sourceSlug)
-  const importSource: SkillImportSource = {
-    sourceWorkspaceSlug: sourceSlug,
-    sourceWorkspaceName: sourceWorkspace?.name ?? sourceSlug,
-    importedAt: new Date().toISOString(),
-    sourceVersion: parseSkillVersion(sourcePath),
-  }
-  writeSkillImportSource(targetPath, importSource)
-
-  console.log(`[Agent 工作区] 已从 ${sourceSlug} 导入 Skill: ${targetSlug}/${skillSlug}`)
-
-  const content = readFileSync(join(targetPath, 'SKILL.md'), 'utf-8')
-  const meta = parseSkillFrontmatter(content, skillSlug, true)
-  meta.importSource = importSource
-  return meta
+  target.name = trimmed
+  saveSkillsGroupConfig(workspaceSlug, config, scope)
+  console.log(`[Agent 工作区] 已重命名技能分组: ${workspaceSlug}/${groupId} → ${trimmed}`)
 }
 
 /**
- * 从源工作区同步更新已导入的 Skill（覆盖更新）。
- *
- * - 源不存在：抛出错误，不修改目标
- * - 本地已禁用（skills-inactive）：在 inactive 目录中原地更新，保留 enabled 状态
+ * 删除分组：从 groups 移除，并清理 assignments 中指向它的归属，
+ * 组内技能自动归到"未分组"。
  */
-export function updateSkillFromSource(
-  targetSlug: string,
-  skillSlug: string,
+export function deleteSkillGroup(workspaceSlug: string, groupId: string, scope?: UserScope): void {
+  const config = getSkillsGroupConfig(workspaceSlug, scope)
+  if (!config.groups.some((g) => g.id === groupId)) throw new Error(`分组不存在: ${groupId}`)
+  config.groups = config.groups.filter((g) => g.id !== groupId)
+  for (const slug of Object.keys(config.assignments)) {
+    if (config.assignments[slug] === groupId) delete config.assignments[slug]
+  }
+  saveSkillsGroupConfig(workspaceSlug, config, scope)
+  console.log(`[Agent 工作区] 已删除技能分组: ${workspaceSlug}/${groupId}`)
+}
+
+/**
+ * 设置技能所属分组。
+ * - groupId 指向已存在分组 → 写入归属
+ * - groupId 为 null/空串 → 移除归属（归"未分组"）
+ */
+export function setSkillAssignment(workspaceSlug: string, skillSlug: string, groupId: string | null, scope?: UserScope): void {
+  const config = getSkillsGroupConfig(workspaceSlug, scope)
+  if (groupId) {
+    if (!config.groups.some((g) => g.id === groupId)) throw new Error(`分组不存在: ${groupId}`)
+    config.assignments[skillSlug] = groupId
+  } else {
+    delete config.assignments[skillSlug]
+  }
+  saveSkillsGroupConfig(workspaceSlug, config, scope)
+  console.log(`[Agent 工作区] 已调整技能分组: ${workspaceSlug}/${skillSlug} → ${groupId ?? '未分组'}`)
+}
+
+// ===== 用户技能 zip 上传 =====
+
+/** 单个 zip 包最大字节数（50MB） */
+const SKILL_ZIP_MAX_BYTES = 50 * 1024 * 1024
+/** 单个 zip 内最多识别的技能数 */
+const SKILL_ZIP_MAX_SKILLS = 20
+
+/** 把任意字符串转成 kebab-case slug（用于技能目录名） */
+function toKebabSlug(input: string): string {
+  return input
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
+/** 递归找最浅的含 SKILL.md 的目录（技能根）；命中即不再深入其子树 */
+function findSkillRoots(rootDir: string): string[] {
+  const roots: string[] = []
+  const walk = (dir: string, depth: number): void => {
+    if (depth > 3) return // 防御异常深嵌套
+    if (existsSync(join(dir, 'SKILL.md'))) {
+      roots.push(dir)
+      return
+    }
+    let entries: Dirent[]
+    try {
+      entries = readdirSync(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const e of entries) {
+      if (e.isDirectory()) walk(join(dir, e.name), depth + 1)
+    }
+  }
+  walk(rootDir, 0)
+  return roots
+}
+
+/**
+ * 从 zip Buffer 解压并安装技能到用户自建目录。
+ *
+ * 兼容三种 zip 结构：
+ *   ① 单技能：`my-skill/SKILL.md`（+ 资源文件）
+ *   ② 多技能：`a/SKILL.md`、`b/SKILL.md`（一次安装多个）
+ *   ③ 顶层直放：`SKILL.md`（以 fallbackSlug 作为技能 slug）
+ *
+ * 每个技能写入 getUserCustomSkillsDir/{slug}/；重名直接抛错（不自动改名）。
+ * 复用 skillCopyFilter 跳过 .git / .DS_Store 等无关文件。返回新安装技能的元数据。
+ */
+export function uploadSkillsFromZip(
+  workspaceSlug: string,
+  zipBuffer: Buffer,
+  fallbackSlug: string,
   scope?: UserScope,
-): SkillMeta {
-  const loc = resolveSkillLocation(targetSlug, skillSlug, scope)
-  if (!loc) {
-    throw new Error(`当前工作区中不存在 Skill: ${skillSlug}`)
-  }
-  const targetPath = loc.path
-
-  const existingSource = readSkillImportSource(targetPath)
-  if (!existingSource) {
-    throw new Error(`Skill ${skillSlug} 不是从其他工作区导入的，无法从源更新`)
+): SkillMeta[] {
+  if (zipBuffer.byteLength > SKILL_ZIP_MAX_BYTES) {
+    throw new Error(`zip 包过大（${(zipBuffer.byteLength / 1024 / 1024).toFixed(2)} MB），超过 50MB 限制`)
   }
 
-  const sourcePath = resolveSkillDir(existingSource.sourceWorkspaceSlug, skillSlug)
-  if (!sourcePath) {
-    throw new Error(`源工作区中不再存在 Skill: ${skillSlug}（来源: ${existingSource.sourceWorkspaceName}）`)
+  const zip = new AdmZip(zipBuffer)
+  const hasSkillMd = zip.getEntries().some((e) => !e.isDirectory && basename(e.entryName) === 'SKILL.md')
+  if (!hasSkillMd) {
+    throw new Error('zip 包内未找到任何 SKILL.md，无法识别技能')
   }
 
-  if (!existsSync(join(sourcePath, 'SKILL.md'))) {
-    throw new Error(`源 Skill 缺少 SKILL.md: ${skillSlug}`)
-  }
-
-  // 先复制到临时目录，成功后再替换旧目录，确保原子性
-  const parentDir = join(targetPath, '..')
-  const tmpPath = join(parentDir, `.${skillSlug}.updating`)
+  const customDir = getUserCustomSkillsDir(workspaceSlug, scope)
+  // 解压到临时目录后扫描技能根，避免在内存里逐 entry 拼路径
+  const tmpRoot = mkdtempSync(join(tmpdir(), 'proma-skill-'))
   try {
-    cpSync(sourcePath, tmpPath, { recursive: true })
-  } catch (err) {
-    // 复制失败时清理临时目录，保留原目录不变
-    if (existsSync(tmpPath)) rmSyncWithRetry(tmpPath, { recursive: true, force: true })
-    throw err
+    zip.extractAllTo(tmpRoot, true)
+
+    const skillRoots = findSkillRoots(tmpRoot)
+    if (skillRoots.length === 0) {
+      throw new Error('zip 包内未找到任何 SKILL.md，无法识别技能')
+    }
+    if (skillRoots.length > SKILL_ZIP_MAX_SKILLS) {
+      throw new Error(`zip 包内技能数过多（${skillRoots.length}），最多支持 ${SKILL_ZIP_MAX_SKILLS} 个`)
+    }
+
+    const installed: SkillMeta[] = []
+    for (const root of skillRoots) {
+      const isTopLevel = root === tmpRoot
+      const slug = toKebabSlug(isTopLevel ? fallbackSlug : basename(root))
+      if (!slug) throw new Error(`无法从技能目录推导合法 slug: ${basename(root) || fallbackSlug}`)
+
+      const target = join(customDir, slug)
+      if (existsSync(target)) {
+        throw new Error(`已存在同名技能: ${slug}`)
+      }
+      cpSync(root, target, { recursive: true, filter: skillCopyFilter })
+
+      const content = readFileSync(join(target, 'SKILL.md'), 'utf-8')
+      installed.push(parseSkillFrontmatter(content, slug, true))
+    }
+
+    console.log(`[Agent 工作区] 已从 zip 安装 ${installed.length} 个技能: ${workspaceSlug}`)
+    return installed
+  } finally {
+    rmSyncWithRetry(tmpRoot, { recursive: true, force: true })
   }
-  rmSyncWithRetry(targetPath, { recursive: true, force: true })
-  renameWithRetry(tmpPath, targetPath)
-
-  // 更新来源元数据（保留原始 importedAt）
-  const sourceWorkspace = listAgentWorkspaces().find((w) => w.slug === existingSource.sourceWorkspaceSlug)
-  const updatedSource: SkillImportSource = {
-    sourceWorkspaceSlug: existingSource.sourceWorkspaceSlug,
-    sourceWorkspaceName: sourceWorkspace?.name ?? existingSource.sourceWorkspaceName,
-    importedAt: existingSource.importedAt,
-    sourceVersion: parseSkillVersion(sourcePath),
-  }
-  writeSkillImportSource(targetPath, updatedSource)
-
-  // 启停状态由 per-user 黑名单决定，更新内容不改启停
-  const enabled = !getDisabledSkillSlugs(targetSlug, scope).has(skillSlug)
-  const content = readFileSync(join(targetPath, 'SKILL.md'), 'utf-8')
-  const meta = parseSkillFrontmatter(content, skillSlug, enabled)
-  meta.importSource = updatedSource
-  meta.hasUpdate = false
-
-  console.log(`[Agent 工作区] 已从源更新 Skill: ${targetSlug}/${skillSlug}`)
-  return meta
-}
-
-// ===== Skill 来源追踪 helpers =====
-
-const SOURCE_META_FILE = '.source.json'
-
-function readSkillImportSource(skillDir: string): SkillImportSource | undefined {
-  const p = join(skillDir, SOURCE_META_FILE)
-  if (!existsSync(p)) return undefined
-  try {
-    return JSON.parse(readFileSync(p, 'utf-8')) as SkillImportSource
-  } catch {
-    return undefined
-  }
-}
-
-function writeSkillImportSource(skillDir: string, source: SkillImportSource): void {
-  writeFileSync(join(skillDir, SOURCE_META_FILE), JSON.stringify(source, null, 2), 'utf-8')
-}
-
-/** 解析 Skill 所在目录（active 或 inactive），不存在则返回 null */
-function resolveSkillDir(workspaceSlug: string, skillSlug: string): string | null {
-  const active = join(getWorkspaceSkillsDir(workspaceSlug), skillSlug)
-  if (existsSync(active)) return active
-  const inactive = join(getInactiveSkillsDir(workspaceSlug), skillSlug)
-  if (existsSync(inactive)) return inactive
-  return null
 }
 
 export function readWorkspaceSkillContent(workspaceSlug: string, skillSlug: string, scope?: UserScope): string {
@@ -1401,17 +1416,6 @@ export function renameSkillEntry(
   }
   renameWithRetry(fromAbs, toAbs)
   console.log(`[Agent 工作区] Skill 子项重命名: ${workspaceSlug}/${skillSlug}: ${fromRelative} → ${toRelative}`)
-}
-
-/** 简单 semver 比较：a 是否比 b 更新 */
-function isNewerVersion(a: string, b: string): boolean {
-  const pa = a.split('.').map(Number)
-  const pb = b.split('.').map(Number)
-  for (let i = 0; i < 3; i++) {
-    const diff = (pa[i] ?? 0) - (pb[i] ?? 0)
-    if (diff !== 0) return diff > 0
-  }
-  return false
 }
 
 // ===== 工作区配置管理 =====

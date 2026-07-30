@@ -37,10 +37,13 @@ import {
   getAllWorkspaceSkills,
   deleteWorkspaceSkill,
   toggleWorkspaceSkill,
-  getOtherWorkspaceSkills,
   getDefaultSkillSlugs,
-  importSkillFromWorkspace,
-  updateSkillFromSource,
+  getSkillsGroupConfig,
+  createSkillGroup,
+  renameSkillGroup,
+  deleteSkillGroup,
+  setSkillAssignment,
+  uploadSkillsFromZip,
   readWorkspaceSkillContent,
   writeWorkspaceSkillContent,
   listSkillFiles,
@@ -386,27 +389,71 @@ agent.post(`/${AGENT_IPC_CHANNELS.TOGGLE_SKILL}`, async (c) => {
   return c.json({ ok: true })
 })
 
-/** POST /api/agent:get-other-workspace-skills → OtherWorkspaceSkillsGroup[] */
-agent.post(`/${AGENT_IPC_CHANNELS.GET_OTHER_WORKSPACE_SKILLS}`, async (c) => {
-  const { currentSlug } = await c.req.json()
-  return c.json(getOtherWorkspaceSkills(currentSlug))
-})
-
 /** POST /api/agent:get-default-skill-slugs → string[] */
 agent.post(`/${AGENT_IPC_CHANNELS.GET_DEFAULT_SKILL_SLUGS}`, (c) => {
   return c.json(getDefaultSkillSlugs())
 })
 
-/** POST /api/agent:import-skill-from-workspace → SkillMeta（仅管理员：跨工作区导入） */
-agent.post(`/${AGENT_IPC_CHANNELS.IMPORT_SKILL_FROM_WORKSPACE}`, adminOnly, async (c) => {
-  const { targetSlug, sourceSlug, skillSlug } = await c.req.json()
-  return c.json(importSkillFromWorkspace(targetSlug, sourceSlug, skillSlug, getUserScope(c)))
+// ===== 用户技能分组（per-user，非管理员专属）=====
+
+/** POST /api/agent:get-skill-groups → SkillsGroupConfig */
+agent.post(`/${AGENT_IPC_CHANNELS.GET_SKILL_GROUPS}`, async (c) => {
+  const { workspaceSlug } = await c.req.json()
+  return c.json(getSkillsGroupConfig(workspaceSlug, getUserScope(c)))
 })
 
-/** POST /api/agent:update-skill-from-source → SkillMeta（用户可更新自己的自建技能） */
-agent.post(`/${AGENT_IPC_CHANNELS.UPDATE_SKILL_FROM_SOURCE}`, async (c) => {
-  const { targetSlug, skillSlug } = await c.req.json()
-  return c.json(updateSkillFromSource(targetSlug, skillSlug, getUserScope(c)))
+/** POST /api/agent:create-skill-group → SkillGroupDef */
+agent.post(`/${AGENT_IPC_CHANNELS.CREATE_SKILL_GROUP}`, async (c) => {
+  const { workspaceSlug, name } = await c.req.json()
+  return c.json(createSkillGroup(workspaceSlug, name, getUserScope(c)))
+})
+
+/** POST /api/agent:rename-skill-group → { ok: true } */
+agent.post(`/${AGENT_IPC_CHANNELS.RENAME_SKILL_GROUP}`, async (c) => {
+  const { workspaceSlug, groupId, name } = await c.req.json()
+  renameSkillGroup(workspaceSlug, groupId, name, getUserScope(c))
+  return c.json({ ok: true })
+})
+
+/** POST /api/agent:delete-skill-group → { ok: true }（组内技能归"未分组"） */
+agent.post(`/${AGENT_IPC_CHANNELS.DELETE_SKILL_GROUP}`, async (c) => {
+  const { workspaceSlug, groupId } = await c.req.json()
+  deleteSkillGroup(workspaceSlug, groupId, getUserScope(c))
+  return c.json({ ok: true })
+})
+
+/** POST /api/agent:set-skill-assignment → { ok: true }（groupId=null 移到未分组） */
+agent.post(`/${AGENT_IPC_CHANNELS.SET_SKILL_ASSIGNMENT}`, async (c) => {
+  const { workspaceSlug, skillSlug, groupId } = await c.req.json()
+  setSkillAssignment(workspaceSlug, skillSlug, groupId ?? null, getUserScope(c))
+  return c.json({ ok: true })
+})
+
+// ===== 用户技能 zip 上传 =====
+
+/** POST /api/agent:upload-skill → { skills: SkillMeta[] }（multipart/form-data） */
+agent.post(`/${AGENT_IPC_CHANNELS.UPLOAD_SKILL}`, async (c) => {
+  const contentType = c.req.header('content-type') ?? ''
+  if (!contentType.includes('multipart/form-data')) {
+    return c.json({ error: '需要 multipart/form-data 格式' }, 400)
+  }
+  let body: Record<string, string | File>
+  try {
+    body = await c.req.parseBody()
+  } catch {
+    return c.json({ error: '解析请求体失败' }, 400)
+  }
+  const file = body.file
+  const workspaceSlug = body.workspaceSlug as string | undefined
+  if (!workspaceSlug) return c.json({ error: '缺少 workspaceSlug' }, 400)
+  if (!file || !(file instanceof File)) return c.json({ error: '缺少 file 字段' }, 400)
+  if (!file.name.toLowerCase().endsWith('.zip')) {
+    return c.json({ error: '仅支持 .zip 包' }, 400)
+  }
+  const buffer = Buffer.from(await file.arrayBuffer())
+  const fallbackSlug = file.name.replace(/\.zip$/i, '')
+  const skills = uploadSkillsFromZip(workspaceSlug, buffer, fallbackSlug, getUserScope(c))
+  return c.json({ skills })
 })
 
 /** POST /api/agent:read-skill-content → string */

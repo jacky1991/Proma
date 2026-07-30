@@ -9,7 +9,7 @@ import * as React from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { toast } from 'sonner'
-import { Sparkles, Pencil, Save, X, FolderOpen, RefreshCw, Trash2, ArrowLeft } from 'lucide-react'
+import { Sparkles, Pencil, Save, X, FolderOpen, Trash2, ArrowLeft } from 'lucide-react'
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -19,17 +19,17 @@ import { SettingsCard } from '@/components/settings/primitives'
 import { SkillFilesPanel } from '@/components/settings/SkillFilesPanel'
 import { cn } from '@/lib/utils'
 import { isWebRuntime } from '@/lib/web-runtime'
-import type { SkillMeta } from '@proma/shared'
+import type { SkillMeta, SkillsGroupConfig } from '@proma/shared'
 import { extractSkillBody, rebuildSkillMd } from './skillMdUtils'
 
 interface SkillDetailSheetProps {
   skill: SkillMeta | null
   workspaceSlug: string
   isBuiltin: boolean
-  updating: boolean
+  groupsConfig: SkillsGroupConfig
   onOpenChange: (open: boolean) => void
   onToggle: (enabled: boolean) => void
-  onUpdate: () => void
+  onSetAssignment: (groupId: string | null) => void
   onRequestDelete: () => void
   onOpenFolder: () => void
   onChanged: () => void
@@ -51,10 +51,10 @@ function SkillDetailBody({
   skill,
   workspaceSlug,
   isBuiltin,
-  updating,
+  groupsConfig,
   onOpenChange,
   onToggle,
-  onUpdate,
+  onSetAssignment,
   onRequestDelete,
   onOpenFolder,
   onChanged,
@@ -127,11 +127,7 @@ function SkillDetailBody({
     }
   }
 
-  const sourceLabel = isBuiltin
-    ? 'PROMA 内置'
-    : skill.importSource
-      ? `从 ${skill.importSource.sourceWorkspaceName} 导入`
-      : '当前工作区'
+  const sourceLabel = isBuiltin ? 'PROMA 内置' : '用户技能'
 
   return (
     <div className="flex h-full flex-col min-h-0">
@@ -167,12 +163,6 @@ function SkillDetailBody({
             <Switch checked={skill.enabled} onCheckedChange={onToggle} />
             <span className="text-xs text-muted-foreground">{skill.enabled ? '已启用' : '已禁用'}</span>
           </div>
-          {skill.hasUpdate && (
-            <Button size="sm" variant="outline" onClick={onUpdate} disabled={updating}>
-              <RefreshCw size={14} className={cn(updating && 'animate-spin')} />
-              {updating ? '更新中' : '更新'}
-            </Button>
-          )}
           {!isWebRuntime() && (
             <Tooltip>
               <TooltipTrigger asChild>
@@ -247,6 +237,21 @@ function SkillDetailBody({
                 </>
               )}
               <MetaRow label="数据源" value={sourceLabel} />
+              {!isBuiltin && (
+                <div className="flex items-start gap-4 px-4 py-2.5">
+                  <span className="w-16 shrink-0 pt-0.5 text-xs text-muted-foreground">分组</span>
+                  <select
+                    value={groupsConfig.assignments[skill.slug] ?? ''}
+                    onChange={(e) => onSetAssignment(e.target.value || null)}
+                    className="min-w-0 flex-1 rounded-md border border-border bg-transparent px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                  >
+                    <option value="">未分组</option>
+                    {groupsConfig.groups.map((g) => (
+                      <option key={g.id} value={g.id}>{g.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <MetaRow label="位置" value={`skills/${skill.slug}`} />
             </SettingsCard>
           </div>
@@ -317,6 +322,7 @@ function SkillDetailBody({
                 <SkillFilesPanel
                   workspaceSlug={workspaceSlug}
                   skillSlug={skill.slug}
+                  readOnly={isBuiltin}
                   onFileCountChange={setFileCount}
                 />
               </div>

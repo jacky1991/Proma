@@ -1,26 +1,23 @@
 /**
  * SkillCard — Agent 技能视图中的 Skill 卡片（商店风）
  *
- * 整卡可点击打开详情抽屉；右上角开关与「更新」按钮独立响应（阻止冒泡）。
+ * 整卡可点击打开详情抽屉；右上角开关独立响应（阻止冒泡）。
  */
 
 import * as React from 'react'
-import { Sparkles, RefreshCw, ShieldCheck, ArrowDownToLine } from 'lucide-react'
+import { Sparkles, ShieldCheck } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import type { SkillMeta } from '@proma/shared'
 
 interface SkillCardProps {
   skill: SkillMeta
   isBuiltin: boolean
-  updating: boolean
   onOpen: () => void
   onToggle: (enabled: boolean) => void
-  onUpdate: () => void
 }
 
-export function SkillCard({ skill, isBuiltin, updating, onOpen, onToggle, onUpdate }: SkillCardProps): React.ReactElement {
+export function SkillCard({ skill, isBuiltin, onOpen, onToggle }: SkillCardProps): React.ReactElement {
   return (
     <div
       role="button"
@@ -70,34 +67,10 @@ export function SkillCard({ skill, isBuiltin, updating, onOpen, onToggle, onUpda
           <span className="flex items-center gap-1 rounded-md bg-blue-500/10 px-1.5 py-0.5 text-[11px] font-medium text-blue-600 dark:text-blue-400">
             <ShieldCheck size={12} /> PROMA 内置
           </span>
-        ) : skill.importSource ? (
-          <span className="truncate rounded-md bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
-            来自 {skill.importSource.sourceWorkspaceName}
-          </span>
         ) : (
           <span className="rounded-md bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
-            本工作区
+            用户技能
           </span>
-        )}
-
-        {skill.hasUpdate && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); onUpdate() }}
-                disabled={updating}
-                className="ml-auto flex items-center gap-1 rounded-md bg-blue-500/10 px-2 py-0.5 text-[11px] font-medium text-blue-600 hover:bg-blue-500/20 transition-colors disabled:opacity-60 dark:text-blue-400"
-              >
-                <RefreshCw size={12} className={cn(updating && 'animate-spin')} />
-                {updating ? '更新中' : '有更新'}
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="top">点击同步来源最新版本</TooltipContent>
-          </Tooltip>
-        )}
-        {!skill.hasUpdate && skill.importSource && (
-          <ArrowDownToLine size={12} className="ml-auto text-muted-foreground/40" />
         )}
       </div>
     </div>

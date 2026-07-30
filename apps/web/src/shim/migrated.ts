@@ -15,7 +15,7 @@ import { getStoredUser, clearTokens, getAccessToken } from './auth-store.ts'
  * M2 迭代 2：Agent 会话 CRUD / 消息发送 / 流式订阅 / 渠道 / 设置。
  */
 export function createMigrated(config: ShimConfig): Partial<PromaClientAPI> {
-  const invoke = createHttpClient(config.apiBase)
+  const { invoke, invokeFormData } = createHttpClient(config.apiBase)
   const wsClient = createWsClient(config)
 
   return {
@@ -57,10 +57,18 @@ export function createMigrated(config: ShimConfig): Partial<PromaClientAPI> {
     getWorkspaceSkillsDir: (workspaceSlug: string) => invoke('agent:get-skills-dir', { workspaceSlug }),
     deleteWorkspaceSkill: (workspaceSlug: string, skillSlug: string) => invoke('agent:delete-skill', { workspaceSlug, skillSlug }),
     toggleWorkspaceSkill: (workspaceSlug: string, skillSlug: string, enabled: boolean) => invoke('agent:toggle-skill', { workspaceSlug, skillSlug, enabled }),
-    getOtherWorkspaceSkills: (currentSlug: string) => invoke('agent:get-other-workspace-skills', { currentSlug }),
     getDefaultSkillSlugs: () => invoke('agent:get-default-skill-slugs'),
-    importSkillFromWorkspace: (targetSlug: string, sourceSlug: string, skillSlug: string) => invoke('agent:import-skill-from-workspace', { targetSlug, sourceSlug, skillSlug }),
-    updateSkillFromSource: (targetSlug: string, skillSlug: string) => invoke('agent:update-skill-from-source', { targetSlug, skillSlug }),
+    getSkillGroups: (workspaceSlug: string) => invoke('agent:get-skill-groups', { workspaceSlug }),
+    createSkillGroup: (workspaceSlug: string, name: string) => invoke('agent:create-skill-group', { workspaceSlug, name }),
+    renameSkillGroup: (workspaceSlug: string, groupId: string, name: string) => invoke('agent:rename-skill-group', { workspaceSlug, groupId, name }),
+    deleteSkillGroup: (workspaceSlug: string, groupId: string) => invoke('agent:delete-skill-group', { workspaceSlug, groupId }),
+    setSkillAssignment: (workspaceSlug: string, skillSlug: string, groupId: string | null) => invoke('agent:set-skill-assignment', { workspaceSlug, skillSlug, groupId }),
+    uploadSkillZip: (workspaceSlug: string, file: File) => {
+      const formData = new FormData()
+      formData.append('workspaceSlug', workspaceSlug)
+      formData.append('file', file)
+      return invokeFormData('agent:upload-skill', formData)
+    },
     readSkillContent: (workspaceSlug: string, skillSlug: string) => invoke('agent:read-skill-content', { workspaceSlug, skillSlug }),
     writeSkillContent: (workspaceSlug: string, skillSlug: string, content: string) => invoke('agent:write-skill-content', { workspaceSlug, skillSlug, content }),
     listSkillFiles: (workspaceSlug: string, skillSlug: string) => invoke('agent:list-skill-files', { workspaceSlug, skillSlug }),
@@ -481,10 +489,13 @@ export const migratedNames: ReadonlySet<string> = new Set([
   'getWorkspaceSkillsDir',
   'deleteWorkspaceSkill',
   'toggleWorkspaceSkill',
-  'getOtherWorkspaceSkills',
   'getDefaultSkillSlugs',
-  'importSkillFromWorkspace',
-  'updateSkillFromSource',
+  'getSkillGroups',
+  'createSkillGroup',
+  'renameSkillGroup',
+  'deleteSkillGroup',
+  'setSkillAssignment',
+  'uploadSkillZip',
   'readSkillContent',
   'writeSkillContent',
   'listSkillFiles',

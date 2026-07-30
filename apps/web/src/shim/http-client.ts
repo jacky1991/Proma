@@ -134,9 +134,60 @@ async function handleUnauthorized<T>(
   return invokeWithAuth<T>(apiBase, channel, args)
 }
 
-/** 构造一个绑定 apiBase 的 invoke 函数（自动携带 JWT，401 时透明刷新） */
+/** 与 invokeWithAuth 同构，但发送 FormData（multipart），不设 content-type 让浏览器自动加 boundary */
+async function invokeFormDataWithAuth<T>(apiBase: string, channel: string, formData: FormData): Promise<T> {
+  const token = getAccessToken()
+  const headers: Record<string, string> = {}
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
+
+  const res = await fetch(`${apiBase}/${channel}`, { method: 'POST', headers, body: formData })
+
+  if (res.status === 401) {
+    const err: HttpError = Object.assign(new Error(`接口 ${channel} 认证失败`), { status: 401 })
+    throw err
+  }
+
+  if (!res.ok) {
+    let message = `接口 ${channel} 调用失败：HTTP ${res.status}`
+    try {
+      const body = (await res.json()) as { error?: string }
+      if (body?.error) {
+        message = body.error
+      }
+    } catch {
+      // 响应体非 JSON，保留通用文案
+    }
+    const err: HttpError = Object.assign(new Error(message), { status: res.status })
+    throw err
+  }
+
+  const text = await res.text()
+  return (text ? JSON.parse(text) : undefined) as T
+}
+
+/** 401 处理（FormData 版）：刷新 token → 成功则重试原请求；失败则清空 token 并跳转登录页 */
+async function handleUnauthorizedFormData<T>(apiBase: string, channel: string, formData: FormData): Promise<T> {
+  const refreshed = await tryRefreshTokens(apiBase)
+  if (!refreshed) {
+    clearTokens()
+    if (window.location.pathname !== '/login') {
+      window.location.href = '/login'
+    }
+    throw new Error(`接口 ${channel} 认证失败，请重新登录`)
+  }
+  return invokeFormDataWithAuth<T>(apiBase, channel, formData)
+}
+
+/**
+ * 构造一个绑定 apiBase 的 HTTP 客户端（自动携带 JWT，401 时透明刷新）。
+ *
+ * - `invoke(channel, args)`：JSON 请求（绝大多数接口）。
+ * - `invokeFormData(channel, formData)`：multipart 请求（文件上传，如技能 zip 包）。
+ */
 export function createHttpClient(apiBase: string) {
-  return async function invoke<T = unknown>(channel: string, args?: unknown): Promise<T> {
+  async function invoke<T = unknown>(channel: string, args?: unknown): Promise<T> {
     try {
       return await invokeWithAuth<T>(apiBase, channel, args)
     } catch (err) {
@@ -146,4 +197,17 @@ export function createHttpClient(apiBase: string) {
       throw err
     }
   }
+
+  async function invokeFormData<T = unknown>(channel: string, formData: FormData): Promise<T> {
+    try {
+      return await invokeFormDataWithAuth<T>(apiBase, channel, formData)
+    } catch (err) {
+      if ((err as HttpError).status === 401) {
+        return handleUnauthorizedFormData<T>(apiBase, channel, formData)
+      }
+      throw err
+    }
+  }
+
+  return { invoke, invokeFormData }
 }

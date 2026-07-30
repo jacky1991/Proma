@@ -546,6 +546,19 @@ export function getWorkspaceSkillsStatePath(slug: string, scope?: UserScope): st
 }
 
 /**
+ * 获取用户技能分组配置文件路径（skills-groups.json）
+ *
+ * 存储 `SkillsGroupConfig`：用户技能的分组列表与「技能 slug → 分组 id」归属映射。
+ * 与启停黑名单同目录、同 per-user 隔离语义；分组是纯 UI 层概念，不写入技能文件。
+ * - 传入 scope：{dataRoot}/users/{userId}/agent-workspaces/{slug}/skills-groups.json
+ * - 未传 scope：工作区全局目录下（桌面端兼容）
+ */
+export function getSkillsGroupsPath(slug: string, scope?: UserScope): string {
+  if (!scope) return join(getAgentWorkspacePath(slug), 'skills-groups.json')
+  return join(getUserSessionWorkspacesDir(scope), slug, 'skills-groups.json')
+}
+
+/**
  * 获取用户个人 Auto Memory 目录路径（.claude/memory/）
  *
  * - 传入 scope：{dataRoot}/users/{userId}/agent-workspaces/{slug}/.claude/memory/

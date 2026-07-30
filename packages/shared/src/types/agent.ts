@@ -842,12 +842,19 @@ export interface WorkspaceMcpConfig {
 
 // ===== Skill 元数据 =====
 
-/** 从其他工作区导入的 Skill 来源元数据 */
-export interface SkillImportSource {
-  sourceWorkspaceSlug: string
-  sourceWorkspaceName: string
-  importedAt: string        // ISO 8601
-  sourceVersion: string     // 导入时源 Skill 的 version，无则 '0.0.0'
+/** 用户技能分组定义 */
+export interface SkillGroupDef {
+  id: string
+  name: string
+  /** 展示顺序（升序） */
+  order: number
+}
+
+/** 用户技能分组配置（独立于 SKILL.md，纯 UI 层归属） */
+export interface SkillsGroupConfig {
+  groups: SkillGroupDef[]
+  /** skillSlug → groupId；未列入即"未分组" */
+  assignments: Record<string, string>
 }
 
 /** 工作区 Skill 元数据 */
@@ -855,24 +862,13 @@ export interface SkillMeta {
   slug: string
   name: string
   description?: string
-  /** UI 分组名，用于把 Proma 内嵌 Skills 收拢到同一组 */
+  /** UI 分组名（来自 SKILL.md frontmatter，仅展示用；用户技能分组以 SkillsGroupConfig 为准） */
   group?: string
   icon?: string
   version?: string
   enabled: boolean
-  /** 如果此 Skill 是从其他工作区导入的，则携带来源信息 */
-  importSource?: SkillImportSource
-  /** 是否有可用更新（源 Skill 版本 > importSource.sourceVersion） */
-  hasUpdate?: boolean
   /** 是否为内置技能（来自全局 default-skills，只读不可删除/改写） */
   isBuiltin?: boolean
-}
-
-/** 其他工作区 Skill 分组（导入对话框用） */
-export interface OtherWorkspaceSkillsGroup {
-  workspaceName: string
-  workspaceSlug: string
-  skills: SkillMeta[]
 }
 
 /** Skill 目录下的文件/子目录节点（递归树） */
@@ -1495,14 +1491,20 @@ export const AGENT_IPC_CHANNELS = {
   DELETE_SKILL: 'agent:delete-skill',
   /** 切换工作区 Skill 启用/禁用 */
   TOGGLE_SKILL: 'agent:toggle-skill',
-  /** 获取其他工作区的 Skill 列表 */
-  GET_OTHER_WORKSPACE_SKILLS: 'agent:get-other-workspace-skills',
   /** 获取默认 Skills 的 slug 列表（来自 ~/.proma/default-skills/） */
   GET_DEFAULT_SKILL_SLUGS: 'agent:get-default-skill-slugs',
-  /** 从其他工作区导入 Skill 到当前工作区 */
-  IMPORT_SKILL_FROM_WORKSPACE: 'agent:import-skill-from-workspace',
-  /** 从源工作区同步更新已导入的 Skill */
-  UPDATE_SKILL_FROM_SOURCE: 'agent:update-skill-from-source',
+  /** 获取用户技能分组配置（groups + assignments） */
+  GET_SKILL_GROUPS: 'agent:get-skill-groups',
+  /** 新建用户技能分组 */
+  CREATE_SKILL_GROUP: 'agent:create-skill-group',
+  /** 重命名用户技能分组 */
+  RENAME_SKILL_GROUP: 'agent:rename-skill-group',
+  /** 删除用户技能分组（组内技能归"未分组"） */
+  DELETE_SKILL_GROUP: 'agent:delete-skill-group',
+  /** 设置技能所属分组（groupId=null 移到未分组） */
+  SET_SKILL_ASSIGNMENT: 'agent:set-skill-assignment',
+  /** 上传 zip 技能包并解压到用户技能目录 */
+  UPLOAD_SKILL: 'agent:upload-skill',
   /** 读取 SKILL.md 全文内容 */
   READ_SKILL_CONTENT: 'agent:read-skill-content',
   /** 写入 SKILL.md 全文内容 */
