@@ -12,7 +12,7 @@
 import * as React from 'react'
 import { useAtom, useSetAtom, useAtomValue } from 'jotai'
 import { toast } from 'sonner'
-import { Blocks, ChevronDown, ChevronRight, Search, Plus, Upload, FolderOpen, Check, Loader2, Pencil, Trash2, X } from 'lucide-react'
+import { Blocks, ChevronDown, ChevronRight, Search, Plus, Upload, FolderOpen, Check, Pencil, Trash2, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
@@ -31,6 +31,7 @@ import { useAgentSkillsData } from './useAgentSkillsData'
 import { SkillCard } from './SkillCard'
 import { McpCard } from './McpCard'
 import { SkillDetailSheet } from './SkillDetailSheet'
+import { UploadSkillDialog } from './UploadSkillDialog'
 import { McpDetailSheet } from './McpDetailSheet'
 import { BuiltinMcpDetailSheet } from './BuiltinMcpDetailSheet'
 import { WorkspaceMemoryTab } from './WorkspaceMemoryTab'
@@ -55,11 +56,10 @@ export function AgentSkillsView(): React.ReactElement {
   const [pendingDeleteMcpName, setPendingDeleteMcpName] = React.useState<string | null>(null)
   const [isDeletingSkill, setIsDeletingSkill] = React.useState(false)
   const [isDeletingMcp, setIsDeletingMcp] = React.useState(false)
-  const [isUploading, setIsUploading] = React.useState(false)
+  const [showUploadDialog, setShowUploadDialog] = React.useState(false)
   const [newGroupName, setNewGroupName] = React.useState('')
   const [renamingGroup, setRenamingGroup] = React.useState<{ id: string; name: string } | null>(null)
   const [pendingDeleteGroup, setPendingDeleteGroup] = React.useState<{ id: string; name: string } | null>(null)
-  const fileInputRef = React.useRef<HTMLInputElement>(null)
 
   const q = search.trim().toLowerCase()
 
@@ -130,22 +130,6 @@ export function AgentSkillsView(): React.ReactElement {
     setSettingsOpen(true)
     setSelectedBuiltinMcp(null)
   }, [setSettingsOpen, setSettingsTab, setToolSettingsFocus])
-
-  const handleUploadClick = (): void => {
-    fileInputRef.current?.click()
-  }
-
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
-    const file = e.target.files?.[0]
-    e.target.value = '' // 允许重复选择同一文件
-    if (!file) return
-    setIsUploading(true)
-    try {
-      await data.uploadSkill(file)
-    } finally {
-      setIsUploading(false)
-    }
-  }
 
   const handleCreateGroup = async (): Promise<void> => {
     const name = newGroupName.trim()
@@ -269,26 +253,16 @@ export function AgentSkillsView(): React.ReactElement {
           />
         </div>
 
-        {/* Skills：上传 zip 技能包 */}
+        {/* Skills：上传 zip 技能包（弹窗：拖拽 / 点击） */}
         {tab === 'skills' && (
-          <>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".zip"
-              onChange={(e) => void handleFileChange(e)}
-              className="hidden"
-            />
-            <button
-              type="button"
-              onClick={handleUploadClick}
-              disabled={isUploading}
-              className="flex h-8 items-center gap-1.5 rounded-lg border border-border/60 bg-content-area px-3 text-[13px] font-medium text-foreground/80 shadow-sm transition-colors hover:bg-foreground/[0.04] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {isUploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-              <span>{isUploading ? '上传中...' : '上传技能'}</span>
-            </button>
-          </>
+          <button
+            type="button"
+            onClick={() => setShowUploadDialog(true)}
+            className="flex h-8 items-center gap-1.5 rounded-lg border border-border/60 bg-content-area px-3 text-[13px] font-medium text-foreground/80 shadow-sm transition-colors hover:bg-foreground/[0.04]"
+          >
+            <Upload size={14} />
+            <span>上传技能</span>
+          </button>
         )}
 
         {/* 新增 MCP */}
@@ -356,6 +330,13 @@ export function AgentSkillsView(): React.ReactElement {
         onRequestDelete={() => selectedSkill && setPendingDeleteSkill(selectedSkill)}
         onOpenFolder={() => selectedSkill && openSkillFolder(selectedSkill.slug)}
         onChanged={() => bumpCapabilities((v) => v + 1)}
+      />
+
+      {/* 上传技能弹窗：拖拽 / 点击 */}
+      <UploadSkillDialog
+        open={showUploadDialog}
+        onOpenChange={setShowUploadDialog}
+        onUpload={data.uploadSkill}
       />
 
       {/* Skill 删除确认 */}
