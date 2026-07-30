@@ -21,7 +21,6 @@ import { ContextSettingsPopover } from './ContextSettingsPopover'
 import { ToolSelectorPopover } from './ToolSelectorPopover'
 import { AttachmentPreviewItem } from './AttachmentPreviewItem'
 import { QuotedSelectionChip } from '@/components/diff/QuotedSelectionChip'
-import { RichTextInput } from '@/components/ai-elements/rich-text-input'
 import { InputToolbarOverflow, type ToolbarItem } from '@/components/ai-elements/InputToolbarOverflow'
 import {
   inputToolbarActiveButtonClass,
@@ -51,6 +50,11 @@ import { fileToBase64, formatFileNames } from '@/lib/file-utils'
 import { MAX_ATTACHMENT_SIZE } from '@proma/shared'
 import { sendWithCmdEnterAtom } from '@/atoms/shortcut-atoms'
 import { toast } from 'sonner'
+
+// 懒加载 TipTap 富文本编辑器：连带 @tiptap/* + lowlight 移出首屏 main.js
+const RichTextInput = React.lazy(() =>
+  import('@/components/ai-elements/rich-text-input').then((m) => ({ default: m.RichTextInput })),
+)
 
 interface ChatInputProps {
   /** 当前对话 ID */
@@ -454,15 +458,17 @@ export function ChatInput({ conversationId, streaming, pendingAttachments, onSet
           )}
 
           {/* TipTap 富文本编辑器 */}
-          <RichTextInput
-            value={content}
-            onChange={setContent}
-            onSubmit={handleSend}
-            onPasteFiles={handlePasteFiles}
-            placeholder={sendWithCmdEnter ? '输入消息... (⌘/Ctrl+Enter 发送，Enter 换行)' : '输入消息... (Enter 发送，Shift+Enter 换行)'}
-            autoFocusTrigger={conversationId}
-            sendWithCmdEnter={sendWithCmdEnter}
-          />
+          <React.Suspense fallback={<div className="min-h-[44px]" />}>
+            <RichTextInput
+              value={content}
+              onChange={setContent}
+              onSubmit={handleSend}
+              onPasteFiles={handlePasteFiles}
+              placeholder={sendWithCmdEnter ? '输入消息... (⌘/Ctrl+Enter 发送，Enter 换行)' : '输入消息... (Enter 发送，Shift+Enter 换行)'}
+              autoFocusTrigger={conversationId}
+              sendWithCmdEnter={sendWithCmdEnter}
+            />
+          </React.Suspense>
 
           {/* Footer 工具栏 — 容器变窄时尾部按钮自动折叠进「更多」Popover */}
           <InputToolbarOverflow items={toolbarItems} trailing={trailingNode} />

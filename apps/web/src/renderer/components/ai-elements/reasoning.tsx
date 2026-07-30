@@ -14,8 +14,6 @@
 import * as React from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import remarkMath from 'remark-math'
-import rehypeKatex from 'rehype-katex'
 import { Brain, ChevronDown } from 'lucide-react'
 import {
   Collapsible,
@@ -24,7 +22,13 @@ import {
 } from '@/components/ui/collapsible'
 import { cn } from '@/lib/utils'
 import { normalizeLatexDelimiters } from '@/lib/normalize-latex'
+import { hasMath } from '@/lib/has-math'
 import type { ComponentProps, ReactNode } from 'react'
+
+// 懒加载含 KaTeX 的数学渲染器，避免 remark-math / rehype-katex / katex CSS 进入首屏 main.js
+const MathMarkdown = React.lazy(() =>
+  import('./MathMarkdown').then((m) => ({ default: m.MathMarkdown })),
+)
 
 // ===== 上下文 =====
 
@@ -203,6 +207,31 @@ interface ReasoningContentProps extends ComponentProps<typeof CollapsibleContent
 
 export const ReasoningContent = React.memo(
   function ReasoningContent({ className, children, ...props }: ReasoningContentProps): React.ReactElement {
+    // 归一化 + 数学检测：仅含数学时才懒加载 KaTeX 渲染栈
+    const processed = React.useMemo(() => normalizeLatexDelimiters(children), [children])
+    const isMath = hasMath(processed)
+    // 稳定引用的 components（外链点击交宿主处理）
+    const components = React.useMemo(
+      () => ({
+        a: ({ href, children: linkChildren, ...linkProps }: ComponentProps<'a'>) => (
+          <a
+            {...linkProps}
+            href={href}
+            onClick={(e) => {
+              e.preventDefault()
+              if (href && (href.startsWith('http://') || href.startsWith('https://'))) {
+                window.electronAPI.openExternal(href)
+              }
+            }}
+            title={href}
+          >
+            {linkChildren}
+          </a>
+        ),
+      }),
+      [],
+    )
+
     return (
       <CollapsibleContent
         className={cn(
@@ -216,29 +245,15 @@ export const ReasoningContent = React.memo(
         {...props}
       >
         <div className="prose prose-sm dark:prose-invert max-w-none prose-p:my-1 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
-          <Markdown
-            remarkPlugins={[remarkGfm, remarkMath]}
-            rehypePlugins={[rehypeKatex]}
-            components={{
-              a: ({ href, children: linkChildren, ...linkProps }) => (
-                <a
-                  {...linkProps}
-                  href={href}
-                  onClick={(e) => {
-                    e.preventDefault()
-                    if (href && (href.startsWith('http://') || href.startsWith('https://'))) {
-                      window.electronAPI.openExternal(href)
-                    }
-                  }}
-                  title={href}
-                >
-                  {linkChildren}
-                </a>
-              ),
-            }}
-          >
-            {normalizeLatexDelimiters(children)}
-          </Markdown>
+          {isMath ? (
+            <React.Suspense fallback={<div className="text-sm text-muted-foreground">渲染中…</div>}>
+              <MathMarkdown components={components}>{processed}</MathMarkdown>
+            </React.Suspense>
+          ) : (
+            <Markdown remarkPlugins={[remarkGfm]} components={components}>
+              {processed}
+            </Markdown>
+          )}
         </div>
       </CollapsibleContent>
     )

@@ -1,13 +1,27 @@
 import * as React from 'react'
 import { useAtom } from 'jotai'
 import { AppShell } from './components/app-shell/AppShell'
-import { OnboardingView } from './components/onboarding/OnboardingView'
-import { EnvironmentCheckDialog } from './components/environment/EnvironmentCheckDialog'
-import { MigrationImportDialog } from './components/migration/MigrationImportDialog'
 import { TooltipProvider } from './components/ui/tooltip'
 import { SettingsDialog } from './components/settings/SettingsDialog'
+import { LazyFallback } from './components/ui/lazy-fallback'
 import { environmentCheckDialogOpenAtom } from './atoms/environment'
 import type { AppShellContextType } from './contexts/AppShellContext'
+
+// 路由级懒加载：以下组件仅在特定条件（首装 / 异常 / 数据迁移）下才需要，
+// 拆出独立 chunk，避免其内容进入首屏 main.js。
+const OnboardingView = React.lazy(() =>
+  import('./components/onboarding/OnboardingView').then((m) => ({ default: m.OnboardingView })),
+)
+const EnvironmentCheckDialog = React.lazy(() =>
+  import('./components/environment/EnvironmentCheckDialog').then((m) => ({
+    default: m.EnvironmentCheckDialog,
+  })),
+)
+const MigrationImportDialog = React.lazy(() =>
+  import('./components/migration/MigrationImportDialog').then((m) => ({
+    default: m.MigrationImportDialog,
+  })),
+)
 
 export default function App(): React.ReactElement {
   // [FLASH-DEBUG] 监控 App 组件重渲染（如果看到频繁日志，说明根组件被频繁重渲染）
@@ -61,8 +75,12 @@ export default function App(): React.ReactElement {
   if (showOnboarding) {
     return (
       <TooltipProvider delayDuration={200}>
-        <OnboardingView onComplete={handleOnboardingComplete} />
-        <MigrationImportDialog />
+        <React.Suspense fallback={<LazyFallback className="h-screen" />}>
+          <OnboardingView onComplete={handleOnboardingComplete} />
+        </React.Suspense>
+        <React.Suspense fallback={null}>
+          <MigrationImportDialog />
+        </React.Suspense>
       </TooltipProvider>
     )
   }
@@ -76,7 +94,9 @@ export default function App(): React.ReactElement {
       <AppShell contextValue={contextValue} />
       <SettingsDialog />
       <GlobalEnvironmentCheckDialog />
-      <MigrationImportDialog />
+      <React.Suspense fallback={null}>
+        <MigrationImportDialog />
+      </React.Suspense>
     </TooltipProvider>
   )
 }
@@ -86,5 +106,9 @@ export default function App(): React.ReactElement {
  */
 function GlobalEnvironmentCheckDialog(): React.ReactElement {
   const [open, setOpen] = useAtom(environmentCheckDialogOpenAtom)
-  return <EnvironmentCheckDialog open={open} onOpenChange={setOpen} />
+  return (
+    <React.Suspense fallback={null}>
+      <EnvironmentCheckDialog open={open} onOpenChange={setOpen} />
+    </React.Suspense>
+  )
 }

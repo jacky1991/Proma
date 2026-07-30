@@ -1,6 +1,6 @@
 {
   "name": "@proma/core",
-  "version": "0.2.15",
+  "version": "0.2.16",
   "license": "AGPL-3.0-only",
   "description": "proma core types,storage and core logic with agents",
   "type": "module",
@@ -13,6 +13,7 @@
     "./providers": "./src/providers/index.ts",
     "./highlight": "./src/highlight/index.ts"
   },
+  "sideEffects": false,
   "dependencies": {
     "@proma/shared": "workspace:*",
     "highlight.js": "^11.11.1",

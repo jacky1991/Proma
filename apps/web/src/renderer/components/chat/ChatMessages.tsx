@@ -42,7 +42,7 @@ import {
   ReasoningTrigger,
   ReasoningContent,
 } from '@/components/ai-elements/reasoning'
-import { useSmoothStream } from '@proma/ui'
+import { useSmoothStream } from '@proma/ui/hooks'
 import { ScrollPositionManager } from '@/hooks/useScrollPositionMemory'
 import { useConversationParallelMode } from '@/hooks/useConversationSettings'
 import { getModelLogo, resolveModelProvider } from '@/lib/model-logo'

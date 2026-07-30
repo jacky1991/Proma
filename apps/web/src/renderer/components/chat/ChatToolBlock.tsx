@@ -15,8 +15,13 @@ import { ChevronRight, XCircle, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { getToolIcon, extractFilePath } from '@/components/agent/tool-utils'
 import { getToolPhrase } from '@/components/agent/tool-phrase'
-import { ToolResultRenderer } from '@/components/agent/tool-result-renderers'
 import { PreviewOpenButton } from '@/components/agent/tool-result-renderers/preview-open-button'
+
+// 懒加载工具结果渲染器：ToolResultRenderer 经 @pierre/diffs 拉入 shiki / diff 等重依赖，
+// 仅在用户展开工具块时按需加载，避免进入首屏 main.js
+const ToolResultRenderer = React.lazy(() =>
+  import('@/components/agent/tool-result-renderers').then((m) => ({ default: m.ToolResultRenderer })),
+)
 
 export interface ChatToolBlockProps {
   toolName: string
@@ -89,12 +94,14 @@ export function ChatToolBlock({
 
       {expanded && result && (
         <div className="ml-5.5 mt-1 mb-2 pl-3 border-l-2 border-border/30 animate-in fade-in slide-in-from-top-1 duration-150">
-          <ToolResultRenderer
-            toolName={toolName}
-            input={input}
-            result={result}
-            isError={isError}
-          />
+          <React.Suspense fallback={<div className="py-2 text-sm text-muted-foreground">加载中…</div>}>
+            <ToolResultRenderer
+              toolName={toolName}
+              input={input}
+              result={result}
+              isError={isError}
+            />
+          </React.Suspense>
         </div>
       )}
     </div>

@@ -18,19 +18,32 @@ import {
 import { Panel } from '@/components/app-shell/Panel'
 import { WelcomeView } from '@/components/welcome/WelcomeView'
 import { previewPanelOpenMapAtom, previewSplitRatioAtom } from '@/atoms/preview-atoms'
-import { PreviewPanel } from '@/components/diff/PreviewPanel'
-import { ScratchPadPane } from '@/components/scratch-pad/ScratchPadView'
 import { closeScratchInSplit } from '@/components/scratch-pad/scratch-pad-opener'
 import { useTrackSessionView } from '@/hooks/useTrackSessionView'
 import { TabBar } from './TabBar'
 import { TabContent } from './TabContent'
-import { AutomationFormView } from '@/components/automation/AutomationFormView'
-import { AutomationsListView } from '@/components/automation/AutomationsListView'
-import { AgentSkillsView } from '@/components/agent-skills/AgentSkillsView'
 import { automationFormAtom } from '@/atoms/automation-atoms'
 import { activeViewAtom } from '@/atoms/active-view'
 import { interfaceVariantAtom } from '@/atoms/theme'
 import { cn } from '@/lib/utils'
+import { LazyFallback } from '@/components/ui/lazy-fallback'
+
+// 懒加载非默认视图，避免其内容进入首屏 main.js（WelcomeView 为默认视图，保留同步）
+const PreviewPanel = React.lazy(() =>
+  import('@/components/diff/PreviewPanel').then((m) => ({ default: m.PreviewPanel })),
+)
+const ScratchPadPane = React.lazy(() =>
+  import('@/components/scratch-pad/ScratchPadView').then((m) => ({ default: m.ScratchPadPane })),
+)
+const AutomationFormView = React.lazy(() =>
+  import('@/components/automation/AutomationFormView').then((m) => ({ default: m.AutomationFormView })),
+)
+const AutomationsListView = React.lazy(() =>
+  import('@/components/automation/AutomationsListView').then((m) => ({ default: m.AutomationsListView })),
+)
+const AgentSkillsView = React.lazy(() =>
+  import('@/components/agent-skills/AgentSkillsView').then((m) => ({ default: m.AgentSkillsView })),
+)
 
 export function MainArea(): React.ReactElement {
   // 记录每个会话上次停留的视图（对话 / 预览），供切回时重建预览 Tab
@@ -224,20 +237,28 @@ export function MainArea(): React.ReactElement {
             {activeView === 'automations' ? (
               automationFormOpen ? (
                 // 定时任务设置页：与列表同层级替换中间区，不经过 TabBar，避免切换时闪出会话 Tab。
-                <AutomationFormView />
+                <React.Suspense fallback={<LazyFallback className="h-full" />}>
+                  <AutomationFormView />
+                </React.Suspense>
               ) : (
                 // Automations 列表视图：全屏取代 TabBar + TabContent
-                <AutomationsListView />
+                <React.Suspense fallback={<LazyFallback className="h-full" />}>
+                  <AutomationsListView />
+                </React.Suspense>
               )
             ) : activeView === 'agent-skills' ? (
               // Agent 技能视图：全屏取代 TabBar + TabContent
-              <AgentSkillsView />
+              <React.Suspense fallback={<LazyFallback className="h-full" />}>
+                <AgentSkillsView />
+              </React.Suspense>
             ) : (
               <>
                 <TabBar />
                 {automationFormOpen ? (
                   // 兼容从会话内入口打开任务设置的场景。
-                  <AutomationFormView />
+                  <React.Suspense fallback={<LazyFallback className="h-full" />}>
+                    <AutomationFormView />
+                  </React.Suspense>
                 ) : tabs.length === 0 ? (
                   <WelcomeView />
                 ) : deferredActiveTabId ? (
@@ -267,7 +288,9 @@ export function MainArea(): React.ReactElement {
               <div className="flex flex-1 min-w-0 h-full overflow-hidden" data-right-workspace>
                 {showPreviewPane && previewSessionId && (
                   <div className="min-w-[260px] h-full overflow-hidden" style={previewPaneStyle}>
-                    <PreviewPanel sessionId={previewSessionId} />
+                    <React.Suspense fallback={<LazyFallback className="h-full" />}>
+                      <PreviewPanel sessionId={previewSessionId} />
+                    </React.Suspense>
                   </div>
                 )}
                 {showBothRightPanels && (
@@ -278,7 +301,9 @@ export function MainArea(): React.ReactElement {
                 )}
                 {showScratchPanel && (
                   <div className="min-w-[260px] h-full overflow-hidden" style={scratchPaneStyle}>
-                    <ScratchPadPane onClose={handleCloseScratchPanel} />
+                    <React.Suspense fallback={<LazyFallback className="h-full" />}>
+                      <ScratchPadPane onClose={handleCloseScratchPanel} />
+                    </React.Suspense>
                   </div>
                 )}
               </div>

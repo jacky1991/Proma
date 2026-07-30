@@ -114,17 +114,98 @@ export default defineConfig({
         main: resolve(rendererRoot, 'index.html'),
         'proma-shim': SHIM_ENTRY_FILE,
       },
+      output: {
+        // 分桶打包 node_modules 依赖（@proma/* workspace 源码包排除），
+        // 提升长缓存命中率与并行下载；已被 import() 切开的动态 chunk 不受影响。
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return
+          // workspace 源码包（软链解析到源码路径），不归入任何桶
+          if (id.includes('node_modules/@proma/')) return
+
+          if (
+            id.includes('node_modules/react/') ||
+            id.includes('node_modules/react-dom/') ||
+            id.includes('node_modules/scheduler/')
+          )
+            return 'react-vendor'
+          if (id.includes('node_modules/@radix-ui/')) return 'radix'
+          if (id.includes('node_modules/jotai/')) return 'jotai'
+          if (id.includes('node_modules/@tiptap/')) return 'tiptap'
+          if (id.includes('node_modules/lucide-react/')) return 'icons'
+
+          // 数学插件栈：随 MathMarkdown 懒加载，不进同步 markdown 桶
+          if (
+            id.includes('node_modules/remark-math/') ||
+            id.includes('node_modules/rehype-katex/') ||
+            id.includes('node_modules/katex/')
+          )
+            return undefined
+
+          // markdown 渲染栈（react-markdown + remark/rehype/micromark 全家桶）
+          if (
+            /node_modules\/(react-markdown|remark-[^/]*|rehype-[^/]*|unified|micromark[^/]*|mdast[^/]*|hast[^/]*|unist-[^/]*|vfile|trough|bail|decode-named-character-reference|character-[^/]*|trim-lines|html-url-attributes|is-plain-obj|comma-separated-tokens|space-separated-tokens|property-information|estree-[^/]*)/.test(
+              id,
+            )
+          )
+            return 'markdown'
+
+          // 其余动态导入的重型库：不指定桶，交 Vite 按动态 import 边界自动切分，
+          // 避免被下方 vendor 兜底吞入静态首屏桶
+          if (
+            id.includes('node_modules/mermaid/') ||
+            id.includes('node_modules/@shikijs/') ||
+            id.includes('node_modules/shiki/') ||
+            id.includes('node_modules/cytoscape/') ||
+            id.includes('node_modules/lowlight/') ||
+            id.includes('node_modules/highlight.js/')
+          )
+            return undefined
+
+          // 其余：交 Vite 自动决策（动态库按 import() 切，同步小库进 main）
+          return undefined
+        },
+      },
     },
   },
   css: {
     // root 在 src/renderer 下，需显式指定 apps/web 的 postcss 配置
     postcss: resolve(__dirname, 'postcss.config.js'),
   },
+  // 首次访问加速：预构建重型依赖，缓解 dev 首屏「冷启动逐文件编译」卡顿
+  optimizeDeps: {
+    include: [
+      'react',
+      'react-dom',
+      'jotai',
+      'react-markdown',
+      'remark-gfm',
+      '@tiptap/core',
+      '@tiptap/react',
+      '@tiptap/starter-kit',
+      // 注意：勿列入 @tiptap/pm —— 它是 prosemirror 聚合包，仅子路径（@tiptap/pm/state 等），
+      // 无 "." 主 entry，列入会使 dev 启动报 "Missing . specifier in @tiptap/pm"
+      '@radix-ui/react-dialog',
+      '@radix-ui/react-dropdown-menu',
+      '@radix-ui/react-select',
+      '@radix-ui/react-tooltip',
+      '@radix-ui/react-tabs',
+      'lucide-react',
+    ],
+  },
   server: {
     host: '127.0.0.1',
     port: 5174,
     strictPort: true,
     open: false,
+    // 预热首屏入口链路：dev 启动后后台转换，首次访问不再逐文件即时编译。
+    // 用绝对路径规避 root 歧义（config.root 已改为 src/renderer）。
+    warmup: {
+      clientFiles: [
+        resolve(rendererRoot, 'main.tsx'),
+        resolve(rendererRoot, 'components/ai-elements/message.tsx'),
+        resolve(rendererRoot, 'components/chat/ChatView.tsx'),
+      ],
+    },
     // 允许 dev server 读取 root 外的源码（apps/web shim/types、monorepo 根下的 packages/*）
     fs: {
       allow: [
