@@ -116,12 +116,12 @@ agent.post(`/${AGENT_IPC_CHANNELS.GET_SDK_MESSAGES}`, async (c) => {
   return c.json(getAgentSessionSDKMessages(id, scope))
 })
 
-/** POST /api/agent:update-title → { ok: true } */
+/** POST /api/agent:update-title → AgentSessionMeta（与 chat:update-title 契约对齐） */
 agent.post(`/${AGENT_IPC_CHANNELS.UPDATE_TITLE}`, async (c) => {
   const scope = getUserScope(c)
   const { sessionId, title } = await c.req.json()
-  updateAgentSessionMeta(sessionId, { title }, scope)
-  return c.json({ ok: true })
+  const updated = updateAgentSessionMeta(sessionId, { title }, scope)
+  return c.json(updated)
 })
 
 /** POST /api/agent:update-session-model → AgentSessionMeta（与 preload 契约一致） */

@@ -11,10 +11,12 @@
  */
 
 import { readFileSync, writeFileSync, unlinkSync, existsSync, rmSync } from 'node:fs'
-import { extname, join, isAbsolute, normalize } from 'node:path'
+import { extname, join, isAbsolute, normalize, sep } from 'node:path'
+import { homedir } from 'node:os'
 import { randomUUID } from 'node:crypto'
 import {
   getConfigDir,
+  getDataRoot,
   getUserDataDir,
   getConversationAttachmentsDir,
   resolveAttachmentPath,
@@ -149,11 +151,69 @@ export function saveAttachment(input: AttachmentSaveInput, scope?: UserScope): A
 }
 
 /**
+ * 已知合法数据根白名单
+ *
+ * 用于附件绝对路径的安全校验与历史路径重定位。包含：
+ * - 当前 Web 数据根（getDataRoot，如 ~/.proma-web）
+ * - getConfigDir（~/.proma 或 ~/.proma-dev）
+ * - 桌面端历史根 ~/.proma、~/.proma-dev（迁移源目录）
+ * - 用户私有目录（传入 scope 时）
+ *
+ * 返回去重并 normalize 后的列表，按长度降序排列（长前缀优先匹配）。
+ */
+function getKnownDataRoots(scope?: UserScope): string[] {
+  const roots = new Set<string>([
+    getDataRoot(),
+    getConfigDir(),
+    join(homedir(), '.proma'),
+    join(homedir(), '.proma-dev'),
+  ])
+  if (scope) roots.add(getUserDataDir(scope))
+  return [...roots].map((r) => normalize(r)).sort((a, b) => b.length - a.length)
+}
+
+/**
+ * 解析附件绝对路径：安全校验 + 历史路径重定位
+ *
+ * 1. 安全校验：路径必须落在某个已知数据根下（=== root 或 startsWith(root + sep)），
+ *    否则抛「附件路径不在安全目录内」，防止路径穿越（如 /etc/passwd 被拒）。
+ * 2. 历史重定位：若传入 scope 且命中的是历史/共享根（非当前用户私有目录），
+ *    则把相对段映射到当前用户私有目录下；若重定位目标存在，优先返回它，
+ *    使迁移会话中「文件仍在」的历史附件能被读到。重定位目标不存在则保留原路径，
+ *    交由调用方的 existsSync 报「附件文件不存在」。
+ */
+function resolveAttachmentAbsolutePath(absPath: string, scope?: UserScope): string {
+  const normalized = normalize(absPath)
+  const roots = getKnownDataRoots(scope)
+
+  // 命中最长前缀的根（匹配最具体的数据根）
+  const matchingRoot = roots.find((r) => normalized === r || normalized.startsWith(r + sep))
+  if (!matchingRoot) {
+    throw new Error(`附件路径不在安全目录内: ${absPath}`)
+  }
+
+  // 历史路径重定位：仅当传入 scope 且命中根非当前用户私有目录时尝试
+  if (scope) {
+    const userDir = normalize(getUserDataDir(scope))
+    if (matchingRoot !== userDir) {
+      const rel = normalized.slice(matchingRoot.length).replace(/^[\\/]/, '')
+      const relocated = join(userDir, rel)
+      if (relocated !== normalized && existsSync(relocated)) {
+        return relocated
+      }
+    }
+  }
+
+  return normalized
+}
+
+/**
  * 读取附件并返回 base64 编码
  *
  * 支持两种路径格式：
- * 1. 相对路径 {conversationId}/{uuid}.ext → 解析到 ~/.proma/attachments/
- * 2. 绝对路径（Agent 工作区附件）→ 需在 ~/.proma/ 目录下，直接读取
+ * 1. 相对路径 {conversationId}/{uuid}.ext → 解析到 attachments/ 目录
+ * 2. 绝对路径（Agent 工作区附件）→ 经 resolveAttachmentAbsolutePath 安全校验，
+ *    并对历史数据根（如桌面端 ~/.proma/）自动重定位到当前用户目录
  *
  * @param localPath 相对路径或绝对路径
  * @returns base64 编码的文件数据
@@ -162,13 +222,7 @@ export function readAttachmentAsBase64(localPath: string, scope?: UserScope): st
   let fullPath: string
 
   if (isAbsolute(localPath)) {
-    // 绝对路径：验证在数据根目录下，防止路径穿越
-    const baseDir = scope ? getUserDataDir(scope) : getConfigDir()
-    const normalized = normalize(localPath)
-    if (!normalized.startsWith(baseDir)) {
-      throw new Error(`附件路径不在安全目录内: ${localPath}`)
-    }
-    fullPath = normalized
+    fullPath = resolveAttachmentAbsolutePath(localPath, scope)
   } else {
     fullPath = resolveAttachmentPath(localPath, scope)
   }
