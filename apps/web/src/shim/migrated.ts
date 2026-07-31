@@ -350,11 +350,58 @@ export function createMigrated(config: ShimConfig): Partial<PromaClientAPI> {
     renameAttachedFile: (filePath: string, newName: string, access?: FileAccessOptions) => invoke('agent:rename-attached-file', { filePath, newName, access }),
     moveAttachedFile: (filePath: string, targetDir: string, access?: FileAccessOptions) => invoke('agent:move-attached-file', { filePath, targetDir, access }),
 
-    // ===== Office 内联预览（DOCX/XLSX/PPTX → HTML）=====
-    // 纯 Node 能力已迁至 server-core + /api/file:office-preview，access 透传供 scope 收紧。
-    // PDF（preparePdfPreview）/ 图片（resolveFilePath）依赖桌面协议，保持未迁移 reject，组件层 toast 兜底。
+    // ===== 文件内联预览（Office / PDF / 图片 / 纯文本 / Markdown 写回）=====
+    // Office（DOCX/XLSX/PPTX）→ server-side HTML 转换；
+    // PDF / 图片 / 纯文本改用 base64：server 返回 base64，shim 拼 data URL（图片）或 blob URL（PDF）
+    // 交浏览器原生加载，不再依赖桌面 proma-file:// 协议。失败统一返回 null（组件层清空占位）。
     docxToHtml: (filePath: string, access?: FileAccessOptions) => invoke('file:office-preview', { filePath, access, kind: 'docx' }),
     officeToHtml: (filePath: string, access?: FileAccessOptions) => invoke('file:office-preview', { filePath, access, kind: 'office' }),
+
+    resolveFilePath: async (filePath: string, access?: FileAccessOptions) => {
+      try {
+        const r = await invoke<{ base64: string; mediaType: string }>('file:read-binary', { filePath, access })
+        return { url: `data:${r.mediaType};base64,${r.base64}` }
+      } catch {
+        return null
+      }
+    },
+
+    preparePdfPreview: async (filePath: string, access?: FileAccessOptions) => {
+      try {
+        const r = await invoke<{ base64: string }>('file:read-binary', { filePath, access })
+        // base64 → Blob → object URL：iframe 用浏览器内置 PDF viewer 加载，规避 data URL 大小限制
+        const bytes = Uint8Array.from(atob(r.base64), (ch) => ch.charCodeAt(0))
+        return { tmpHtmlUrl: URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' })) }
+      } catch {
+        return null
+      }
+    },
+
+    readBinaryBase64: async (filePath: string, access?: FileAccessOptions, maxSize?: number) => {
+      try {
+        const r = await invoke<{ base64: string }>('file:read-binary', { filePath, access, maxSize })
+        return r.base64
+      } catch {
+        return null
+      }
+    },
+
+    resolveAndReadFile: async (filePath: string, access?: FileAccessOptions) => {
+      try {
+        return await invoke<{ resolvedPath: string; content: string }>('file:resolve-and-read', { filePath, access })
+      } catch {
+        return null
+      }
+    },
+
+    writeTextFile: async (filePath: string, content: string, access?: FileAccessOptions) => {
+      try {
+        const r = await invoke<{ ok: boolean }>('file:write-text', { filePath, content, access })
+        return r?.ok === true
+      } catch {
+        return false
+      }
+    },
 
     // ===== 迭代 5：Agent Worktree =====
     getWorktreeRepos: (workspaceSlug: string) => invoke('agent:get-worktree-repos', { workspaceSlug }),

@@ -5,9 +5,11 @@
  * 保住 Web 端 Office 预览（M4 迭代 11 步骤 4）。
  *
  * - POST /api/file:office-preview — DOCX/XLSX/PPTX 转内联 HTML 预览
+ * - POST /api/file:resolve-and-read — 读取文本内容（纯文本 / 代码预览）
+ * - POST /api/file:read-binary — 读取二进制 base64（图片 / PDF 预览）
+ * - POST /api/file:write-text — 写入文本（Markdown 内联编辑写回）
  *
- * PDF / 图片预览依赖 Electron 的 proma-file:// 协议，Web 端不迁移，
- * 由 shim 保持 reject、组件层失败 toast 兜底。
+ * Web 端图片 / PDF / 纯文本预览改用 base64 方案，不再依赖桌面 proma-file:// 协议。
  *
  * scope 安全红线：先用 candidateBasePaths 解析出绝对路径，再用
  * assertAttachedPathAllowed 收紧到当前用户已授权目录（会话/工作区挂载），
@@ -20,6 +22,9 @@ import {
   resolveTargetPath,
   convertDocxToHtml,
   convertOfficeToHtml,
+  resolveAndReadFile,
+  readBinaryBase64,
+  writeTextFile,
 } from '@proma/server-core/office-preview-service'
 import { getUserScope } from '../utils/user-scope'
 import { assertAttachedPathAllowed } from './agent'
@@ -69,6 +74,61 @@ file.post('/file:office-preview', async (c) => {
   const result = await convertOfficeToHtml(resolved)
   if (!result) return c.json({ error: '无法加载 Office 预览' }, 400)
   return c.json(result)
+})
+
+/**
+ * POST /api/file:resolve-and-read
+ *
+ * 读取文本文件内容（对齐 client-api.resolveAndReadFile），供内联文本 / 代码预览。
+ */
+file.post('/file:resolve-and-read', async (c) => {
+  const scope = getUserScope(c)
+  const { filePath, access } = await c.req.json<{ filePath: string; access?: FileAccessOptions }>()
+  if (!filePath || typeof filePath !== 'string') {
+    return c.json({ error: '无效的文件路径' }, 400)
+  }
+  const resolved = resolveTargetPath(filePath, access?.candidateBasePaths)
+  assertAttachedPathAllowed(resolved, access, scope)
+  const result = resolveAndReadFile(resolved)
+  if (!result) return c.json({ error: '无法读取文件预览' }, 400)
+  return c.json(result)
+})
+
+/**
+ * POST /api/file:read-binary
+ *
+ * 读取二进制文件为 base64 + mediaType（对齐 client-api.readBinaryBase64），
+ * 图片 / PDF 内联预览统一走此路由。
+ */
+file.post('/file:read-binary', async (c) => {
+  const scope = getUserScope(c)
+  const { filePath, access, maxSize } = await c.req.json<{ filePath: string; access?: FileAccessOptions; maxSize?: number }>()
+  if (!filePath || typeof filePath !== 'string') {
+    return c.json({ error: '无效的文件路径' }, 400)
+  }
+  const resolved = resolveTargetPath(filePath, access?.candidateBasePaths)
+  assertAttachedPathAllowed(resolved, access, scope)
+  const result = readBinaryBase64(resolved, undefined, maxSize)
+  if (!result) return c.json({ error: '无法读取文件预览' }, 400)
+  return c.json(result)
+})
+
+/**
+ * POST /api/file:write-text
+ *
+ * 写入文本文件（对齐 client-api.writeTextFile），供 Markdown 内联编辑写回。
+ */
+file.post('/file:write-text', async (c) => {
+  const scope = getUserScope(c)
+  const { filePath, content, access } = await c.req.json<{ filePath: string; content: string; access?: FileAccessOptions }>()
+  if (!filePath || typeof filePath !== 'string') {
+    return c.json({ error: '无效的文件路径' }, 400)
+  }
+  const resolved = resolveTargetPath(filePath, access?.candidateBasePaths)
+  assertAttachedPathAllowed(resolved, access, scope)
+  const ok = writeTextFile(resolved, content)
+  if (!ok) return c.json({ error: '写入文件失败' }, 400)
+  return c.json({ ok: true })
 })
 
 export { file }

@@ -6,18 +6,20 @@
  * - 本服务将 Office 文档转为**可内联展示的 HTML**（供 Web 端 DiffTabContent 预览）
  *
  * 纯 Node 实现，零 Electron 耦合：从 Electron 主进程 file-preview-service.ts 迁出。
- * PDF / 图片预览依赖 proma-file:// 协议，属桌面端能力，不在本服务范围。
+ * PDF / 图片 / 纯文本预览：Web 端改用 base64 方案（resolveAndReadFile / readBinaryBase64 /
+ * writeTextFile），不再依赖桌面 proma-file:// 协议，由本服务统一提供。
  *
  * DOCX 走 mammoth.convertToHtml；XLSX/PPTX 走内置 OOXML 结构化解析，
  * 结构化解析失败时回退 officeparser 提取纯文本再包成 HTML。
  */
 
 import { basename, join, dirname, extname, resolve, posix as pathPosix } from 'node:path'
-import { readdirSync, statSync, existsSync } from 'node:fs'
+import { readdirSync, statSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import AdmZip from 'adm-zip'
 import { DOMParser } from '@xmldom/xmldom'
 import type { OfficePreviewResult } from '@proma/shared'
+import { getMimeType } from './attachment-service'
 
 /** 文件大小限制：50MB */
 const MAX_FILE_SIZE = 50 * 1024 * 1024
@@ -567,5 +569,71 @@ export async function convertOfficeToHtml(filePath: string, basePaths?: string[]
       console.error('[office-preview] convertOfficeToHtml text fallback failed:', fallbackErr)
       return null
     }
+  }
+}
+
+// ─── 通用文件预览（文本 / 二进制 base64 / 写回）───
+// Web 端不依赖桌面 proma-file:// 协议：文本直接读取，图片 / PDF 以 base64 返回，
+// 由 shim 拼成 data URL 或 blob URL 交浏览器原生加载。
+
+/**
+ * 读取文本文件内容（供内联文本 / 代码预览使用）
+ *
+ * @returns 成功返回 { resolvedPath, content }；文件不存在 / 超过 50MB / 读取失败返回 null
+ */
+export function resolveAndReadFile(filePath: string, basePaths?: string[]): { resolvedPath: string; content: string } | null {
+  const safePath = resolveTargetPath(filePath, basePaths)
+  if (!existsSync(safePath)) return null
+  try {
+    const st = statSync(safePath)
+    if (st.size > MAX_FILE_SIZE) return null
+    const content = readFileSync(safePath, 'utf-8')
+    return { resolvedPath: safePath, content }
+  } catch (err) {
+    console.error('[office-preview] resolveAndReadFile failed:', err)
+    return null
+  }
+}
+
+/**
+ * 读取二进制文件为 base64（供图片 / PDF 内联预览使用）
+ *
+ * @param maxSize 可选大小上限（字节），缺省 MAX_FILE_SIZE（50MB）
+ * @returns 成功返回 { resolvedPath, base64, mediaType, size }；否则 null
+ */
+export function readBinaryBase64(
+  filePath: string,
+  basePaths?: string[],
+  maxSize?: number,
+): { resolvedPath: string; base64: string; mediaType: string; size: number } | null {
+  const safePath = resolveTargetPath(filePath, basePaths)
+  if (!existsSync(safePath)) return null
+  try {
+    const st = statSync(safePath)
+    const limit = maxSize ?? MAX_FILE_SIZE
+    if (st.size > limit) return null
+    const buffer = readFileSync(safePath)
+    const mediaType = getMimeType(extname(safePath))
+    return { resolvedPath: safePath, base64: buffer.toString('base64'), mediaType, size: buffer.length }
+  } catch (err) {
+    console.error('[office-preview] readBinaryBase64 failed:', err)
+    return null
+  }
+}
+
+/**
+ * 写入文本文件（供 Markdown 内联编辑写回使用）
+ *
+ * 路径 scope 收紧由路由层 assertAttachedPathAllowed 负责；本函数仅落盘。
+ * @returns 写入成功 true，失败 false
+ */
+export function writeTextFile(filePath: string, content: string, basePaths?: string[]): boolean {
+  const safePath = resolveTargetPath(filePath, basePaths)
+  try {
+    writeFileSync(safePath, content, 'utf-8')
+    return true
+  } catch (err) {
+    console.error('[office-preview] writeTextFile failed:', err)
+    return false
   }
 }
