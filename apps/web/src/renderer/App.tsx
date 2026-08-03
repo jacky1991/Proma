@@ -1,21 +1,13 @@
 import * as React from 'react'
-import { useAtom } from 'jotai'
 import { AppShell } from './components/app-shell/AppShell'
 import { TooltipProvider } from './components/ui/tooltip'
 import { SettingsDialog } from './components/settings/SettingsDialog'
 import { LazyFallback } from './components/ui/lazy-fallback'
-import { environmentCheckDialogOpenAtom } from './atoms/environment'
 import type { AppShellContextType } from './contexts/AppShellContext'
 
-// 路由级懒加载：以下组件仅在特定条件（首装 / 异常 / 数据迁移）下才需要，
-// 拆出独立 chunk，避免其内容进入首屏 main.js。
+// 路由级懒加载：首装引导仅在首次启动时需要，拆出独立 chunk，避免其内容进入首屏 main.js。
 const OnboardingView = React.lazy(() =>
   import('./components/onboarding/OnboardingView').then((m) => ({ default: m.OnboardingView })),
-)
-const EnvironmentCheckDialog = React.lazy(() =>
-  import('./components/environment/EnvironmentCheckDialog').then((m) => ({
-    default: m.EnvironmentCheckDialog,
-  })),
 )
 
 export default function App(): React.ReactElement {
@@ -30,8 +22,7 @@ export default function App(): React.ReactElement {
   const [showOnboarding, setShowOnboarding] = React.useState(false)
 
   // 初始化：检查是否需要显示 Onboarding
-  // macOS/Linux 上 SDK 自带 claude native binary 不依赖宿主 Node/Git；
-  // Windows 上仍需 Git Bash/WSL，由 Onboarding Step 2 与聊天错误卡片引导用户安装。
+  // Web 端不做本地环境检测（Node/Git/Shell 在服务端），首装仅展示欢迎页。
   React.useEffect(() => {
     const initialize = async () => {
       try {
@@ -85,19 +76,6 @@ export default function App(): React.ReactElement {
     <TooltipProvider delayDuration={200}>
       <AppShell contextValue={contextValue} />
       <SettingsDialog />
-      <GlobalEnvironmentCheckDialog />
     </TooltipProvider>
-  )
-}
-
-/**
- * 全局环境检测 Dialog，由错误卡片的 recovery action 按钮打开。
- */
-function GlobalEnvironmentCheckDialog(): React.ReactElement {
-  const [open, setOpen] = useAtom(environmentCheckDialogOpenAtom)
-  return (
-    <React.Suspense fallback={null}>
-      <EnvironmentCheckDialog open={open} onOpenChange={setOpen} />
-    </React.Suspense>
   )
 }

@@ -8,6 +8,7 @@ import * as React from 'react'
 import { Download } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { isWebRuntime } from '@/lib/web-runtime'
 import { SettingsSection } from './primitives/SettingsSection'
 import { SettingsCard } from './primitives/SettingsCard'
 import { Button } from '@/components/ui/button'
@@ -170,6 +171,19 @@ const LOGO_VARIANTS: readonly LogoVariant[] = [
 function LogoCard({ logo }: { logo: LogoVariant }): React.ReactElement {
   const handleDownload = React.useCallback(async () => {
     try {
+      if (isWebRuntime()) {
+        // Web 端：logo.src 是 Vite 打包的 asset URL，直接 fetch → Blob 下载
+        const res = await fetch(logo.src)
+        const blob = await res.blob()
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `proma-${logo.id}.png`
+        a.click()
+        URL.revokeObjectURL(url)
+        toast.success(`${logo.name} 已保存`)
+        return
+      }
       const saved = await window.electronAPI.saveResourceFileAs(
         logo.resourcePath,
         `proma-${logo.id}.png`,

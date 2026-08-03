@@ -31,6 +31,7 @@ import { richTextRenderingEnabledAtom } from '@/atoms/ui-preferences'
 import { createFileMentionSuggestion } from '@/components/file-browser/file-mention-suggestion'
 import { createSkillMentionSuggestion, createMcpMentionSuggestion, createSessionMentionSuggestion } from '@/components/agent/mention-suggestions'
 import { shouldConvertClipboardTextToAttachment } from '@/lib/clipboard-text-attachment'
+import { isWebRuntime } from '@/lib/web-runtime'
 
 // ===== 行数计算 =====
 
@@ -431,6 +432,8 @@ export function RichTextInput({
             ).trim() || plainText)
           : plainText
         if (
+          // Web 端不做「超长文本转附件」（依赖本地临时文件预览），直接粘贴进编辑器
+          !isWebRuntime() &&
           shouldConvertClipboardTextToAttachment({
             enabled: Boolean(threshold && onPasteLongTextRef.current),
             plainText,

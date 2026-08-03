@@ -47,10 +47,6 @@ import {
   agentWorkspacesAtom,
   workspaceCapabilitiesVersionAtom,
   agentDiffPanelTabAtom,
-  agentDiffRefreshVersionAtom,
-  agentDiffUnseenChangesAtom,
-  agentDiffUnseenFilesAtom,
-  agentDiffDataAtom,
   agentStreamingStatesAtom,
   liveMessagesMapAtom,
   agentSessionPendingFilesAtom,
@@ -79,7 +75,6 @@ import { userProfileAtom } from '@/atoms/user-profile'
 import { sidebarViewModeAtom } from '@/atoms/sidebar-atoms'
 import { searchDialogOpenAtom } from '@/atoms/search-atoms'
 import { draftSessionIdsAtom } from '@/atoms/draft-session-atoms'
-import { hasEnvironmentIssuesAtom } from '@/atoms/environment'
 import { promptConfigAtom, selectedPromptIdAtom, conversationPromptIdAtom } from '@/atoms/system-prompt-atoms'
 import { interfaceVariantAtom } from '@/atoms/theme'
 import { useOpenSession } from '@/hooks/useOpenSession'
@@ -668,7 +663,6 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
   const streamingIds = useAtomValue(streamingConversationIdsAtom)
   const mode = useAtomValue(appModeAtom)
   const isMac = React.useMemo(() => detectIsMac(), [])
-  const hasEnvironmentIssues = useAtomValue(hasEnvironmentIssuesAtom)
   const promptConfig = useAtomValue(promptConfigAtom)
   const setSelectedPromptId = useSetAtom(selectedPromptIdAtom)
   const interfaceVariant = useAtomValue(interfaceVariantAtom)
@@ -741,10 +735,6 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
   const setPreviewFile = useSetAtom(previewFileMapAtom)
   const setAgentSideChatMap = useSetAtom(agentSideChatMapAtom)
   const setDiffPanelTab = useSetAtom(agentDiffPanelTabAtom)
-  const setDiffRefreshVersion = useSetAtom(agentDiffRefreshVersionAtom)
-  const setDiffUnseen = useSetAtom(agentDiffUnseenChangesAtom)
-  const setDiffUnseenFiles = useSetAtom(agentDiffUnseenFilesAtom)
-  const setDiffData = useSetAtom(agentDiffDataAtom)
   const setStreamingStates = useSetAtom(agentStreamingStatesAtom)
   const setLiveMessagesMap = useSetAtom(liveMessagesMapAtom)
   const setSessionPendingFiles = useSetAtom(agentSessionPendingFilesAtom)
@@ -778,10 +768,6 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
       return changed ? map : prev
     })
     setDiffPanelTab(deleteKey)
-    setDiffRefreshVersion(deleteKey)
-    setDiffUnseen(deleteKey)
-    setDiffUnseenFiles(deleteKey)
-    setDiffData(deleteKey)
     setSessionChannelMap(deleteKey)
     setSessionModelMap(deleteKey)
     // 会话工作目录路径：不清理会导致右侧文件面板继续用已删除目录请求 list-directory
@@ -815,7 +801,7 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
     sessionExistsAtom.remove(id)
 
     clearPreviewCacheForSession(id)
-  }, [setConvModels, setConvContextLength, setConvThinking, setConvParallel, setConvPromptId, setPreviewPanelOpen, setPreviewFile, setDiffPanelTab, setDiffRefreshVersion, setDiffUnseen, setDiffUnseenFiles, setDiffData, setSessionChannelMap, setSessionModelMap, setSessionPathMap, setSessionViewStateMap, setStreamingStates, setLiveMessagesMap, setSessionPendingFiles, store])
+  }, [setConvModels, setConvContextLength, setConvThinking, setConvParallel, setConvPromptId, setPreviewPanelOpen, setPreviewFile, setDiffPanelTab, setSessionChannelMap, setSessionModelMap, setSessionPathMap, setSessionViewStateMap, setStreamingStates, setLiveMessagesMap, setSessionPendingFiles, store])
 
   const currentWorkspaceSlug = React.useMemo(() => {
     if (!currentWorkspaceId) return null
@@ -2463,9 +2449,6 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
                 className="relative size-10 flex items-center justify-center rounded-[12px] transition-colors titlebar-no-drag hover:bg-foreground/5"
               >
                 <UserAvatar avatar={userProfile.avatar} size={28} />
-                {hasEnvironmentIssues && (
-                  <span className="absolute top-0 right-0 w-2 h-2 rounded-full bg-red-500" />
-                )}
               </button>
             </TooltipTrigger>
             <TooltipContent side="right">设置</TooltipContent>
@@ -2957,9 +2940,6 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
           >
             <div className="relative flex-shrink-0 text-foreground/40">
               <Settings size={16} />
-              {hasEnvironmentIssues && (
-                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-red-500" />
-              )}
             </div>
           </button>
         </div>

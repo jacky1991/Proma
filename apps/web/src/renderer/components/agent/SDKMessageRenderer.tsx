@@ -60,7 +60,6 @@ import { activeSessionIdAtom } from '@/atoms/tab-atoms'
 import { automationsAtom, automationFormAtom, automationToDraft } from '@/atoms/automation-atoms'
 import { activeViewAtom } from '@/atoms/active-view'
 import { isAdminAtom } from '@/atoms/auth'
-import { environmentCheckDialogOpenAtom } from '@/atoms/environment'
 import { settingsOpenAtom, settingsTabAtom } from '@/atoms/settings-tab'
 import { useOpenPreview } from '@/components/diff/preview-opener'
 import { getFileParentPath } from '@/lib/file-utils'
@@ -1048,7 +1047,6 @@ function ErrorMessage({ message, onRetry, onRetryInNewSession, onCompact }: Erro
     : undefined
   const isPromptTooLong = errorCode === 'prompt_too_long'
 
-  const setEnvDialogOpen = useSetAtom(environmentCheckDialogOpenAtom)
   const setSettingsOpen = useSetAtom(settingsOpenAtom)
   const setSettingsTab = useSetAtom(settingsTabAtom)
   const setModelSelectorOpen = useSetAtom(modelSelectorOpenAtom)
@@ -1072,7 +1070,9 @@ function ErrorMessage({ message, onRetry, onRetryInNewSession, onCompact }: Erro
   const handleRecoveryAction = (action: RecoveryAction) => {
     switch (action.action) {
       case 'open_environment_check':
-        setEnvDialogOpen(true)
+        // Web 端无独立环境检测弹窗，引导到「关于」设置页
+        setSettingsTab('about')
+        setSettingsOpen(true)
         break
       case 'open_channel_settings':
         setSettingsTab('channels')

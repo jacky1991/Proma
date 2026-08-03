@@ -4,6 +4,17 @@ import { createHttpClient, type ShimConfig } from './http-client'
 import { createWsClient } from './ws-client'
 import { getStoredUser, clearTokens, getAccessToken } from './auth-store.ts'
 
+/** base64 → Blob → 触发浏览器下载（图片 / 资源另存为）*/
+function triggerBinaryDownload(base64: string, mediaType: string, filename: string): void {
+  const bytes = Uint8Array.from(atob(base64), (ch) => ch.charCodeAt(0))
+  const url = URL.createObjectURL(new Blob([bytes], { type: mediaType }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 /**
  * 已迁移方法注册表
  *
@@ -24,6 +35,17 @@ export function createMigrated(config: ShimConfig): Partial<PromaClientAPI> {
     openExternal: (url: string) => {
       window.open(url, '_blank', 'noopener')
       return Promise.resolve()
+    },
+
+    // 图片另存为：复用 file:read-binary 取 base64 → Blob 触发浏览器下载
+    saveImageAs: async (localPath: string, defaultFilename: string) => {
+      try {
+        const r = await invoke<{ base64: string; mediaType: string }>('file:read-binary', { filePath: localPath })
+        triggerBinaryDownload(r.base64, r.mediaType, defaultFilename)
+        return true
+      } catch {
+        return false
+      }
     },
 
     // ===== Agent 会话 CRUD =====
@@ -330,7 +352,7 @@ export function createMigrated(config: ShimConfig): Partial<PromaClientAPI> {
     updateChatToolState: (toolId: string, state: unknown) => invoke('chat-tool:update-state', { toolId, state }),
     updateChatToolCredentials: (toolId: string, credentials: Record<string, string>) => invoke('chat-tool:update-credentials', { toolId, credentials }),
     testChatTool: (toolId: string) => invoke('chat-tool:test', { toolId }),
-    createCustomTool: (meta: unknown) => invoke('chat-tool:create-custom', meta),
+    createCustomChatTool: (meta: unknown) => invoke('chat-tool:create-custom', meta),
     deleteCustomChatTool: (toolId: string) => invoke('chat-tool:delete-custom', { toolId }),
     onCustomToolChanged: (cb: () => void) =>
       wsClient.on('chat-tool:custom-tool-changed', cb as (payload: unknown) => void),
@@ -664,7 +686,7 @@ export const migratedNames: ReadonlySet<string> = new Set([
   'updateChatToolState',
   'updateChatToolCredentials',
   'testChatTool',
-  'createCustomTool',
+  'createCustomChatTool',
   'deleteCustomChatTool',
   'onCustomToolChanged',
   // 迭代 5：Channel 扩展

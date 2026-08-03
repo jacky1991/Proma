@@ -101,34 +101,8 @@ import type {
   ChatToolState,
 } from './chat-tool'
 import type {
-  DingTalkBotConfig,
-  DingTalkBotConfigInput,
-  DingTalkBridgeState,
-  DingTalkConfig,
-  DingTalkConfigInput,
-  DingTalkMultiBotConfig,
-  DingTalkMultiBridgeState,
-  DingTalkTestResult,
-} from './dingtalk'
-import type {
   EnvironmentCheckResult,
 } from './environment'
-import type {
-  FeishuBotConfig,
-  FeishuBotConfigInput,
-  FeishuBridgeState,
-  FeishuChatBinding,
-  FeishuConfig,
-  FeishuConfigInput,
-  FeishuMultiBotConfig,
-  FeishuMultiBridgeState,
-  FeishuPresenceReport,
-  FeishuRegisterAppQRCode,
-  FeishuRegisterAppResult,
-  FeishuRegisterAppStatus,
-  FeishuTestResult,
-  FeishuUpdateBindingInput,
-} from './feishu'
 import type {
   GitHubRelease,
   GitHubReleaseListOptions,
@@ -146,8 +120,6 @@ import type {
 import type {
   DefaultAppInfo,
   DetachedPreviewWindowData,
-  DetachedPreviewWindowInput,
-  EditorApp,
   FileAccessOptions,
   GetFileDiffInput,
   GitRepoStatus,
@@ -174,10 +146,6 @@ import type {
 import type {
   UserProfile,
 } from './user-profile'
-import type {
-  WeChatBridgeState,
-  WeChatConfig,
-} from './wechat'
 
 export interface PromaClientAPI {
   // ===== 运行时相关 =====
@@ -203,10 +171,6 @@ export interface PromaClientAPI {
 
   /** 获取未暂存的变更文件列表 */
   getUnstagedChanges: (dirPath: string, sessionPath?: string, workspaceFilesPath?: string, extraPaths?: string[], sessionId?: string) => Promise<UnstagedChangesResult>
-  /** 获取单个文件的 diff */
-  getFileDiff: (input: GetFileDiffInput) => Promise<string>
-  /** 获取未追踪文件内容 */
-  getUntrackedContent: (input: GetFileDiffInput) => Promise<string>
   /** 还原文件变更 */
   revertFile: (input: RevertFileInput) => Promise<void>
   /** 获取文件新旧版本内容 */
@@ -215,8 +179,6 @@ export interface PromaClientAPI {
   listWorktrees: (repoPath: string, sessionId: string) => Promise<WorktreeInfo[]>
   /** 获取 Worktree 相对于基准分支的全量变更 */
   getWorktreeChanges: (worktreePath: string, baseBranch: string, sessionId: string) => Promise<UnstagedChangesResult>
-  /** 在独立窗口打开当前文件预览 */
-  openDetachedPreview: (input: DetachedPreviewWindowInput) => Promise<string | null>
   /** 获取独立预览窗口数据 */
   getDetachedPreviewData: (previewId: string) => Promise<DetachedPreviewWindowData | null>
 
@@ -773,9 +735,6 @@ export interface PromaClientAPI {
   /** 用系统默认应用打开任意文件（无工作区限制） */
   systemOpenFile: (filePath: string, appName?: string, access?: FileAccessOptions) => Promise<void>
 
-  /** 扫描系统中可用的编辑器应用（仅 macOS） */
-  scanEditors: () => Promise<EditorApp[]>
-
   /** 查询本机为该文件类型注册的默认打开应用（含图标 dataURL） */
   getDefaultAppForFile: (filePath: string, access?: FileAccessOptions) => Promise<DefaultAppInfo | null>
 
@@ -859,28 +818,6 @@ export interface PromaClientAPI {
   /** 设置默认提示词 */
   setDefaultPrompt: (id: string | null) => Promise<void>
 
-  // ===== 自动更新 =====
-
-  /** 更新 API */
-  updater?: {
-    checkForUpdates: () => Promise<void>
-    getStatus: () => Promise<{
-      status: 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'not-available' | 'error'
-      version?: string
-      releaseNotes?: string
-      progress?: { percent: number; transferred: number; total: number; bytesPerSecond: number }
-      error?: string
-    }>
-    onStatusChanged: (callback: (status: {
-      status: 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'not-available' | 'error'
-      version?: string
-      releaseNotes?: string
-      progress?: { percent: number; transferred: number; total: number; bytesPerSecond: number }
-      error?: string
-    }) => void) => () => void
-    quitAndInstall: () => Promise<void>
-  }
-
   // GitHub Release
   getLatestRelease: () => Promise<GitHubRelease | null>
   listReleases: (options?: GitHubReleaseListOptions) => Promise<GitHubRelease[]>
@@ -889,114 +826,6 @@ export interface PromaClientAPI {
   // 工作区文件变化通知
   onCapabilitiesChanged: (callback: () => void) => () => void
   onWorkspaceFilesChanged: (callback: () => void) => () => void
-
-  // ===== 飞书集成 =====
-
-  /** 获取飞书配置 */
-  getFeishuConfig: () => Promise<FeishuConfig>
-  /** 获取解密后的 App Secret */
-  getDecryptedFeishuSecret: () => Promise<string>
-  /** 保存飞书配置（appSecret 为明文） */
-  saveFeishuConfig: (input: FeishuConfigInput) => Promise<FeishuConfig>
-  /** 测试飞书连接 */
-  testFeishuConnection: (appId: string, appSecret: string) => Promise<FeishuTestResult>
-  /** 启动飞书 Bridge */
-  startFeishuBridge: () => Promise<void>
-  /** 停止飞书 Bridge */
-  stopFeishuBridge: () => Promise<void>
-  /** 获取飞书 Bridge 状态 */
-  getFeishuStatus: () => Promise<FeishuBridgeState>
-  /** 获取绑定列表（包含已归档，调用方按视图过滤） */
-  listFeishuBindings: () => Promise<FeishuChatBinding[]>
-  /** 更新绑定（修改工作区/会话） */
-  updateFeishuBinding: (input: FeishuUpdateBindingInput) => Promise<FeishuChatBinding | null>
-  /** 移除绑定 */
-  removeFeishuBinding: (chatId: string) => Promise<boolean>
-  /** 上报用户在场状态 */
-  reportFeishuPresence: (report: FeishuPresenceReport) => Promise<void>
-  /** 订阅飞书 Bridge 状态变化 */
-  onFeishuStatusChanged: (callback: (state: FeishuBridgeState) => void) => () => void
-
-  // --- 多 Bot v2 API ---
-
-  /** 获取多 Bot 配置 */
-  getFeishuMultiConfig: () => Promise<FeishuMultiBotConfig>
-  /** 保存单个 Bot 配置 */
-  saveFeishuBotConfig: (input: FeishuBotConfigInput) => Promise<FeishuBotConfig>
-  /** 获取单个 Bot 解密后的 App Secret */
-  getDecryptedFeishuBotSecret: (botId: string) => Promise<string>
-  /** 删除 Bot */
-  removeFeishuBot: (botId: string) => Promise<boolean>
-  /** 启动单个 Bot */
-  startFeishuBot: (botId: string) => Promise<void>
-  /** 停止单个 Bot */
-  stopFeishuBot: (botId: string) => Promise<void>
-  /** 获取多 Bot 状态 */
-  getFeishuMultiStatus: () => Promise<FeishuMultiBridgeState>
-
-  // --- 扫码注册 ---
-
-  /** 启动扫码注册流程，等待用户扫码 + 飞书确认后返回 App ID/Secret */
-  registerFeishuApp: () => Promise<FeishuRegisterAppResult>
-  /** 取消正在进行的扫码注册流程 */
-  cancelFeishuRegistration: () => Promise<void>
-  /** 监听二维码 URL 生成 */
-  onFeishuRegisterQrcode: (callback: (payload: FeishuRegisterAppQRCode) => void) => () => void
-  /** 监听注册流程状态变化 */
-  onFeishuRegisterStatus: (callback: (payload: FeishuRegisterAppStatus) => void) => () => void
-
-  // ===== 钉钉集成 =====
-
-  /** 获取钉钉配置 */
-  getDingTalkConfig: () => Promise<DingTalkConfig>
-  /** 获取解密后的 Client Secret */
-  getDecryptedDingTalkSecret: () => Promise<string>
-  /** 保存钉钉配置（clientSecret 为明文） */
-  saveDingTalkConfig: (input: DingTalkConfigInput) => Promise<DingTalkConfig>
-  /** 测试钉钉连接 */
-  testDingTalkConnection: (clientId: string, clientSecret: string) => Promise<DingTalkTestResult>
-  /** 启动钉钉 Bridge */
-  startDingTalkBridge: () => Promise<void>
-  /** 停止钉钉 Bridge */
-  stopDingTalkBridge: () => Promise<void>
-  /** 获取钉钉 Bridge 状态 */
-  getDingTalkStatus: () => Promise<DingTalkBridgeState>
-  /** 订阅钉钉 Bridge 状态变化 */
-  onDingTalkStatusChanged: (callback: (state: DingTalkBridgeState) => void) => () => void
-
-  // --- 钉钉多 Bot v2 API ---
-
-  /** 获取多 Bot 配置 */
-  getDingTalkMultiConfig: () => Promise<DingTalkMultiBotConfig>
-  /** 保存单个 Bot 配置 */
-  saveDingTalkBotConfig: (input: DingTalkBotConfigInput) => Promise<DingTalkBotConfig>
-  /** 获取单个 Bot 解密后的 Client Secret */
-  getDecryptedDingTalkBotSecret: (botId: string) => Promise<string>
-  /** 删除 Bot */
-  removeDingTalkBot: (botId: string) => Promise<boolean>
-  /** 启动单个 Bot */
-  startDingTalkBot: (botId: string) => Promise<void>
-  /** 停止单个 Bot */
-  stopDingTalkBot: (botId: string) => Promise<void>
-  /** 获取多 Bot 状态 */
-  getDingTalkMultiStatus: () => Promise<DingTalkMultiBridgeState>
-
-  // ===== 微信集成 =====
-
-  /** 获取微信配置 */
-  getWeChatConfig: () => Promise<WeChatConfig>
-  /** 开始扫码登录 */
-  startWeChatLogin: () => Promise<void>
-  /** 登出微信 */
-  logoutWeChat: () => Promise<void>
-  /** 启动微信 Bridge（用已有凭证） */
-  startWeChatBridge: () => Promise<void>
-  /** 停止微信 Bridge */
-  stopWeChatBridge: () => Promise<void>
-  /** 获取微信 Bridge 状态 */
-  getWeChatStatus: () => Promise<WeChatBridgeState>
-  /** 订阅微信 Bridge 状态变化 */
-  onWeChatStatusChanged: (callback: (state: WeChatBridgeState) => void) => () => void
 
   /** 订阅菜单关闭标签页事件（Cmd+W 被菜单拦截后转发） */
   onMenuCloseTab: (callback: () => void) => () => void
@@ -1007,8 +836,6 @@ export interface PromaClientAPI {
   submitQuickTask: (input: QuickTaskSubmitInput) => Promise<void>
   /** 隐藏快速任务窗口 */
   hideQuickTask: () => Promise<void>
-  /** 重新注册全局快捷键（设置变更后） */
-  reregisterGlobalShortcuts: () => Promise<Record<string, boolean>>
   /** 订阅快速任务窗口聚焦事件 */
   onQuickTaskFocus: (callback: () => void) => () => void
   /** 订阅快速任务打开会话事件（主窗口接收，由渲染进程负责创建会话） */
@@ -1021,27 +848,6 @@ export interface PromaClientAPI {
   /** 订阅菜单栏创建会话事件 */
   onTrayCreateSession: (callback: (data: TrayCreateSessionData) => void) => () => void
 
-  // ===== 数据迁移 =====
-
-  /** 获取工作区导出预览信息 */
-  migrationGetExportPreview: (workspaceId: string) => Promise<unknown>
-  /** 获取所有工作区的 Skills/MCP 预览（团队分发模式） */
-  migrationGetShareExportPreview: () => Promise<unknown>
-  /** 执行导出 */
-  migrationExport: (options: unknown) => Promise<MigrationExportResult>
-  /** 执行 v2 多工作区导出 */
-  migrationExportV2: (options: unknown) => Promise<MigrationExportResult>
-  /** 解析导入文件，返回预览信息 */
-  migrationParseImportFile: (filePath: string) => Promise<unknown>
-  /** 确认导入 */
-  migrationConfirmImport: (options: unknown) => Promise<{ success: boolean }>
-  /** 打开文件选择对话框（选择 .proma-backup 或 .proma-share） */
-  migrationOpenFileDialog: () => Promise<string | null>
-  /** 打开文件保存对话框（选择导出路径） */
-  migrationSaveFileDialog: (mode: string) => Promise<string | null>
-  /** 订阅双击迁移文件触发的导入事件 */
-  onMigrationOpenImportFile: (callback: (data: { filePath: string }) => void) => () => void
-
   // ===== 存储管理 =====
 
   /** 获取各目录存储统计 */
@@ -1050,8 +856,6 @@ export interface PromaClientAPI {
   cleanupStorage: (options: unknown) => Promise<unknown>
   /** 清理临时文件（快速） */
   cleanupTempStorage: () => Promise<unknown>
-  /** 取消迁移导入（清理临时解压目录） */
-  migrationCancelImport: (tempDir: string) => Promise<void>
 
   // ===== 定时任务（Automation）=====
   /** 获取全部定时任务 */
@@ -1083,12 +887,6 @@ export interface PromaClientAPI {
   deleteUser?: (input: DeleteUserInput) => Promise<{ ok: boolean }>
   /** 退出登录：清空本地 token 与用户信息（跳转登录页由调用方完成） */
   logout?: () => Promise<{ ok: boolean }>
-}
-
-interface MigrationExportResult {
-  success: boolean
-  filePath: string
-  warnings?: string[]
 }
 
 // 扩展 Window 接口的类型定义：两端均通过 window.electronAPI 访问客户端 API

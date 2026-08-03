@@ -16,11 +16,8 @@ export function notMigrated(name: string): (...args: unknown[]) => Promise<never
  * 键名须与 PromaClientAPI 上的方法名一致
  */
 export const safeDefaults: Record<string, unknown> = {
-  // 运行时 / 环境：Web 端不做本地检测，返回空占位
-  getRuntimeStatus: () => Promise.resolve(null),
-  reinitRuntime: () => Promise.resolve(null),
+  // 运行时 / 环境：Web 端不做本地检测；getGitRepoStatus 恒 null（diff 预览降级，见 P1-8③）
   getGitRepoStatus: () => Promise.resolve(null),
-  checkEnvironment: () => Promise.resolve(null),
 
   // 主题：浏览器端由 matchMedia 处理，此处仅为启动期占位
   getSystemTheme: () => Promise.resolve('dark'),
@@ -32,8 +29,6 @@ export const safeDefaults: Record<string, unknown> = {
   getSystemPrompts: () => Promise.resolve([]),
   listChatTools: () => Promise.resolve([]),
   listWorkspaceFiles: () => Promise.resolve([]),
-  // 飞书绑定：Web 端尚未迁移飞书集成，定时任务表单进入空态（无可选绑定）而非报错
-  listFeishuBindings: () => Promise.resolve([]),
 
   // Agent 状态清理：Web 端无实际状态需要清理，no-op
   clearAgentCompletionState: () => Promise.resolve(),
