@@ -13,6 +13,7 @@ import { agentPendingPromptAtom } from '@/atoms/agent-atoms'
 import { isAdminAtom } from '@/atoms/auth'
 import { useCreateSession } from '@/hooks/useCreateSession'
 import { cn } from '@/lib/utils'
+import { isWebRuntime } from '@/lib/web-runtime'
 
 type SelectedMemoryFile =
   | { kind: 'claude'; relativePath: 'CLAUDE.md'; title: string; absolutePath: string }
@@ -561,7 +562,7 @@ export function WorkspaceMemoryTab({ workspaceSlug, search }: WorkspaceMemoryTab
                     className="h-8 max-w-[170px] border border-border/60 bg-background px-2 shadow-sm"
                   />
                 )}
-                {selected && (
+                {selected && !isWebRuntime() && (
                   <Button
                     size="sm"
                     variant="outline"

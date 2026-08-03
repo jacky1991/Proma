@@ -19,7 +19,6 @@ import {
 import { cn } from '@/lib/utils'
 import { FileBrowser, FileDropZone, FileTypeIcon, FileSearchBar, computeRevealAncestors, isPathUnderRoot, computeTreeRowLayout, AncestorGuides, STICKY_ROW_BASE_CLASS, canBeSticky } from '@/components/file-browser'
 import { DiffPanelTabBar } from '@/components/diff/DiffPanelTabBar'
-import { DiffChangesList } from '@/components/diff/DiffChangesList'
 import { ChatView } from '@/components/chat/ChatView'
 import {
   agentSidePanelOpenAtom,
@@ -31,16 +30,14 @@ import {
   workspaceAttachedDirectoriesMapAtom,
   workspaceAttachedFilesMapAtom,
   agentPendingFilesAtomFamily,
-  agentDiffRefreshVersionAtom,
   fileBrowserAutoRevealAtom,
-  agentSelectedWorktreeAtom,
 } from '@/atoms/agent-atoms'
 import type { AgentSidePanelTab } from '@/atoms/agent-atoms'
 import { agentSideChatMapAtom } from '@/atoms/chat-atoms'
 import { interfaceVariantAtom } from '@/atoms/theme'
-import { previewFileMapAtom } from '@/atoms/preview-atoms'
 import { useOpenPreview } from '@/components/diff/preview-opener'
 import { detectIsWindows } from '@/lib/platform'
+import { isWebRuntime } from '@/lib/web-runtime'
 import type { FileEntry, AgentPendingFile } from '@proma/shared'
 
 function getPathBasename(filePath: string): string {
@@ -71,9 +68,6 @@ export function SidePanel({ sessionId, sessionPath, activeTab, onTabChange, widt
   const isWindows = React.useMemo(() => detectIsWindows(), [])
 
   // Tab 系统
-  const previewFileMap = useAtomValue(previewFileMapAtom)
-  const selectedFilePath = previewFileMap.get(sessionId)?.filePath
-
   const openPreview = useOpenPreview()
 
   // 用 ref 存 basePaths 相关值，避免声明顺序问题
@@ -88,19 +82,6 @@ export function SidePanel({ sessionId, sessionPath, activeTab, onTabChange, widt
     })
   }, [sessionId, openPreview])
 
-  // Worktree 选择状态（仅用于 diff 文件点击时传递 baseRef，选取逻辑已下沉至 DiffChangesList）
-  const selectedWorktreeMap = useAtomValue(agentSelectedWorktreeAtom)
-  const selectedWorktreePath = selectedWorktreeMap.get(sessionId) ?? null
-
-  const handleDiffFileClick = React.useCallback((filePath: string, _isUntracked: boolean, gitRoot?: string) => {
-    openPreview(sessionId, {
-      filePath,
-      dirPath: sessionPath || undefined,
-      gitRoot,
-      baseRef: selectedWorktreePath ? 'origin/main' : undefined,
-    })
-  }, [openPreview, sessionId, sessionPath, selectedWorktreePath])
-
   // 动画标志：isOpen 变化时启用过渡动画，切换会话时即时显示
   const prevIsOpenRef = React.useRef(isOpen)
   const prevSessionIdRef = React.useRef(sessionId)
@@ -112,8 +93,6 @@ export function SidePanel({ sessionId, sessionPath, activeTab, onTabChange, widt
 
   const filesVersion = useAtomValue(workspaceFilesVersionAtom)
   const setFilesVersion = useSetAtom(workspaceFilesVersionAtom)
-  const diffRefreshVersionMap = useAtomValue(agentDiffRefreshVersionAtom)
-  const diffRefreshVersion = diffRefreshVersionMap.get(sessionId) ?? 0
   const hasFileChanges = filesVersion > 0
 
   // 派生当前工作区 slug（用于 FileDropZone IPC 调用）
@@ -362,11 +341,6 @@ export function SidePanel({ sessionId, sessionPath, activeTab, onTabChange, widt
     window.electronAPI.getWorkspaceFilesPath(workspaceSlug).then(setWorkspaceFilesPath).catch(() => setWorkspaceFilesPath(null))
   }, [workspaceSlug])
 
-  const worktreeRepoPathsMemo = React.useMemo(
-    () => [sessionPath, workspaceFilesPath, ...extraPathsMemo].filter(Boolean) as string[],
-    [sessionPath, workspaceFilesPath, extraPathsMemo]
-  )
-
   // Agent 写文件触发自动定位时，把 Tab 切到该文件所在的面板（session / workspace），
   // 让"最近修改"高亮落在用户当前可见的 Tab 上。仅响应 Agent 写入（select 未置位）的 reveal，
   // 用户搜索点击（select=true）不抢占 Tab；ts 去重确保用户手动切回后不会被重新抢占。
@@ -454,24 +428,6 @@ export function SidePanel({ sessionId, sessionPath, activeTab, onTabChange, widt
             ) : (
               <div className="flex-1 flex items-center justify-center text-muted-foreground text-xs">暂无问答会话</div>
             )
-          ) : effectiveActiveTab === 'changes' ? (
-            sessionPath ? (
-              <DiffChangesList
-                key={sessionId}
-                dirPath={sessionPath}
-                sessionId={sessionId}
-                sessionPath={sessionPath}
-                workspaceFilesPath={workspaceFilesPath || undefined}
-                extraPaths={fileAccessPathsMemo}
-                refreshVersion={diffRefreshVersion}
-                selectedFilePath={selectedFilePath}
-                onFileClick={handleDiffFileClick}
-                workspaceSlug={workspaceSlug || undefined}
-                worktreeRepoPaths={worktreeRepoPathsMemo}
-              />
-            ) : (
-              <div className="flex-1 flex items-center justify-center text-muted-foreground text-xs">等待会话初始化...</div>
-            )
           ) : effectiveActiveTab === 'session' ? (
             <div className="flex-1 min-h-0 flex flex-col pt-0.5 mx-2 mb-2">
               {sessionPath ? (
@@ -490,22 +446,24 @@ export function SidePanel({ sessionId, sessionPath, activeTab, onTabChange, widt
                     <span className="text-[10px] text-muted-foreground/70 truncate flex-1 min-w-0" title={sessionPath}>
                       {breadcrumb}
                     </span>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className={filePanelActionButtonClass}
-                          onClick={() => window.electronAPI.openFile(sessionPath).catch(console.error)}
-                        >
-                          <FolderSearch />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom">
-                        <p>在 Finder 中打开</p>
-                      </TooltipContent>
-                    </Tooltip>
+                    {!isWebRuntime() && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className={filePanelActionButtonClass}
+                            onClick={() => window.electronAPI.openFile(sessionPath).catch(console.error)}
+                          >
+                            <FolderSearch />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom">
+                          <p>在 Finder 中打开</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
                   </div>
                   <FileSearchBar
                     workspaceFilesPath={null}
@@ -574,7 +532,7 @@ export function SidePanel({ sessionId, sessionPath, activeTab, onTabChange, widt
                     </TooltipContent>
                   </Tooltip>
                   <div className="flex-1" />
-                  {workspaceFilesPath && (
+                  {workspaceFilesPath && !isWebRuntime() && (
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <Button
@@ -702,13 +660,15 @@ function AttachedFilesSection({ attachedFiles, onDetach, onAddToChat, onFilePrev
                       添加到聊天
                     </DropdownMenuItem>
                   )}
-                  <DropdownMenuItem
-                    className="text-xs py-1 [&>svg]:size-3.5"
-                    onSelect={() => window.electronAPI.showAttachedInFolder(filePath, { sessionId, candidateBasePaths: allowedPaths }).catch(console.error)}
-                  >
-                    <FolderSearch />
-                    在文件夹中显示
-                  </DropdownMenuItem>
+                  {!isWebRuntime() && (
+                    <DropdownMenuItem
+                      className="text-xs py-1 [&>svg]:size-3.5"
+                      onSelect={() => window.electronAPI.showAttachedInFolder(filePath, { sessionId, candidateBasePaths: allowedPaths }).catch(console.error)}
+                    >
+                      <FolderSearch />
+                      在文件夹中显示
+                    </DropdownMenuItem>
+                  )}
                   {onFilePreview && (
                     <DropdownMenuItem
                       className="text-xs py-1 [&>svg]:size-3.5"
@@ -1226,13 +1186,15 @@ function AttachedDirItem({ entry, depth, selectedPaths, onSelect, refreshVersion
                     添加到聊天
                   </DropdownMenuItem>
                 )}
-                <DropdownMenuItem
-                  className="text-xs py-1 [&>svg]:size-3.5"
-                  onSelect={() => window.electronAPI.showAttachedInFolder(currentPath, { sessionId, candidateBasePaths: allowedPaths }).catch(console.error)}
-                >
-                  <FolderSearch />
-                  在文件夹中显示
-                </DropdownMenuItem>
+                {!isWebRuntime() && (
+                  <DropdownMenuItem
+                    className="text-xs py-1 [&>svg]:size-3.5"
+                    onSelect={() => window.electronAPI.showAttachedInFolder(currentPath, { sessionId, candidateBasePaths: allowedPaths }).catch(console.error)}
+                  >
+                    <FolderSearch />
+                    在文件夹中显示
+                  </DropdownMenuItem>
+                )}
                 {!entry.isDirectory && onFilePreview && (
                   <DropdownMenuItem
                     className="text-xs py-1 [&>svg]:size-3.5"

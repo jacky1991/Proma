@@ -435,22 +435,6 @@ function ScratchPadEditor({ variant }: ScratchPadEditorProps): React.ReactElemen
     [editor, activeSessionId, currentWorkspaceId, currentWorkspace],
   )
 
-  const handleBrowseExport = React.useCallback(async () => {
-    if (!editor || editor.isEmpty) return
-
-    const filename = makeFilename()
-    const filePath = await window.electronAPI.chooseExportPath(filename)
-    if (!filePath) return
-
-    try {
-      const markdownContent = htmlToMarkdown(editor.getHTML())
-      // 传空 filename 触发 IPC 的完整路径模式，由 Node.js path.dirname 安全处理
-      await window.electronAPI.exportScratchPad(markdownContent, filePath, '')
-    } catch (err) {
-      console.error('[ScratchPad] 导出失败:', err)
-    }
-  }, [editor])
-
   // ===== 内容同步 =====
 
   // 仅在初始加载或编辑器重新挂载时同步内容到编辑器。
@@ -639,10 +623,6 @@ function ScratchPadEditor({ variant }: ScratchPadEditorProps): React.ReactElemen
               <span className="text-[10px] text-muted-foreground">
                 {currentWorkspace?.name ?? '无当前工作区'}
               </span>
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={handleBrowseExport}>
-              浏览选择位置...
             </DropdownMenuItem>
           </DropdownMenuContent>
           </DropdownMenuPortal>

@@ -9,7 +9,6 @@ import { atom } from 'jotai'
 import { atomFamily, atomWithStorage } from 'jotai/utils'
 import type { AgentSessionMeta, AgentEvent, AgentWorkspace, AgentPendingFile, RetryAttempt, PromaPermissionMode, PermissionRequest, AskUserRequest, ExitPlanModeRequest, ThinkingConfig, AgentEffort, SDKMessage, UnstagedChangesResult } from '@proma/shared'
 import { PROMA_DEFAULT_PERMISSION_MODE } from '@proma/shared'
-import { calculateDockBadgeCount, countPendingRequests } from '@/lib/dock-badge-count'
 import type { AgentQueuedMessage } from '@/lib/agent-message-queue'
 
 /** 活动状态 */
@@ -320,9 +319,9 @@ export const agentSidePanelWidthAtom = atomWithStorage<number>('proma-agent-side
 /** @deprecated 保留以兼容旧代码，但实际所有 session 都读全局 atom */
 export const agentSidePanelOpenMapAtom = atom<Map<string, boolean>>(new Map())
 
-export type AgentSidePanelTab = 'session' | 'workspace' | 'changes' | 'chat'
+export type AgentSidePanelTab = 'session' | 'workspace' | 'chat'
 
-/** 侧面板当前 Tab：会话文件 / 工作区文件 / 文件改动 / Chat（per-session Map） */
+/** 侧面板当前 Tab：会话文件 / 工作区文件 / Chat（per-session Map） */
 export const agentDiffPanelTabAtom = atom<Map<string, AgentSidePanelTab>>(new Map())
 
 /** Diff 视图模式：'split' | 'unified'，默认使用统一预览 */
@@ -567,16 +566,6 @@ function getStableIndicatorMap(entries: Array<[string, SessionIndicatorStatus]>)
   lastIndicatorMap = new Map(entries)
   return lastIndicatorMap
 }
-
-/** Dock/Launcher 角标数量：未查看完成会话 + 待处理阻塞请求 */
-export const dockBadgeCountAtom = atom<number>((get) => {
-  return calculateDockBadgeCount({
-    unviewedCompletedCount: get(unviewedCompletedSessionIdsAtom).size,
-    pendingPermissionCount: countPendingRequests(get(allPendingPermissionRequestsAtom)),
-    pendingAskUserCount: countPendingRequests(get(allPendingAskUserRequestsAtom)),
-    pendingExitPlanCount: countPendingRequests(get(allPendingExitPlanRequestsAtom)),
-  })
-})
 
 /**
  * 每个会话的指示点状态（只包含非 idle 的会话）

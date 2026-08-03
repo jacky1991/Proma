@@ -43,6 +43,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
+import { isWebRuntime } from '@/lib/web-runtime'
 import { workspaceFilesVersionAtom, fileBrowserAutoRevealAtom, recentlyModifiedPathsAtom, currentAgentSessionIdAtom } from '@/atoms/agent-atoms'
 import type { FileEntry } from '@proma/shared'
 import { FileTypeIcon } from './FileTypeIcon'
@@ -205,6 +206,8 @@ export function FileBrowser({ rootPath, hideToolbar, embedded, hideEmpty, onAddT
 
   /** 在文件夹中显示 */
   const handleShowInFolder = React.useCallback((entry: FileEntry) => {
+    // Web 平台无系统级"在文件夹中显示"能力，按钮已通过条件渲染隐藏，此处兜底防止误调用
+    if (isWebRuntime()) return
     window.electronAPI.showInFolder(entry.path).catch(console.error)
   }, [])
 
@@ -347,16 +350,18 @@ export function FileBrowser({ rootPath, hideToolbar, embedded, hideEmpty, onAddT
           <span className="text-xs text-muted-foreground truncate flex-1" title={rootPath}>
             {breadcrumb}
           </span>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 flex-shrink-0"
-            onClick={() => window.electronAPI.openFile(rootPath).catch(console.error)}
-            title="在 Finder 中打开"
-          >
-            <ExternalLink className="size-3.5" />
-          </Button>
+          {!isWebRuntime() && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 flex-shrink-0"
+              onClick={() => window.electronAPI.openFile(rootPath).catch(console.error)}
+              title="在 Finder 中打开"
+            >
+              <ExternalLink className="size-3.5" />
+            </Button>
+          )}
           <Button
             type="button"
             variant="ghost"
@@ -794,7 +799,7 @@ function FileTreeItem({
                     添加到聊天
                   </DropdownMenuItem>
                 )}
-                {menuSelectedCount === 1 && (
+                {menuSelectedCount === 1 && !isWebRuntime() && (
                   <DropdownMenuItem
                     className="text-xs py-1 [&>svg]:size-3.5"
                     onSelect={() => onShowInFolder(entry)}

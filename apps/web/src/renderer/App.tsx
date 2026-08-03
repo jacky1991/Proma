@@ -17,11 +17,6 @@ const EnvironmentCheckDialog = React.lazy(() =>
     default: m.EnvironmentCheckDialog,
   })),
 )
-const MigrationImportDialog = React.lazy(() =>
-  import('./components/migration/MigrationImportDialog').then((m) => ({
-    default: m.MigrationImportDialog,
-  })),
-)
 
 export default function App(): React.ReactElement {
   // [FLASH-DEBUG] 监控 App 组件重渲染（如果看到频繁日志，说明根组件被频繁重渲染）
@@ -78,9 +73,6 @@ export default function App(): React.ReactElement {
         <React.Suspense fallback={<LazyFallback className="h-screen" />}>
           <OnboardingView onComplete={handleOnboardingComplete} />
         </React.Suspense>
-        <React.Suspense fallback={null}>
-          <MigrationImportDialog />
-        </React.Suspense>
       </TooltipProvider>
     )
   }
@@ -94,9 +86,6 @@ export default function App(): React.ReactElement {
       <AppShell contextValue={contextValue} />
       <SettingsDialog />
       <GlobalEnvironmentCheckDialog />
-      <React.Suspense fallback={null}>
-        <MigrationImportDialog />
-      </React.Suspense>
     </TooltipProvider>
   )
 }

@@ -26,7 +26,6 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { settingsTabAtom, channelFormDirtyAtom, settingsCloseRequestedAtom } from "@/atoms/settings-tab";
 import type { SettingsTab } from "@/atoms/settings-tab";
 import { canManageAtom } from "@/atoms/auth";
-import { hasUpdateAtom } from "@/atoms/updater";
 import { hasEnvironmentIssuesAtom } from "@/atoms/environment";
 import {
   AlertDialog,
@@ -145,7 +144,6 @@ export function SettingsPanel({
   const channelFormDirty = useAtomValue(channelFormDirtyAtom);
   const [closeRequested, setCloseRequested] = useAtom(settingsCloseRequestedAtom);
   const canManage = useAtomValue(canManageAtom);
-  const hasUpdate = useAtomValue(hasUpdateAtom);
   const hasEnvironmentIssues = useAtomValue(hasEnvironmentIssuesAtom);
 
   /** 统一的退出拦截对话框状态 */
@@ -253,7 +251,7 @@ export function SettingsPanel({
               >
                 {tab.icon}
                 <span>{tab.label}</span>
-                {tab.id === "about" && (hasUpdate || hasEnvironmentIssues) && (
+                {tab.id === "about" && hasEnvironmentIssues && (
                   <span className="w-2 h-2 rounded-full bg-red-500" />
                 )}
               </button>

@@ -16,8 +16,6 @@ export function notMigrated(name: string): (...args: unknown[]) => Promise<never
  * 键名须与 PromaClientAPI 上的方法名一致
  */
 export const safeDefaults: Record<string, unknown> = {
-  // 自动更新：Web 端不支持，返回 undefined 让 updater.ts 优雅降级
-  updater: undefined,
   // 运行时 / 环境：Web 端不做本地检测，返回空占位
   getRuntimeStatus: () => Promise.resolve(null),
   reinitRuntime: () => Promise.resolve(null),

@@ -19,7 +19,6 @@ import { sidebarCollapsedAtom } from '@/atoms/tab-atoms'
 import { automationFormAtom } from '@/atoms/automation-atoms'
 import { activeViewAtom } from '@/atoms/active-view'
 import { interfaceVariantAtom } from '@/atoms/theme'
-import { WindowControls } from '@/components/WindowControls'
 import { detectIsWindows, WINDOW_CONTROLS_INSET_RIGHT } from '@/lib/platform'
 import { cn } from '@/lib/utils'
 
@@ -172,9 +171,6 @@ export function AppShell({ contextValue }: AppShellProps): React.ReactElement {
           isWindows ? WINDOW_CONTROLS_INSET_RIGHT : 'right-0'
         )}
       />
-
-      {/* Windows 自定义窗口控制按钮（最小化/最大化/关闭） */}
-      <WindowControls />
 
       <div className="shell-bg h-screen w-screen flex overflow-hidden bg-gradient-to-br from-zinc-50 to-zinc-100 dark:from-zinc-950 dark:to-zinc-900">
         {/* 左侧边栏：可折叠，可拖拽调整宽度 */}

@@ -10,6 +10,7 @@ import * as React from 'react'
 import { useStore } from 'jotai'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { isWebRuntime } from '@/lib/web-runtime'
 import { FileTypeIcon } from '@/components/file-browser/FileTypeIcon'
 import { useOpenPreview } from '@/components/diff/preview-opener'
 import { currentAgentSessionIdAtom } from '@/atoms/agent-atoms'
@@ -191,6 +192,8 @@ export function FilePathChip({ filePath, basePath, basePaths, className }: FileP
   }, [store, openPreview, cleanPath, candidateBases])
 
   const handleShowInFolder = React.useCallback(() => {
+    // Web 平台无系统级"在文件管理器中显示"能力，菜单项已通过条件渲染隐藏，此处兜底防止误调用
+    if (isWebRuntime()) return
     const bases = candidateBases.length > 0 ? candidateBases : undefined
     window.electronAPI.showItemInFolder(cleanPath, bases)
       .then((ok) => { if (!ok) toast.error(`未找到文件：${filename}`) })
@@ -223,10 +226,14 @@ export function FilePathChip({ filePath, basePath, basePaths, className }: FileP
         <ContextMenuItem onClick={handleClick}>
           打开预览
         </ContextMenuItem>
-        <ContextMenuSeparator />
-        <ContextMenuItem onClick={handleShowInFolder}>
-          在文件管理器中显示
-        </ContextMenuItem>
+        {!isWebRuntime() && (
+          <>
+            <ContextMenuSeparator />
+            <ContextMenuItem onClick={handleShowInFolder}>
+              在文件管理器中显示
+            </ContextMenuItem>
+          </>
+        )}
       </ContextMenuContent>
     </ContextMenu>
   )

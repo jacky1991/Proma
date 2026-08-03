@@ -14,6 +14,7 @@ import { useAtom, useSetAtom, useAtomValue } from 'jotai'
 import { toast } from 'sonner'
 import { Blocks, ChevronDown, ChevronRight, Search, Plus, Upload, FolderOpen, Check, Pencil, Trash2, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { isWebRuntime } from '@/lib/web-runtime'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   Popover,
@@ -116,6 +117,9 @@ export function AgentSkillsView(): React.ReactElement {
   const selectedIsBuiltin = selectedSkill ? data.defaultSkillSlugs.has(selectedSkill.slug) : false
 
   const openSkillFolder = (slug: string): void => {
+    // Web 平台无系统级"打开文件夹"能力，按钮在 SkillDetailSheet 内部渲染，
+    // 这里通过 early return 兜底防止 Web 下误触发 IPC（notMigrated 报错）
+    if (isWebRuntime()) return
     if (data.skillsDir) window.electronAPI.openFile(`${data.skillsDir}/${slug}`)
   }
 
@@ -328,7 +332,7 @@ export function AgentSkillsView(): React.ReactElement {
         onToggle={(enabled) => selectedSkill && data.toggleSkill(selectedSkill.slug, enabled)}
         onSetAssignment={(groupId) => selectedSkill && data.setSkillAssignment(selectedSkill.slug, groupId)}
         onRequestDelete={() => selectedSkill && setPendingDeleteSkill(selectedSkill)}
-        onOpenFolder={() => selectedSkill && openSkillFolder(selectedSkill.slug)}
+        onOpenFolder={() => selectedSkill && !isWebRuntime() && openSkillFolder(selectedSkill.slug)}
         onChanged={() => bumpCapabilities((v) => v + 1)}
       />
 

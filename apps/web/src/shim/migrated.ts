@@ -19,6 +19,13 @@ export function createMigrated(config: ShimConfig): Partial<PromaClientAPI> {
   const wsClient = createWsClient(config)
 
   return {
+    // ===== 浏览器原生降级（不走 HTTP）=====
+    // 外链打开：桌面端 shell.openExternal，Web 端用新标签页打开
+    openExternal: (url: string) => {
+      window.open(url, '_blank', 'noopener')
+      return Promise.resolve()
+    },
+
     // ===== Agent 会话 CRUD =====
     listAgentSessions: () => invoke<AgentSessionMeta[]>('agent:list-sessions'),
     createAgentSession: (title?: string, channelId?: string, workspaceId?: string, modelId?: string) =>

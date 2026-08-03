@@ -168,17 +168,6 @@ export const DEFAULT_SHORTCUTS: ShortcutDefinition[] = [
     defaultWin: 'Ctrl+Shift+B',
     category: 'app',
   },
-
-  // 全局快捷键（由主进程 globalShortcut 注册，应用外也生效）
-  {
-    id: 'quick-task',
-    name: '快速任务',
-    description: '唤起浮动快速任务输入窗口',
-    defaultMac: 'Alt+Space',
-    defaultWin: 'Alt+Space',
-    category: 'global',
-    global: true,
-  },
   {
     id: 'show-main-window',
     name: '显示主窗口',

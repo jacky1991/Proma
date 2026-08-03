@@ -40,10 +40,7 @@ import {
   agentMaxTurnsAtom,
   agentSettingsReadyAtom,
   automationGroupOrderAtom,
-  dockBadgeCountAtom,
-  unviewedCompletedSessionIdsAtom,
 } from './atoms/agent-atoms'
-import { updateStatusAtom, initializeUpdater } from './atoms/updater'
 import { authUserAtom } from './atoms/auth'
 import { automationsAtom } from './atoms/automation-atoms'
 import {
@@ -67,11 +64,8 @@ import { useGlobalChatListeners } from './hooks/useGlobalChatListeners'
 import { tabsAtom, activeTabIdAtom, ensureScratchPadTab, getPersistableTabState, scratchPadContentAtom, scratchPadLoadedAtom, SCRATCH_PAD_ID } from './atoms/tab-atoms'
 import type { TabItem } from './atoms/tab-atoms'
 import { chatToolsAtom } from './atoms/chat-tool-atoms'
-import { feishuBotStatesAtom } from './atoms/feishu-atoms'
-import { dingtalkBotStatesAtom } from './atoms/dingtalk-atoms'
 import { currentConversationIdAtom, channelsAtom, channelsLoadedAtom, selectedModelAtom } from './atoms/chat-atoms'
 import { appModeAtom } from './atoms/app-mode'
-import type { FeishuBotBridgeState, FeishuBridgeState, DingTalkBotBridgeState, DingTalkBridgeState } from '@proma/shared'
 import { Toaster } from './components/ui/sonner'
 import { toast } from 'sonner'
 import { diffCapabilities } from '@proma/shared'
@@ -83,15 +77,8 @@ import { htmlToMarkdown, markdownToHtml } from './lib/markdown-rich-text'
 import { getEnabledClaudeAgentChannelIds } from './lib/agent-channel-selection'
 import './styles/globals.css'
 
-// ===== 窗口类型检测 =====
-const isQuickTaskWindow = new URLSearchParams(window.location.search).get('window') === 'quick-task'
-const isDetachedPreviewWindow = new URLSearchParams(window.location.search).get('window') === 'detached-preview'
-const isMainWindow = !isQuickTaskWindow && !isDetachedPreviewWindow
-
-// 仅主窗口禁用页面级滚动；独立浮窗各自管理自己的内容高度和滚动。
-if (isMainWindow) {
-  document.documentElement.classList.add('proma-main-window')
-}
+// Web 端恒为主窗口（无 quick-task / detached-preview 独立浮窗）
+document.documentElement.classList.add('proma-main-window')
 
 /**
  * 主题初始化组件
@@ -354,22 +341,6 @@ function AgentSettingsInitializer(): null {
 }
 
 /**
- * 自动更新初始化组件
- *
- * 订阅主进程推送的更新状态变化事件。
- */
-function UpdaterInitializer(): null {
-  const setUpdateStatus = useSetAtom(updateStatusAtom)
-
-  useEffect(() => {
-    const cleanup = initializeUpdater(setUpdateStatus)
-    return cleanup
-  }, [setUpdateStatus])
-
-  return null
-}
-
-/**
  * 定时任务初始化组件
  *
  * 加载全部定时任务，并订阅主进程的变更事件（运行完成/状态变化）刷新列表。
@@ -404,47 +375,6 @@ function NotificationsInitializer(): null {
   useEffect(() => {
     void initializeNotifications(setEnabled, setSoundEnabled, setSounds)
   }, [setEnabled, setSoundEnabled, setSounds])
-
-  return null
-}
-
-/**
- * Dock/Launcher 角标同步组件
- *
- * 将需要用户处理或查看的事项数量同步到系统应用图标。
- */
-function DockBadgeInitializer(): null {
-  const count = useAtomValue(dockBadgeCountAtom)
-  const notificationsEnabled = useAtomValue(notificationsEnabledAtom)
-  const currentSessionId = useAtomValue(currentAgentSessionIdAtom)
-  const setUnviewedCompleted = useSetAtom(unviewedCompletedSessionIdsAtom)
-  const badgeCount = notificationsEnabled ? count : 0
-
-  useEffect(() => {
-    window.electronAPI.setDockBadgeCount(badgeCount).catch((error) => {
-      console.error('[Dock 角标] 同步失败:', error)
-    })
-  }, [badgeCount])
-
-  useEffect(() => {
-    const clearCurrentSessionBadge = (): void => {
-      if (!document.hasFocus() || !currentSessionId) return
-      setUnviewedCompleted((prev) => {
-        if (!prev.has(currentSessionId)) return prev
-        const next = new Set(prev)
-        next.delete(currentSessionId)
-        return next
-      })
-    }
-
-    clearCurrentSessionBadge()
-    window.addEventListener('focus', clearCurrentSessionBadge)
-    document.addEventListener('visibilitychange', clearCurrentSessionBadge)
-    return () => {
-      window.removeEventListener('focus', clearCurrentSessionBadge)
-      document.removeEventListener('visibilitychange', clearCurrentSessionBadge)
-    }
-  }, [currentSessionId, setUnviewedCompleted])
 
   return null
 }
@@ -534,110 +464,6 @@ function ChatToolInitializer(): null {
     })
     return cleanup
   }, [setChatTools])
-
-  return null
-}
-
-/**
- * 飞书集成初始化组件
- *
- * - 订阅飞书 Bridge 状态变化
- * - 定期上报用户在场状态（用于智能通知路由）
- * - 监听通知已发送事件（显示 Sonner + 桌面通知）
- */
-function FeishuInitializer(): null {
-  const store = useStore()
-
-  useEffect(() => {
-    // 加载初始多 Bot 状态
-    window.electronAPI.getFeishuMultiStatus?.()
-      .then((multiState: { bots: Record<string, FeishuBotBridgeState> }) => {
-        store.set(feishuBotStatesAtom, multiState.bots)
-      })
-      .catch(() => {
-        // 回退：使用旧 API 获取单 Bot 状态
-        window.electronAPI.getFeishuStatus()
-          .then((state: FeishuBridgeState) => {
-            const s = state as FeishuBotBridgeState
-            const botId = s.botId ?? 'default'
-            store.set(feishuBotStatesAtom, { [botId]: { ...s, botId, botName: s.botName ?? '飞书助手' } })
-          })
-          .catch((err: unknown) => console.error('[FeishuInitializer] 加载状态失败:', err))
-      })
-
-    // 订阅状态变化（现在每次推送包含 botId）
-    const cleanupStatus = window.electronAPI.onFeishuStatusChanged((raw: FeishuBridgeState) => {
-      const state = raw as FeishuBotBridgeState
-      const botId = state.botId ?? 'default'
-      store.set(feishuBotStatesAtom, (prev) => ({
-        ...prev,
-        [botId]: { ...state, botId, botName: state.botName ?? '飞书助手' },
-      }))
-    })
-
-    // 定期上报在场状态（5 秒间隔 + 焦点变化时即时上报）
-    const reportPresence = (): void => {
-      const activeSessionId = store.get(currentAgentSessionIdAtom) ?? store.get(currentConversationIdAtom)
-      window.electronAPI.reportFeishuPresence({
-        activeSessionId,
-        lastInteractionAt: Date.now(),
-      }).catch(() => { /* 忽略 */ })
-    }
-    const interval = setInterval(reportPresence, 5000)
-    window.addEventListener('focus', reportPresence)
-    window.addEventListener('blur', reportPresence)
-
-    return () => {
-      cleanupStatus()
-      clearInterval(interval)
-      window.removeEventListener('focus', reportPresence)
-      window.removeEventListener('blur', reportPresence)
-    }
-  }, [store])
-
-  return null
-}
-
-/**
- * DingTalkInitializer
- *
- * - 加载多 Bot 初始状态
- * - 订阅钉钉 Bridge 状态变化
- */
-function DingTalkInitializer(): null {
-  const store = useStore()
-
-  useEffect(() => {
-    // 加载初始多 Bot 状态
-    window.electronAPI.getDingTalkMultiStatus?.()
-      .then((multiState: { bots: Record<string, DingTalkBotBridgeState> }) => {
-        store.set(dingtalkBotStatesAtom, multiState.bots)
-      })
-      .catch(() => {
-        // 回退：使用旧 API 获取单 Bot 状态
-        window.electronAPI.getDingTalkStatus()
-          .then((state: DingTalkBridgeState) => {
-            const s = state as DingTalkBotBridgeState
-            const botId = s.botId ?? 'default'
-            store.set(dingtalkBotStatesAtom, { [botId]: { ...s, botId, botName: s.botName ?? '钉钉助手' } })
-          })
-          .catch((err: unknown) => console.error('[DingTalkInitializer] 加载状态失败:', err))
-      })
-
-    // 订阅状态变化（现在每次推送包含 botId）
-    const cleanupStatus = window.electronAPI.onDingTalkStatusChanged((raw: DingTalkBridgeState) => {
-      const state = raw as DingTalkBotBridgeState
-      const botId = state.botId ?? 'default'
-      store.set(dingtalkBotStatesAtom, (prev) => ({
-        ...prev,
-        [botId]: { ...state, botId, botName: state.botName ?? '钉钉助手' },
-      }))
-    })
-
-    return () => {
-      cleanupStatus()
-    }
-  }, [store])
 
   return null
 }
@@ -902,45 +728,19 @@ function ScratchPadPersistence(): null {
   return null
 }
 
-// ===== 快速任务窗口：轻量渲染 =====
-if (isQuickTaskWindow) {
-  import('./components/quick-task/QuickTaskApp').then(({ QuickTaskApp }) => {
-    ReactDOM.createRoot(document.getElementById('root')!).render(
-      <React.StrictMode>
-        <ThemeInitializer />
-        <QuickTaskApp />
-      </React.StrictMode>
-    )
-  })
-} else if (isDetachedPreviewWindow) {
-  import('./components/diff/DetachedPreviewApp').then(({ DetachedPreviewApp }) => {
-    ReactDOM.createRoot(document.getElementById('root')!).render(
-      <React.StrictMode>
-        <ThemeInitializer />
-        <MarkdownFontSizeInitializer />
-        <DetachedPreviewApp />
-        <Toaster position="bottom-right" />
-      </React.StrictMode>
-    )
-  })
-} else {
-  // ===== 主窗口：完整渲染 =====
+// ===== 主窗口：完整渲染 =====
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
       <ThemeInitializer />
       <AuthInitializer />
       <AgentSettingsInitializer />
       <NotificationsInitializer />
-      <DockBadgeInitializer />
       <UiPreferencesInitializer />
       <MarkdownFontSizeInitializer />
       <ChatListenersInitializer />
       <AgentListenersInitializer />
       <ChatToolInitializer />
-      <UpdaterInitializer />
       <AutomationInitializer />
-      <FeishuInitializer />
-      <DingTalkInitializer />
       <TabStatePersistenceInitializer />
       <ScratchPadPersistence />
       <GlobalShortcuts />
@@ -949,4 +749,3 @@ if (isQuickTaskWindow) {
       <Toaster position="bottom-right" />
     </React.StrictMode>
   )
-}

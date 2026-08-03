@@ -18,12 +18,7 @@ import {
   Link as LinkIcon,
   Table as TableIcon,
   Unlink,
-  Camera,
-  Copy,
-  Loader2,
 } from 'lucide-react'
-import { toast } from 'sonner'
-import { SCREENSHOT_LIMITS } from '@proma/shared'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
@@ -49,76 +44,6 @@ interface ToolbarActiveState {
   blockquote: boolean
   codeBlock: boolean
   link: boolean
-}
-
-/**
- * 收集渲染端已编译的 CSS（含 Tailwind 输出 + globals.css）。
- * 跨域 / file: 协议的 sheet 读 cssRules 会抛，捕获后跳过。
- */
-function collectRuntimeStyles(): string {
-  const chunks: string[] = []
-  for (const sheet of Array.from(document.styleSheets)) {
-    try {
-      const rules = sheet.cssRules
-      if (!rules) continue
-      for (const rule of Array.from(rules)) {
-        chunks.push(rule.cssText)
-      }
-    } catch {
-      // 无法访问的 sheet（CORS / 跨域字体表）跳过
-    }
-  }
-  return chunks.join('\n')
-}
-
-function buildScreenshotPayload(editor: Editor): {
-  html: string
-  width: number
-  css: string
-  themeClass: string
-} {
-  const root = editor.view.dom
-
-  // 预检：早失败，避免昂贵工作白做
-  const elementCount = root.querySelectorAll('*').length
-  if (elementCount > SCREENSHOT_LIMITS.MAX_ELEMENTS) {
-    throw new Error('文档结构过于复杂，请缩短内容后重试')
-  }
-  if (root.outerHTML.length > SCREENSHOT_LIMITS.MAX_RAW_HTML_BYTES) {
-    throw new Error('文档过大，请缩短内容后重试')
-  }
-
-  // 克隆 DOM，但不再逐元素 inline computed style——
-  // 直接把渲染端运行时的 CSS 整体注入到截图 HTML，由浏览器自然层叠。
-  const clone = root.cloneNode(true) as HTMLElement
-  clone.querySelectorAll('[contenteditable]').forEach((el) => {
-    el.removeAttribute('contenteditable')
-  })
-  clone.querySelectorAll('[spellcheck]').forEach((el) => {
-    el.removeAttribute('spellcheck')
-  })
-
-  const rect = root.getBoundingClientRect()
-  const width = Math.max(
-    SCREENSHOT_LIMITS.MIN_WIDTH,
-    Math.min(SCREENSHOT_LIMITS.MAX_WIDTH, Math.ceil(rect.width || 960)),
-  )
-  clone.style.width = `${width}px`
-  clone.style.height = 'auto'
-  clone.style.maxHeight = 'none'
-  clone.style.overflow = 'visible'
-  clone.setAttribute('data-proma-screenshot-root', 'true')
-
-  // 透传主题 class（dark / theme-ocean-dark / theme-forest-dark 等），
-  // 确保 globals.css 里基于这些 class 的 CSS 变量在截图侧也生效
-  const themeClass = document.documentElement.className
-
-  return {
-    html: clone.outerHTML,
-    width,
-    css: collectRuntimeStyles(),
-    themeClass,
-  }
 }
 
 function ToolbarButton({
@@ -282,8 +207,6 @@ export function MarkdownEditorToolbar({ editor }: MarkdownEditorToolbarProps): R
     ?? navigator.platform
   const isMac = platform.includes('Mac')
   const mod = isMac ? '⌘' : 'Ctrl+'
-  const [screenshotting, setScreenshotting] = React.useState(false)
-  const screenshottingRef = React.useRef(false)
   const activeState = useEditorState<ToolbarActiveState>({
     editor,
     selector: ({ editor: currentEditor }) => ({
@@ -303,39 +226,6 @@ export function MarkdownEditorToolbar({ editor }: MarkdownEditorToolbarProps): R
       link: currentEditor.isActive('link'),
     }),
   })
-
-  const handleScreenshot = React.useCallback(async (mode: 'clipboard' | 'file') => {
-    // ref 做同步重入锁，state 仅驱动 UI——state 在同 tick 内的 setState 不会立即生效，
-    // 用作 guard 会漏检同一 tick 内的二次触发（键盘 + 点击同时发生等情况）。
-    if (screenshottingRef.current) return
-    screenshottingRef.current = true
-    setScreenshotting(true)
-    try {
-      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
-      const { html, width, css, themeClass } = buildScreenshotPayload(editor)
-      const isDark = document.documentElement.classList.contains('dark')
-      const result = await window.electronAPI.screenshotCapture({ html, isDark, width, mode, css, themeClass })
-      if (result.success) {
-        toast.success(result.message)
-      } else {
-        toast.warning(result.message)
-      }
-    } catch (err) {
-      console.error('[截图] 失败:', err)
-      toast.error(err instanceof Error ? err.message : '截图失败')
-    } finally {
-      screenshottingRef.current = false
-      setScreenshotting(false)
-    }
-  }, [editor])
-
-  const handleScreenshotClipboard = React.useCallback(() => {
-    void handleScreenshot('clipboard')
-  }, [handleScreenshot])
-
-  const handleScreenshotFile = React.useCallback(() => {
-    void handleScreenshot('file')
-  }, [handleScreenshot])
 
   return (
     <div className="z-10 flex shrink-0 items-center gap-0.5 border-b border-border/50 bg-background px-2 py-1">
@@ -374,32 +264,6 @@ export function MarkdownEditorToolbar({ editor }: MarkdownEditorToolbarProps): R
       <TableGridPicker editor={editor} />
 
       <div className="flex-1" />
-
-      {/* 截图导出 */}
-      {screenshotting && (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <div className="mr-1 flex h-7 w-7 items-center justify-center rounded-md bg-muted text-muted-foreground">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-label="截图处理中" />
-            </div>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" className="text-xs">
-            生成截图中
-          </TooltipContent>
-        </Tooltip>
-      )}
-      <ToolbarButton
-        icon={Copy}
-        label="截图到剪贴板"
-        disabled={screenshotting}
-        onClick={handleScreenshotClipboard}
-      />
-      <ToolbarButton
-        icon={Camera}
-        label="截图保存文件"
-        disabled={screenshotting}
-        onClick={handleScreenshotFile}
-      />
     </div>
   )
 }
