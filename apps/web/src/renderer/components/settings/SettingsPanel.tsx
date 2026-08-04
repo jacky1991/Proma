@@ -61,11 +61,13 @@ interface TabItem {
   adminOnly?: boolean;
 }
 
-/** 基础 Tabs（所有模式都有） */
+/** 基础 Tabs */
 const BASE_TABS: TabItem[] = [
   { id: "general", label: "通用设置", icon: <Settings size={16} /> },
-  { id: "channels", label: "模型配置", icon: <Radio size={16} /> },
-  { id: "prompts", label: "提示词管理", icon: <BookOpen size={16} /> },
+  // 管理员专属：普通用户用 Chat 时经 ChatHeader 选模型，无需直接配置渠道
+  { id: "channels", label: "模型配置", icon: <Radio size={16} />, adminOnly: true },
+  // 管理员专属：普通用户无需管理系统提示词
+  { id: "prompts", label: "提示词管理", icon: <BookOpen size={16} />, adminOnly: true },
   // 管理员专属：路由层已 adminOnly（含读取）
   { id: "proxy", label: "代理设置", icon: <Globe size={16} />, adminOnly: true },
 ];
@@ -93,10 +95,12 @@ const BRANDING_TAB: TabItem = {
   adminOnly: true,
 };
 
+// 管理员专属：普通用户无需管理 Chat 工具开关与凭证
 const TOOLS_TAB: TabItem = {
   id: "tools",
   label: "Chat 工具",
   icon: <Wrench size={16} />,
+  adminOnly: true,
 };
 /** 尾部 Tabs（storage 管理员专属：底层能力未迁移 Web，路由层无暴露面，去留随 M4 桌面清理再议） */
 const TAIL_TABS: TabItem[] = [
@@ -216,11 +220,11 @@ export function SettingsPanel({
     return canManage ? all : all.filter((tab) => !tab.adminOnly)
   }, [canManage]);
 
-  // 深链防御：当前 tab 不在可见列表时（如普通用户被外部直接指定管理员专属 tab id）
-  // 回退到 channels（所有用户可见）。
+  // 深链防御：当前 tab 不在可见列表时（如普通用户被外部直接指定管理员专属 tab id，
+  // 或默认值 channels 对普通用户不可见），回退到该用户可见列表的首个 tab（恒为「通用设置」）。
   React.useEffect(() => {
     if (!tabs.some((tab) => tab.id === activeTab)) {
-      setActiveTab("channels");
+      setActiveTab(tabs[0]?.id ?? "general");
     }
   }, [tabs, activeTab, setActiveTab]);
 

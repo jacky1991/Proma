@@ -59,7 +59,7 @@ import { agentSessionsAtom } from '@/atoms/agent-atoms'
 import { activeSessionIdAtom } from '@/atoms/tab-atoms'
 import { automationsAtom, automationFormAtom, automationToDraft } from '@/atoms/automation-atoms'
 import { activeViewAtom } from '@/atoms/active-view'
-import { isAdminAtom } from '@/atoms/auth'
+import { canManageAtom, isAdminAtom } from '@/atoms/auth'
 import { settingsOpenAtom, settingsTabAtom } from '@/atoms/settings-tab'
 import { useOpenPreview } from '@/components/diff/preview-opener'
 import { getFileParentPath } from '@/lib/file-utils'
@@ -1050,6 +1050,7 @@ function ErrorMessage({ message, onRetry, onRetryInNewSession, onCompact }: Erro
   const setSettingsOpen = useSetAtom(settingsOpenAtom)
   const setSettingsTab = useSetAtom(settingsTabAtom)
   const setModelSelectorOpen = useSetAtom(modelSelectorOpenAtom)
+  const canManage = useAtomValue(canManageAtom)
   const [detailsOpen, setDetailsOpen] = React.useState(false)
 
   const contentText = message.message?.content
@@ -1064,6 +1065,8 @@ function ErrorMessage({ message, onRetry, onRetryInNewSession, onCompact }: Erro
     if (action.action === 'retry' && !onRetry) return false
     if (action.action === 'compact' && !onCompact) return false
     if (action.action === 'retry_in_new_session' && !onRetryInNewSession) return false
+    // 「打开渠道设置」指向管理员专属 Tab，普通用户不可见 → 隐藏该恢复动作
+    if (action.action === 'open_channel_settings' && !canManage) return false
     return true
   })
 

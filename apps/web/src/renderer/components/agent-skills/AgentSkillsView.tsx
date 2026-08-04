@@ -123,6 +123,8 @@ export function AgentSkillsView(): React.ReactElement {
     if (data.skillsDir) window.electronAPI.openFile(`${data.skillsDir}/${slug}`)
   }
 
+  // 跳转 'tools'（管理员专属 Tab）无需 canManage 守卫：本入口仅在 mcp tab 的内置 MCP 详情触发，
+  // 而 mcp tab 对普通用户不可见（见上方 !canManage 时 tab 回退到 skills）。
   const configureBuiltinMcp = React.useCallback((serverId: string): void => {
     const focusMap: Partial<Record<string, ToolSettingsFocus>> = {
       mem: 'memory',

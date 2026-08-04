@@ -23,6 +23,7 @@ import {
 import { cn } from '@/lib/utils'
 import { Wrench, Brain, Globe, Settings, ImagePlus } from 'lucide-react'
 import { chatToolsAtom, hasActiveToolsAtom } from '@/atoms/chat-tool-atoms'
+import { canManageAtom } from '@/atoms/auth'
 import { settingsTabAtom, settingsOpenAtom } from '@/atoms/settings-tab'
 import { inputToolbarActiveButtonClass, inputToolbarButtonClass } from '@/components/ai-elements/input-toolbar-styles'
 
@@ -47,6 +48,7 @@ export function ToolSelectorPopover(): React.ReactElement {
   const hasActiveTools = useAtomValue(hasActiveToolsAtom)
   const setSettingsOpen = useSetAtom(settingsOpenAtom)
   const setSettingsTab = useSetAtom(settingsTabAtom)
+  const canManage = useAtomValue(canManageAtom)
 
   /** 切换工具开关（通过 IPC 更新后端配置，再刷新 atom） */
   const toggleTool = async (toolId: string, currentEnabled: boolean): Promise<void> => {
@@ -139,15 +141,17 @@ export function ToolSelectorPopover(): React.ReactElement {
             </div>
           )}
 
-          {/* 管理工具链接 */}
-          <button
-            type="button"
-            onClick={goToToolSettings}
-            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors w-full pt-1 border-t border-border/50"
-          >
-            <Settings className="size-3" />
-            <span>管理工具</span>
-          </button>
+          {/* 管理工具链接（管理员专属：Chat 工具为 adminOnly 配置） */}
+          {canManage && (
+            <button
+              type="button"
+              onClick={goToToolSettings}
+              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors w-full pt-1 border-t border-border/50"
+            >
+              <Settings className="size-3" />
+              <span>管理工具</span>
+            </button>
+          )}
         </div>
       </PopoverContent>
     </Popover>
