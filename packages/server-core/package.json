@@ -1,6 +1,6 @@
 {
   "name": "@proma/server-core",
-  "version": "0.3.24",
+  "version": "0.3.25",
   "license": "AGPL-3.0-only",
   "description": "Proma 核心引擎共享包：零 Electron 依赖的服务端逻辑（Agent 会话 / 渠道 / 工作区 / 对话管理），Web 服务端使用此真源。",
   "type": "module",
@@ -24,15 +24,20 @@
     "adm-zip": "^0.5.17",
     "iconv-lite": "^0.6.3",
     "mammoth": "^1.12.0",
-    "officeparser": "4.2.0"
+    "officeparser": "4.2.0",
+    "pdf-parse": "1.1.1",
+    "pdfjs-dist": "^4.10.38",
+    "word-extractor": "1.0.4"
   },
   "peerDependencies": {
-    "@earendil-works/pi-agent-core": "0.80.9",
-    "@earendil-works/pi-ai": "0.80.9",
-    "@earendil-works/pi-coding-agent": "0.80.9"
+    "@earendil-works/pi-agent-core": "0.82.1",
+    "@earendil-works/pi-ai": "0.82.1",
+    "@earendil-works/pi-coding-agent": "0.82.1"
   },
   "devDependencies": {
     "@types/adm-zip": "^0.5.8",
+    "@types/pdf-parse": "^1.1.5",
+    "@types/word-extractor": "1.0.6",
     "typescript": "^5.0.0"
   }
 }

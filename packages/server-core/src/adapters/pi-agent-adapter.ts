@@ -1323,7 +1323,7 @@ export class PiAgentAdapter implements AgentProviderAdapter {
       if (piAi && input.codexFastMode && input.provider === 'openai-codex' && isCodexFastModeSupportedModel(input.model)) {
         // Pi 的通用 streamSimple 会丢弃 provider 专属 serviceTier；这里直接走
         // provider stream，确保 request body 与 usage.cost 都使用 priority tier。
-        session.agent.streamFn = async (requestModel, context, options) => {
+        session.agent.streamFunction = async (requestModel, context, options) => {
           const authResult = await modelRuntime.getAuth(requestModel)
           if (!authResult?.auth.apiKey) throw new Error('无法获取 ChatGPT (Codex) OAuth access token')
           const auth = authResult.auth
@@ -1348,8 +1348,8 @@ export class PiAgentAdapter implements AgentProviderAdapter {
       }
       // 代理作用域必须只覆盖模型 provider stream：在整个 session.prompt() 链上设
       // AsyncLocalStorage 会把 MCP/产品工具等同一 Agent loop 中的 fetch 也错误地送进 Codex 代理。
-      const providerStreamFn = session.agent.streamFn
-      session.agent.streamFn = (requestModel, context, options) => runWithPiRequestProxy(
+      const providerStreamFn = session.agent.streamFunction
+      session.agent.streamFunction = (requestModel, context, options) => runWithPiRequestProxy(
         requestProxyDispatcher,
         () => providerStreamFn(requestModel, context, options),
       )
