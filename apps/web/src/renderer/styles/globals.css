@@ -28,16 +28,16 @@
 
 /* ===== 文字选区颜色 =====
  * 吃 --primary token，多数主题下品牌色自动反映到选区高亮。
- * 但部分主题的 --primary 在暗背景上太暗（如 ocean-dark/forest-dark）或在亮背景上太浅（如云朵舞者），
- * 这些主题在下方单独覆写 ::selection 让对比度回到可读区间。
+ * 只覆盖选区背景，让嵌套的终端、代码块和语法高亮内容保留自身前景色。
+ * 部分主题的 --primary 在暗背景上太暗（如 ocean-dark/forest-dark）或在亮背景上太浅（如云朵舞者），
+ * 这些主题在下方单独覆写 ::selection 的背景色让对比度回到可读区间。
+ * 移植自 main 0ad04056（#1398）。
  */
 ::selection {
-  background-color: hsl(var(--primary) / 0.25);
-  color: hsl(var(--foreground));
+  background-color: hsl(var(--primary) / 0.20);
 }
 ::-moz-selection {
-  background-color: hsl(var(--primary) / 0.25);
-  color: hsl(var(--foreground));
+  background-color: hsl(var(--primary) / 0.20);
 }
 
 /* 暗色特殊主题：--primary 太暗，改用 --accent-foreground（明亮的强调文字色）
@@ -60,7 +60,7 @@
 /* 云朵舞者（slate-light）：--primary 是淡杏粉，亮背景下需要更高不透明度才看得见 */
 .theme-slate-light ::selection,
 .theme-slate-light ::-moz-selection {
-  background-color: hsl(var(--primary) / 0.6);
+  background-color: hsl(var(--primary) / 0.50);
 }
 
 /* CRT 终端：亮绿选区 + 黑字 */
@@ -1013,6 +1013,10 @@
   --radius: 0.625rem;
   --radius-xl-extra: 4px;
   --radius-2xl-extra: 8px;
+}
+
+/* 经典界面浅色：侧栏使用纯白对齐 upstream；深色下不覆盖，保持主题的深色侧栏。移植自 main bac752d9（#1371）。 */
+:root.ui-classic:not(.dark) {
   --sidebar-surface: 0 0% 98%;
 }
 
