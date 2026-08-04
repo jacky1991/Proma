@@ -1623,6 +1623,7 @@ export class AgentOrchestrator {
         },
         onModelResolved: handleModelResolved,
         onContextWindow: handleContextWindow,
+        retryRunStartedAt: streamStartedAt,
         onRetry: (retry: import('./adapters/pi-retry-control').PiRetryUpdate) => {
           this.emitEvent(sessionId, { kind: 'proma_event', event: { type: 'retry', ...retry } })
         },
