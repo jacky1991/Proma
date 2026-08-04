@@ -25,7 +25,11 @@ import type {
   SDKUserMessageInput,
   TypedError,
 } from '@proma/shared'
-import { isCodexFastModeSupportedModel, isOpenAIReasoningSupportedModel } from '@proma/shared'
+import {
+  calculatePiAutoCompactionReserveTokens,
+  isCodexFastModeSupportedModel,
+  isOpenAIReasoningSupportedModel,
+} from '@proma/shared'
 import {
   THINKING_SIGNATURE_ERROR_MESSAGE,
   THINKING_SIGNATURE_ERROR_TITLE,
@@ -1250,6 +1254,10 @@ export class PiAgentAdapter implements AgentProviderAdapter {
         ? sdk.SessionManager.open(sessionFile, input.piSessionDir, cwd)
         : sdk.SessionManager.create(cwd, input.piSessionDir)
       const { modelRuntime, model } = await buildModel(sdk, input)
+      // Pi 自动压缩在上下文达到模型窗口约 80% 时触发；以 reserveTokens 表示预留空间。移植自 main e5fd4152（#1321）。
+      const autoCompactionReserveTokens = calculatePiAutoCompactionReserveTokens(
+        model.contextWindow ?? DEFAULT_CONTEXT_WINDOW,
+      )
       const customTools = [
         ...buildBuiltinToolDefinitions(
           sdk,
@@ -1264,8 +1272,8 @@ export class PiAgentAdapter implements AgentProviderAdapter {
       const settingsManager = sdk.SettingsManager.inMemory({
         // 使用 Pi SDK 原生压缩策略：
         // - 手动压缩由 session.compact() 触发；
-        // - 自动压缩由 Pi 在上下文接近窗口上限或溢出恢复时触发。
-        compaction: { enabled: true },
+        // - 自动压缩在上下文达到模型窗口约 80% 时触发（reserveTokens 预留 20% 空间）。
+        compaction: { enabled: true, reserveTokens: autoCompactionReserveTokens },
         // Pi 原生 retry 通过 agent.continue() 在同一 transcript 中恢复，能保留已完成的
         // tool_result；不能用外层重投原始 prompt 替代，否则会重复执行副作用工具。
         // 8 次指数退避（1+2+...+128 秒）约 255 秒，维持原 5 分钟恢复预算。

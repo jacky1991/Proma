@@ -17,6 +17,11 @@ export {
   inferAgentSdkContextWindow,
   resolveAgentSdkModelId,
 } from './context-window'
+export {
+  PI_AUTO_COMPACTION_THRESHOLD_RATIO,
+  calculatePiAutoCompactionReserveTokens,
+  calculatePiAutoCompactionThresholdTokens,
+} from './pi-compaction'
 export { calculateContextUsageRatio } from './context-usage'
 export {
   inferMcpTransportType,
