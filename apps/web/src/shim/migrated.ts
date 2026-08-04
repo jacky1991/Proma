@@ -1,5 +1,5 @@
 import type { PromaClientAPI } from './types'
-import type { AgentSessionMeta, AgentStreamEvent, AgentStreamCompletePayload, PermissionResponse, AskUserResponse, ExitPlanModeResponse, PendingRequestsSnapshot, AttachmentSaveInput, FileDialogResult, AgentQueueMessageInput, ForkSessionInput, RewindSessionInput, AgentAttachDirectoryInput, AgentAttachFileInput, WorkspaceAttachDirectoryInput, WorkspaceAttachFileInput, AgentSaveFilesInput, AgentSaveWorkspaceFilesInput, AgentSessionReferenceSearchInput, MoveSessionToWorkspaceInput, WorkspaceWorktreeRepo, FileAccessOptions, ChannelDirectTestInput, ChannelUpdateInput, CodexOAuthLoginResult, AuthUser, ChangePasswordInput, ResetUserPasswordInput, DeleteUserInput, StreamChunkEvent, StreamReasoningEvent, StreamCompleteEvent, StreamErrorEvent, StreamToolActivityEvent } from '@proma/shared'
+import type { AgentSessionMeta, AgentStreamEvent, AgentStreamCompletePayload, PermissionResponse, AskUserResponse, ExitPlanModeResponse, PendingRequestsSnapshot, AttachmentSaveInput, FileDialogResult, AgentQueueMessageInput, ForkSessionInput, RewindSessionInput, AgentAttachDirectoryInput, AgentAttachFileInput, WorkspaceAttachDirectoryInput, WorkspaceAttachFileInput, AgentSaveFilesInput, AgentSaveWorkspaceFilesInput, AgentSessionReferenceSearchInput, MoveSessionToWorkspaceInput, WorkspaceWorktreeRepo, FileAccessOptions, ChannelDirectTestInput, ChannelUpdateInput, CodexOAuthLoginResult, AuthUser, ChangePasswordInput, ResetUserPasswordInput, DeleteUserInput, BrandingConfig, StreamChunkEvent, StreamReasoningEvent, StreamCompleteEvent, StreamErrorEvent, StreamToolActivityEvent } from '@proma/shared'
 import { createHttpClient, type ShimConfig } from './http-client'
 import { createWsClient } from './ws-client'
 import { getStoredUser, clearTokens, getAccessToken } from './auth-store.ts'
@@ -166,6 +166,8 @@ export function createMigrated(config: ShimConfig): Partial<PromaClientAPI> {
     updateSettings: (input: unknown) => invoke('settings:update', input),
     getUserProfile: () => invoke('user-profile:get'),
     updateUserProfile: (input: unknown) => invoke('user-profile:update', input),
+    getBrandingConfig: () => invoke<BrandingConfig>('branding:get'),
+    updateBrandingConfig: (input: Partial<BrandingConfig>) => invoke<BrandingConfig>('branding:update', input),
 
     // ===== System Prompt 域 =====
     getSystemPromptConfig: () => invoke('system-prompt:get-config'),

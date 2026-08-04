@@ -117,6 +117,7 @@ import type {
   ProxyConfig,
   SystemProxyDetectResult,
 } from './proxy'
+import type { BrandingConfig } from './branding'
 import type {
   DefaultAppInfo,
   DetachedPreviewWindowData,
@@ -887,6 +888,13 @@ export interface PromaClientAPI {
   deleteUser?: (input: DeleteUserInput) => Promise<{ ok: boolean }>
   /** 退出登录：清空本地 token 与用户信息（跳转登录页由调用方完成） */
   logout?: () => Promise<{ ok: boolean }>
+
+  // ===== Web 品牌定制（仅 Web 端实现，Electron 端不存在）=====
+
+  /** 获取品牌配置（产品名称 + Logo）；未配置时返回空对象，由前端兜默认值。读取对所有用户公开 */
+  getBrandingConfig?: () => Promise<BrandingConfig>
+  /** 更新品牌配置（仅管理员）；logoDataUrl 为 base64 data URL，传 undefined 清除自定义 Logo */
+  updateBrandingConfig?: (updates: Partial<BrandingConfig>) => Promise<BrandingConfig>
 }
 
 // 扩展 Window 接口的类型定义：两端均通过 window.electronAPI 访问客户端 API

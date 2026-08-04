@@ -18,6 +18,9 @@ export * from './channel'
 // 代理配置相关类型
 export * from './proxy'
 
+// 品牌定制相关类型（产品名称 + Logo）
+export * from './branding'
+
 // Chat 相关类型
 export * from './chat'
 

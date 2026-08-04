@@ -13,8 +13,10 @@ import { useAtom, useSetAtom, useAtomValue, useStore } from 'jotai'
 import { toast } from 'sonner'
 import { Pin, PinOff, Settings, Plus, Trash2, Pencil, PanelLeftClose, PanelLeftOpen, ArrowRightLeft, Search, Archive, ArchiveRestore, ArrowLeft, Bot, MessageSquare, MoreHorizontal, FolderOpen, GripVertical, Clock, AlarmClock, ChevronRight, Blocks, GitBranch } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { isWebRuntime } from '@/lib/web-runtime'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { ModeSwitcher } from './ModeSwitcher'
+import { BrandingHeader } from './BrandingHeader'
 import { SearchDialog } from './SearchDialog'
 import { UserAvatar } from '@/components/chat/UserAvatar'
 import { activeViewAtom, agentSkillsTabAtom } from '@/atoms/active-view'
@@ -2264,12 +2266,18 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
         )}
         style={{ width: 60, flexShrink: 0 }}
       >
-        <SidebarWindowDragStrip
-          height={isMac ? SIDEBAR_DRAG_STRIP_HEIGHT.collapsedMac : SIDEBAR_DRAG_STRIP_HEIGHT.collapsed}
-        />
+        {/* 桌面端窗口拖拽条 + macOS 红绿灯留白（Web 端浏览器无原生窗口拖拽，整体隐藏） */}
+        {!isWebRuntime() && (
+          <>
+            <SidebarWindowDragStrip
+              height={isMac ? SIDEBAR_DRAG_STRIP_HEIGHT.collapsedMac : SIDEBAR_DRAG_STRIP_HEIGHT.collapsed}
+            />
+            <div className={cn('w-full flex-shrink-0 titlebar-drag-region', isMac ? 'h-[50px]' : 'h-2')} />
+          </>
+        )}
 
-        {/* macOS 需要避开左上角红绿灯；边栏覆盖全局标题栏拖拽层，因此留白自身也要可拖拽。 */}
-        <div className={cn('w-full flex-shrink-0 titlebar-drag-region', isMac ? 'h-[50px]' : 'h-2')} />
+        {/* 品牌区：产品 Logo（仅 Web 端，折叠态仅显示图标） */}
+        <BrandingHeader collapsed />
 
         {/* 展开按钮：mini rail 的唯一布局控制入口 */}
         <div className="pt-2">
@@ -2477,12 +2485,18 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
       )}
       style={{ width: width ?? 300, minWidth: 200, flexShrink: 0 }}
     >
-      <SidebarWindowDragStrip
-        height={isMac ? SIDEBAR_DRAG_STRIP_HEIGHT.expandedMac : SIDEBAR_DRAG_STRIP_HEIGHT.expanded}
-      />
+      {/* 桌面端窗口拖拽条 + macOS 红绿灯留白（Web 端浏览器无原生窗口拖拽，整体隐藏） */}
+      {!isWebRuntime() && (
+        <>
+          <SidebarWindowDragStrip
+            height={isMac ? SIDEBAR_DRAG_STRIP_HEIGHT.expandedMac : SIDEBAR_DRAG_STRIP_HEIGHT.expanded}
+          />
+          <div className={cn('w-full flex-shrink-0 titlebar-drag-region', isMac ? 'h-[30px]' : 'h-1')} />
+        </>
+      )}
 
-      {/* macOS 需要避开左上角红绿灯；边栏覆盖全局标题栏拖拽层，因此留白自身也要可拖拽。 */}
-      <div className={cn('w-full flex-shrink-0 titlebar-drag-region', isMac ? 'h-[30px]' : 'h-1')} />
+      {/* 品牌区：产品 Logo + 名称（仅 Web 端） */}
+      <BrandingHeader collapsed={false} />
 
       {/* 模式切换器 + 折叠按钮 */}
       <div className="titlebar-drag-region flex items-start gap-1.5 px-3">

@@ -296,6 +296,15 @@ export function getProxySettingsPath(): string {
 }
 
 /**
+ * 获取品牌配置文件路径（产品名称 + Logo，全局共享）
+ *
+ * @returns ~/.proma-web/branding-config.json
+ */
+export function getBrandingConfigPath(): string {
+  return join(getDataRoot(), 'branding-config.json')
+}
+
+/**
  * 获取系统提示词配置文件路径
  *
  * @returns ~/.proma/system-prompts.json

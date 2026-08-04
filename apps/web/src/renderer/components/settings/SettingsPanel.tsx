@@ -20,6 +20,7 @@ import {
   HardDrive,
   CircleUser,
   Users,
+  Image as ImageIcon,
 } from "lucide-react";
 import { isWebRuntime } from "@/lib/web-runtime";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -46,6 +47,7 @@ import { ToolSettings } from "./ToolSettings";
 import { StorageSettings } from "./StorageSettings";
 import { AccountSettings } from "./AccountSettings";
 import { UserSettings } from "./UserSettings";
+import { BrandingSettings } from "./BrandingSettings";
 
 /** 设置 Tab 定义 */
 interface TabItem {
@@ -83,6 +85,14 @@ const USERS_TAB: TabItem = {
   adminOnly: true,
 };
 
+// 管理员专属：品牌设置（产品名称 + Logo），全局共享配置
+const BRANDING_TAB: TabItem = {
+  id: "branding",
+  label: "品牌设置",
+  icon: <ImageIcon size={16} />,
+  adminOnly: true,
+};
+
 const TOOLS_TAB: TabItem = {
   id: "tools",
   label: "Chat 工具",
@@ -100,6 +110,7 @@ const ALL_TABS: TabItem[] = [
   ...BASE_TABS,
   ACCOUNT_TAB,
   USERS_TAB,
+  BRANDING_TAB,
   TOOLS_TAB,
   ...TAIL_TABS,
 ];
@@ -113,6 +124,8 @@ function renderTabContent(tab: SettingsTab): React.ReactElement {
       return <AccountSettings />;
     case "users":
       return <UserSettings />;
+    case "branding":
+      return <BrandingSettings />;
     case "channels":
       return <ChannelSettings />;
     case "prompts":
@@ -199,7 +212,7 @@ export function SettingsPanel({
   const tabs = React.useMemo(() => {
     const all = isWebRuntime()
       ? ALL_TABS
-      : ALL_TABS.filter((tab) => tab.id !== "account" && tab.id !== "users")
+      : ALL_TABS.filter((tab) => tab.id !== "account" && tab.id !== "users" && tab.id !== "branding")
     return canManage ? all : all.filter((tab) => !tab.adminOnly)
   }, [canManage]);
 

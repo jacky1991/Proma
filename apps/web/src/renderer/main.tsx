@@ -42,6 +42,7 @@ import {
   automationGroupOrderAtom,
 } from './atoms/agent-atoms'
 import { authUserAtom } from './atoms/auth'
+import { brandingConfigAtom, displayLogoUrlAtom, displayProductNameAtom } from './atoms/branding-atoms'
 import { automationsAtom } from './atoms/automation-atoms'
 import {
   notificationsEnabledAtom,
@@ -157,6 +158,33 @@ function AuthInitializer(): null {
       .then((user) => setAuthUser(user ?? null))
       .catch((err) => console.error('[AuthInitializer] 加载登录用户失败:', err))
   }, [setAuthUser])
+
+  return null
+}
+
+/**
+ * 品牌配置初始化组件
+ *
+ * Web 端启动时加载全局品牌配置（产品名称 + Logo）写入 atom，供侧边栏显示；
+ * Electron 端 getBrandingConfig 不存在（可选链跳过），atom 保持 null，组件层经 isWebRuntime 守卫不渲染品牌区。
+ */
+function BrandingInitializer(): null {
+  const setBrandingConfig = useSetAtom(brandingConfigAtom)
+  const logoUrl = useAtomValue(displayLogoUrlAtom)
+  const productName = useAtomValue(displayProductNameAtom)
+
+  useEffect(() => {
+    window.electronAPI.getBrandingConfig?.()
+      .then((config) => setBrandingConfig(config ?? {}))
+      .catch((err) => console.error('[BrandingInitializer] 加载品牌配置失败:', err))
+  }, [setBrandingConfig])
+
+  // 浏览器标签页跟随品牌：favicon 用 Logo 图片，标题用产品名
+  useEffect(() => {
+    const link = document.querySelector<HTMLLinkElement>('link[rel~="icon"]')
+    if (link) link.href = logoUrl
+    document.title = productName
+  }, [logoUrl, productName])
 
   return null
 }
@@ -733,6 +761,7 @@ function ScratchPadPersistence(): null {
     <React.StrictMode>
       <ThemeInitializer />
       <AuthInitializer />
+      <BrandingInitializer />
       <AgentSettingsInitializer />
       <NotificationsInitializer />
       <UiPreferencesInitializer />

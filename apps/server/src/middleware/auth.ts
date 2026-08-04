@@ -31,6 +31,8 @@ export const AUTH_EXEMPT_PATHS = [
   '/api/auth:register',
   '/api/auth:login',
   '/api/auth:refresh',
+  // 品牌配置（产品名称 + Logo）：所有用户与登录页都需要读取展示
+  '/api/branding:get',
 ]
 
 /**

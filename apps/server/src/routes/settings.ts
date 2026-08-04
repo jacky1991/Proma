@@ -16,13 +16,17 @@ import {
   getProxySettings,
   saveProxySettings,
 } from '@proma/server-core/proxy-settings-service'
+import {
+  getBrandingConfig,
+  updateBrandingConfig,
+} from '@proma/server-core/branding-service'
 import { detectSystemProxy } from '@proma/server-core/system-proxy-detector'
 import {
   getLatestRelease,
   listReleases,
   getReleaseByTag,
 } from '@proma/server-core/github-release-service'
-import type { ProxyConfig, GitHubReleaseListOptions } from '@proma/shared'
+import type { BrandingConfig, GitHubReleaseListOptions, ProxyConfig } from '@proma/shared'
 import { createLogger } from '@proma/server-core/logger'
 
 /** 模块日志器 */
@@ -132,6 +136,19 @@ settings.post('/proxy:update-settings', adminOnly, async (c) => {
 settings.post('/proxy:detect-system', adminOnly, async (c) => {
   const result = await detectSystemProxy()
   return c.json(result)
+})
+
+// ===== Branding =====
+// 品牌配置（产品名称 + Logo）为全局共享：读取对所有用户公开（侧边栏 / 登录页展示），
+// 写入仅管理员。get 路由已在 AUTH_EXEMPT_PATHS 免鉴权，供登录页 / 未登录态读取。
+
+/** POST /api/branding:get → BrandingConfig（所有用户可读，免鉴权） */
+settings.post('/branding:get', (c) => c.json(getBrandingConfig()))
+
+/** POST /api/branding:update → BrandingConfig（仅管理员；校验失败由全局 onError 返回 400 + 中文 message） */
+settings.post('/branding:update', adminOnly, async (c) => {
+  const updates = await c.req.json<Partial<BrandingConfig>>()
+  return c.json(updateBrandingConfig(updates))
 })
 
 // ===== GitHub Release =====
