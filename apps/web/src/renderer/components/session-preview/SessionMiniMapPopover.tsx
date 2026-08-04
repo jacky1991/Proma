@@ -229,13 +229,15 @@ function buildAgentMinimapItems(messages: SDKMessage[], userAvatar?: string): Ta
       const compactStatus = getSDKCompactStatus(system)
       const preview = compactStatus === 'success'
         ? '上下文已压缩'
-        : compactStatus === 'compacting'
-          ? '正在压缩上下文...'
-          : compactStatus === 'failed'
-            ? '上下文压缩失败'
-            : system.subtype === 'permission_denied'
-              ? '权限检查已拒绝操作'
-              : ''
+        : compactStatus === 'noop'
+          ? '当前上下文无需压缩'
+          : compactStatus === 'compacting'
+            ? '正在压缩上下文...'
+            : compactStatus === 'failed'
+              ? '上下文压缩失败'
+              : system.subtype === 'permission_denied'
+                ? '权限检查已拒绝操作'
+                : ''
       if (preview) {
         items.push({
           id: `${system.subtype ?? 'system'}-${items.length}`,
