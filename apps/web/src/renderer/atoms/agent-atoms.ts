@@ -140,7 +140,7 @@ export interface AgentStreamState {
   contextWindow?: number
   /** 当前上下文 token 是 Pi 手动压缩后的预估值 */
   contextUsageIsEstimated?: boolean
-  /** 当前或最近一次压缩状态，保留到实时消息清理完成后供底部进度区展示。 */
+  /** 当前或最近一次压缩状态，保留到实时消息清理或同一流恢复正常工作后供底部进度区展示。 */
   contextCompaction?: ContextCompactionState
   /** 当前 thinking block 的 token 估算值（SDK 实时估算，非计费值） */
   thinkingEstimatedTokens?: number
@@ -148,14 +148,28 @@ export interface AgentStreamState {
   isCompacting?: boolean
   /**
    * 压缩流程是否进行中（含收尾窗口）。
-   * 从用户点击压缩 / SDK compacting 事件开始 → 到整个 stream 结束（state 被删除）前一直为 true。
-   * 用于抑制压缩分隔符切换期间 AgentRunningIndicator 的短暂闪烁。
+   * 从用户点击压缩 / SDK compacting 事件开始；若同一流在压缩后恢复正常工作则立即清除，
+   * 否则保留到整个 stream 结束（state 被删除）。用于抑制压缩分隔符切换期间 AgentRunningIndicator 的短暂闪烁。
    */
   compactInFlight?: boolean
   /** 流式开始时间戳（用于思考计时持久化） */
   startedAt?: number
   /** 重试状态 */
   retrying?: AgentRetryState
+}
+
+/**
+ * 成功或无需压缩后，Pi 可能在同一个 stream 内自动续跑原任务。
+ * 一旦收到新的正常 Agent 活动，终态压缩提示不应继续抢占底部进度区。
+ */
+function clearFinishedCompactionForResumedWork(prev: AgentStreamState): AgentStreamState {
+  const status = prev.contextCompaction?.status
+  if (status !== 'success' && status !== 'noop') return prev
+  return {
+    ...prev,
+    compactInFlight: false,
+    contextCompaction: undefined,
+  }
 }
 
 /** 从 ToolActivity 派生状态 */
@@ -647,20 +661,25 @@ export function applyAgentEvent(
   event: AgentEvent,
 ): AgentStreamState {
   switch (event.type) {
-    case 'text_delta':
+    case 'text_delta': {
       // 开始接收文本 - 清除重试状态（重试成功）
-      return { ...prev, content: prev.content + event.text, retrying: undefined }
+      const resumed = clearFinishedCompactionForResumedWork(prev)
+      return { ...resumed, content: resumed.content + event.text, retrying: undefined }
+    }
 
-    case 'text_complete':
+    case 'text_complete': {
       // 用完整文本替换增量累积的文本（用于回放场景：只需 text_complete 即可重建文本状态）
-      return { ...prev, content: event.text }
+      const resumed = clearFinishedCompactionForResumedWork(prev)
+      return { ...resumed, content: event.text }
+    }
 
     case 'tool_start': {
-      const existing = prev.toolActivities.find((t) => t.toolUseId === event.toolUseId)
+      const resumed = clearFinishedCompactionForResumedWork(prev)
+      const existing = resumed.toolActivities.find((t) => t.toolUseId === event.toolUseId)
       if (existing) {
         return {
-          ...prev,
-          toolActivities: prev.toolActivities.map((t) =>
+          ...resumed,
+          toolActivities: resumed.toolActivities.map((t) =>
             t.toolUseId === event.toolUseId
               ? { ...t, input: event.input, intent: event.intent || t.intent, displayName: event.displayName || t.displayName }
               : t
@@ -670,8 +689,8 @@ export function applyAgentEvent(
         }
       }
       return {
-        ...prev,
-        toolActivities: [...prev.toolActivities, {
+        ...resumed,
+        toolActivities: [...resumed.toolActivities, {
           toolUseId: event.toolUseId,
           toolName: event.toolName,
           input: event.input,
@@ -685,76 +704,87 @@ export function applyAgentEvent(
       }
     }
 
-    case 'tool_result':
+    case 'tool_result': {
+      const resumed = clearFinishedCompactionForResumedWork(prev)
       return {
-        ...prev,
-        toolActivities: prev.toolActivities.map((t) =>
+        ...resumed,
+        toolActivities: resumed.toolActivities.map((t) =>
           t.toolUseId === event.toolUseId
             ? { ...t, result: event.result, isError: event.isError, done: true, imageAttachments: event.imageAttachments }
             : t
         ),
       }
+    }
 
-    case 'task_backgrounded':
+    case 'task_backgrounded': {
+      const resumed = clearFinishedCompactionForResumedWork(prev)
       return {
-        ...prev,
-        toolActivities: prev.toolActivities.map((t) =>
+        ...resumed,
+        toolActivities: resumed.toolActivities.map((t) =>
           t.toolUseId === event.toolUseId
             ? { ...t, isBackground: true, taskId: event.taskId, done: true }
             : t
         ),
       }
+    }
 
-    case 'task_progress':
+    case 'task_progress': {
+      const resumed = clearFinishedCompactionForResumedWork(prev)
       // 普通 tool 计时语义（仅当有真实 elapsedSeconds 时更新）
       if (event.elapsedSeconds != null) {
         return {
-          ...prev,
-          toolActivities: prev.toolActivities.map((t) =>
+          ...resumed,
+          toolActivities: resumed.toolActivities.map((t) =>
             t.toolUseId === event.toolUseId
               ? { ...t, elapsedSeconds: event.elapsedSeconds! }
               : t
           ),
         }
       }
-      return prev
+      return resumed
+    }
 
     case 'task_started': {
+      const resumed = clearFinishedCompactionForResumedWork(prev)
       // 查找匹配 toolUseId 的 ToolActivity，更新 intent 和 taskId
-      let nextActivities = prev.toolActivities
+      let nextActivities = resumed.toolActivities
       if (event.toolUseId) {
-        if (prev.toolActivities.some((t) => t.toolUseId === event.toolUseId)) {
-          nextActivities = prev.toolActivities.map((t) =>
+        if (resumed.toolActivities.some((t) => t.toolUseId === event.toolUseId)) {
+          nextActivities = resumed.toolActivities.map((t) =>
             t.toolUseId === event.toolUseId
               ? { ...t, intent: event.description, taskId: event.taskId }
               : t
           )
         }
       }
-      return { ...prev, toolActivities: nextActivities }
+      return { ...resumed, toolActivities: nextActivities }
     }
 
-    case 'shell_backgrounded':
+    case 'shell_backgrounded': {
+      const resumed = clearFinishedCompactionForResumedWork(prev)
       return {
-        ...prev,
-        toolActivities: prev.toolActivities.map((t) =>
+        ...resumed,
+        toolActivities: resumed.toolActivities.map((t) =>
           t.toolUseId === event.toolUseId
             ? { ...t, isBackground: true, shellId: event.shellId, done: true }
             : t
         ),
       }
+    }
 
     case 'shell_killed':
-      return prev
+      return clearFinishedCompactionForResumedWork(prev)
 
     case 'task_notification':
-      return prev
+      return clearFinishedCompactionForResumedWork(prev)
 
-    case 'thinking_tokens':
+    case 'thinking_tokens': {
+      const resumed = clearFinishedCompactionForResumedWork(prev)
       return {
-        ...prev,
+        ...resumed,
         thinkingEstimatedTokens: event.estimatedTokens,
       }
+    }
 
     case 'tool_use_summary':
       // 工具使用摘要 — 目前不影响流式状态，仅用于 UI 展示
@@ -806,9 +836,11 @@ export function applyAgentEvent(
       }
     }
 
-    case 'run_resumed':
+    case 'run_resumed': {
       // 后台任务完成自动唤醒：从"空闲可输入"恢复到运行态（防御性，监听器已显式处理）。
-      return { ...prev, running: true, backgroundWaiting: false }
+      const resumed = clearFinishedCompactionForResumedWork(prev)
+      return { ...resumed, running: true, backgroundWaiting: false }
+    }
 
     case 'typed_error':
       // 终态 IPC 仍可能在后端清理前到达；统一由 STREAM_COMPLETE 释放运行锁，
@@ -819,9 +851,10 @@ export function applyAgentEvent(
       // 同上：保留运行锁和 retry 状态，等待专用 retry 终态或 STREAM_COMPLETE 收束。
       return prev
 
-    case 'usage_update':
+    case 'usage_update': {
+      const resumed = clearFinishedCompactionForResumedWork(prev)
       return {
-        ...prev,
+        ...resumed,
         ...(event.usage.inputTokens != null && {
           inputTokens: event.usage.inputTokens,
           contextUsageIsEstimated: false,
@@ -835,9 +868,10 @@ export function applyAgentEvent(
         // 模型窗口在同一会话内不会缩小，取更大值可兼顾两类端点——既不会让推断偏小的
         // 端点（如 GLM 剥掉 [1m] 后缀）挡住真实的 1M，也不会让回报偏小的端点覆盖正确的 1M。
         ...(event.usage.contextWindow && {
-          contextWindow: Math.max(prev.contextWindow ?? 0, event.usage.contextWindow),
+          contextWindow: Math.max(resumed.contextWindow ?? 0, event.usage.contextWindow),
         }),
       }
+    }
 
     case 'compacting':
       return {
