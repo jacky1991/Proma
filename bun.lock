@@ -48,7 +48,7 @@
     },
     "apps/web": {
       "name": "@proma/web",
-      "version": "0.0.28",
+      "version": "0.0.36",
       "dependencies": {
         "@fontsource-variable/inter": "5.2.8",
         "@pierre/diffs": "^1.1.20",
@@ -101,6 +101,7 @@
         "@types/react": "^18.3.0",
         "@types/react-dom": "^18.3.0",
         "@vitejs/plugin-react": "^4.3.4",
+        "@xmldom/xmldom": "^0.8.11",
         "autoprefixer": "^10.4.20",
         "class-variance-authority": "0.7.1",
         "clsx": "^2.1.1",
@@ -144,7 +145,7 @@
     },
     "packages/server-core": {
       "name": "@proma/server-core",
-      "version": "0.3.25",
+      "version": "0.3.32",
       "dependencies": {
         "@proma/core": "workspace:*",
         "@proma/shared": "workspace:*",
@@ -171,7 +172,7 @@
     },
     "packages/session-core": {
       "name": "@proma/session-core",
-      "version": "0.1.1",
+      "version": "0.1.3",
       "dependencies": {
         "@proma/shared": "workspace:*",
       },
@@ -181,7 +182,7 @@
     },
     "packages/shared": {
       "name": "@proma/shared",
-      "version": "0.1.56",
+      "version": "0.1.60",
       "devDependencies": {
         "typescript": "^5.0.0",
       },

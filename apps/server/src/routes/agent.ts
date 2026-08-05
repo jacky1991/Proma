@@ -1032,9 +1032,7 @@ agent.post(`/${AGENT_IPC_CHANNELS.UPDATE_SESSION_OPENAI_REASONING}`, async (c) =
   }
   const meta = getAgentSessionMeta(sessionId, scope)
   if (!meta) return c.json({ error: `Agent 会话不存在: ${sessionId}` }, 404)
-  if (orchestrator.isActive(sessionId)) {
-    return c.json({ error: 'Agent 正在运行，完成后再切换思考深度' }, 409)
-  }
+  // 当前运行已在启动时读取推理深度；此处只更新会话的下一轮配置，允许运行中切换、本轮结束后生效。
   return c.json(updateAgentSessionMeta(sessionId, { openAIThinkingLevel: thinkingLevel }, scope))
 })
 

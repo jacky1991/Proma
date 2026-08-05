@@ -36,7 +36,7 @@ import {
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
 import { lowlight } from '@/lib/lowlight'
-import { htmlToMarkdown, markdownToHtml } from '@/lib/markdown-rich-text'
+import { copySelectionToClipboard, htmlToClipboardText, htmlToMarkdown, markdownToHtml } from '@/lib/markdown-rich-text'
 import {
   MathBlock,
   MathInline,
@@ -164,6 +164,13 @@ function ScratchPadEditor({ variant }: ScratchPadEditorProps): React.ReactElemen
   const editor = useEditor({
     extensions,
     content: content || '',
+    editorProps: {
+      handleDOMEvents: {
+        // 草稿保存为 Markdown 时段落以空行分隔；复制到系统剪贴板时只保留普通文本换行，
+        // 避免 Windows/外部编辑器再次将 Markdown 段落间隔渲染为额外空白。
+        copy: (_view, event) => copySelectionToClipboard(event, (html) => htmlToClipboardText(html)),
+      },
+    },
     onUpdate: ({ editor }) => {
       setContent(editor.getHTML())
     },
@@ -502,8 +509,8 @@ function ScratchPadEditor({ variant }: ScratchPadEditorProps): React.ReactElemen
 
   const isPane = variant === 'pane'
   const scrollClassName = isPane
-    ? 'flex-1 overflow-auto scrollbar-thin px-4 pt-4 pb-20'
-    : 'flex-1 overflow-auto scrollbar-thin px-8 pt-6 pb-20'
+    ? 'flex-1 overflow-auto scrollbar-thin px-4 pt-4'
+    : 'flex-1 overflow-auto scrollbar-thin px-8 pt-6'
   const contentClassName = isPane ? 'h-full max-w-none' : 'max-w-3xl mx-auto h-full'
 
   return (
@@ -547,7 +554,7 @@ function ScratchPadEditor({ variant }: ScratchPadEditorProps): React.ReactElemen
           {loaded ? (
             <EditorContent
               editor={editor}
-              className="scratch-pad-editor prose prose-sm dark:prose-invert max-w-none h-full [&_.ProseMirror]:min-h-full [&_.ProseMirror]:outline-none [&_.ProseMirror]:text-sm [&_.ProseMirror_p.is-editor-empty:first-child::before]:text-muted-foreground/50 [&_.ProseMirror_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] [&_.ProseMirror_p.is-editor-empty:first-child::before]:float-left [&_.ProseMirror_p.is-editor-empty:first-child::before]:pointer-events-none [&_.ProseMirror_p.is-editor-empty:first-child::before]:h-0"
+              className="scratch-pad-editor prose prose-sm dark:prose-invert max-w-none h-full [&_.ProseMirror]:min-h-full [&_.ProseMirror]:pb-[33vh] [&_.ProseMirror]:outline-none [&_.ProseMirror]:text-sm [&_.ProseMirror_p.is-editor-empty:first-child::before]:text-muted-foreground/50 [&_.ProseMirror_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] [&_.ProseMirror_p.is-editor-empty:first-child::before]:float-left [&_.ProseMirror_p.is-editor-empty:first-child::before]:pointer-events-none [&_.ProseMirror_p.is-editor-empty:first-child::before]:h-0"
             />
           ) : (
             <div className="min-h-[200px] flex items-center justify-center">

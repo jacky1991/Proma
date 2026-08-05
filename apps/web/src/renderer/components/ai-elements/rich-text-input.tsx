@@ -26,7 +26,7 @@ import { ChevronsDownUp, ChevronsUpDown } from 'lucide-react'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { lowlight } from '@/lib/lowlight'
-import { htmlToMarkdown } from '@/lib/markdown-rich-text'
+import { copySelectionToClipboard, htmlToClipboardText, htmlToMarkdown } from '@/lib/markdown-rich-text'
 import { richTextRenderingEnabledAtom } from '@/atoms/ui-preferences'
 import { createFileMentionSuggestion } from '@/components/file-browser/file-mention-suggestion'
 import { getFilePanelDragData, type FilePanelDragItem } from '@/lib/file-panel-drag'
@@ -405,20 +405,9 @@ export const RichTextInput = forwardRef<RichTextInputHandle, RichTextInputProps>
           isComposingRef.current = false
           return false
         },
-        copy: (_view, event) => {
-          // 复制时只写纯文本，避免粘贴到外部应用时出现多余空行
-          const selection = window.getSelection()
-          if (!selection || selection.isCollapsed || !event.clipboardData) return false
-          const range = selection.getRangeAt(0)
-          const fragment = range.cloneContents()
-          const tempDiv = document.createElement('div')
-          tempDiv.appendChild(fragment)
-          const text = htmlToMarkdown(tempDiv.innerHTML, { skipMarkdownEscape: !richTextEnabledRef.current }) || selection.toString()
-          event.preventDefault()
-          event.clipboardData.setData('text/plain', text)
-          event.clipboardData.setData('text/html', '')
-          return true
-        },
+        copy: (_view, event) =>
+          // 复制时只写纯文本（段落单换行），避免粘贴到外部应用时出现多余空行
+          copySelectionToClipboard(event, (html) => htmlToClipboardText(html, { skipMarkdownEscape: !richTextEnabledRef.current })),
       },
       handlePaste: (view, event) => {
         // 拦截粘贴的文件（图片等）

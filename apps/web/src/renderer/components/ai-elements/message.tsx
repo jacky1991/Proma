@@ -407,9 +407,9 @@ interface MessageResponseProps {
  *  数学插件（remarkMath / rehypeKatex）已移至懒加载的 MathMarkdown，仅含数学的消息走该分支。 */
 const REMARK_PLUGINS = [remarkGfm]
 
-/** 允许 mention:// 协议通过 URL 清洗（react-markdown 默认只放行 http/https） */
-function mentionUrlTransform(url: string): string {
-  if (url.startsWith('mention://')) return url
+/** 允许 mention:// 和本地绝对路径通过 URL 清洗（react-markdown 默认只放行 http/https） */
+export function mentionUrlTransform(url: string): string {
+  if (url.startsWith('mention://') || isAbsoluteFilePath(safeDecode(url))) return url
   return defaultUrlTransform(url)
 }
 
@@ -429,6 +429,12 @@ const MarkdownLink = React.memo(function MarkdownLink({
     const mentionMatch = MENTION_URL_RE.exec(href)
     if (mentionMatch) {
       return <MentionChip type={mentionMatch[1] as MentionType} value={mentionMatch[2] ?? ''} />
+    }
+
+    // 本地绝对路径 → 渲染为 FilePathChip（Agent 回复中常带 `file:line` 形式的引用）
+    const filePath = safeDecode(href)
+    if (isAbsoluteFilePath(filePath)) {
+      return <FilePathChip filePath={filePath} />
     }
   }
 

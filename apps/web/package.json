@@ -1,6 +1,6 @@
 {
   "name": "@proma/web",
-  "version": "0.0.36",
+  "version": "0.0.37",
   "description": "Proma Web 端 —— 复用 electron renderer 源码（零改动），注入 electronAPI shim 接入服务端",
   "private": true,
   "type": "module",
@@ -61,6 +61,7 @@
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.4",
+    "@xmldom/xmldom": "^0.8.11",
     "autoprefixer": "^10.4.20",
     "class-variance-authority": "0.7.1",
     "clsx": "^2.1.1",

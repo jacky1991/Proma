@@ -1538,11 +1538,17 @@ export class AgentOrchestrator {
         capturedSdkSessionId = sdkSessionId
         if (isNewSessionId || needsPiSessionFile) {
           try {
-            updateAgentSessionMeta(sessionId, {
-              sdkSessionId,
-              ...(agentRuntime === 'pi' && piSessionFile ? { piSessionFile } : {}),
-            }, scope)
-            console.log(`[Agent 编排] 已保存 SDK session_id: ${sdkSessionId}`)
+            // 用户可在本轮运行中改选下一轮内核；不能让旧 runtime 回填不兼容的 session artifact。
+            const latestSessionMeta = getAgentSessionMeta(sessionId, scope)
+            if (latestSessionMeta?.agentRuntime !== agentRuntime) {
+              console.log(`[Agent 编排] 忽略已切换 runtime 的 session artifact: ${sdkSessionId}`)
+            } else {
+              updateAgentSessionMeta(sessionId, {
+                sdkSessionId,
+                ...(agentRuntime === 'pi' && piSessionFile ? { piSessionFile } : {}),
+              }, scope)
+              console.log(`[Agent 编排] 已保存 SDK session_id: ${sdkSessionId}`)
+            }
           } catch (err) {
             console.error(`[Agent 编排] 保存 SDK session_id 失败:`, err)
           }
@@ -1620,8 +1626,10 @@ export class AgentOrchestrator {
         onSessionId: handleSessionId,
         onPiEntryBindings: (bindings: Record<string, string>) => {
           const latest = getAgentSessionMeta(sessionId, scope)
+          // 运行中切到其他内核后，保留旧 turn 展示但不再写入 Pi 专用恢复 artifact。
+          if (latest?.agentRuntime !== agentRuntime) return
           updateAgentSessionMeta(sessionId, {
-            piEntryBindings: { ...(latest?.piEntryBindings ?? {}), ...bindings },
+            piEntryBindings: { ...(latest.piEntryBindings ?? {}), ...bindings },
           }, scope)
         },
         onModelResolved: handleModelResolved,
