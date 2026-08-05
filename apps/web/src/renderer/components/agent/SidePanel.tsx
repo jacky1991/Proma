@@ -39,17 +39,10 @@ import { useOpenPreview } from '@/components/diff/preview-opener'
 import { detectIsWindows } from '@/lib/platform'
 import { isWebRuntime } from '@/lib/web-runtime'
 import type { FileEntry, AgentPendingFile } from '@proma/shared'
+import { setFilePanelDragData, getMediaTypeFromFilename, dispatchInsertFileMention } from '@/lib/file-panel-drag'
 
 function getPathBasename(filePath: string): string {
   return filePath.split(/[\\/]/).filter(Boolean).pop() || filePath
-}
-
-function getMediaTypeFromFilename(filename: string): string {
-  const ext = filename.split('.').pop()?.toLowerCase() ?? ''
-  const imageExts = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico'])
-  if (!imageExts.has(ext)) return 'application/octet-stream'
-  const mimeExt = ext === 'jpg' ? 'jpeg' : ext === 'svg' ? 'svg+xml' : ext
-  return `image/${mimeExt}`
 }
 
 interface SidePanelProps {
@@ -475,6 +468,10 @@ export function SidePanel({ sessionId, sessionPath, activeTab, onTabChange, widt
                     onFilePreview={handleFilePreview}
                   />
                   <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin">
+                    {/* 拖拽引用提示：引用块样式，左侧竖线 + 缩进，与下方文件列表内容左对齐 */}
+                    <div className="mb-1.5 ml-4 border-l-2 border-primary/40 pl-2 text-[11px] leading-4 text-foreground/75">
+                      支持拖拽文件或文件夹到输入框，实现引用
+                    </div>
                     {attachedFiles.length > 0 && (
                       <AttachedFilesSection
                         attachedFiles={attachedFiles}
@@ -561,6 +558,10 @@ export function SidePanel({ sessionId, sessionPath, activeTab, onTabChange, widt
                   onFilePreview={handleFilePreview}
                 />
                 <div className="flex-1 min-h-0 overflow-y-auto pb-1 scrollbar-thin">
+                  {/* 拖拽引用提示：引用块样式，左侧竖线 + 缩进，与下方文件列表内容左对齐 */}
+                  <div className="mb-1.5 ml-4 border-l-2 border-primary/40 pl-2 text-[11px] leading-4 text-foreground/75">
+                    支持拖拽文件或文件夹到输入框，实现引用
+                  </div>
                   {wsAttachedFiles.length > 0 && (
                     <AttachedFilesSection
                       attachedFiles={wsAttachedFiles}
@@ -630,12 +631,23 @@ function AttachedFilesSection({ attachedFiles, onDetach, onAddToChat, onFilePrev
             key={filePath}
             className="flex items-center gap-1 py-1 pl-2 pr-2 text-sm cursor-pointer hover:bg-accent/50 group mx-2 rounded-lg"
             onClick={() => onFilePreview?.(filePath)}
+            draggable
+            onDragStart={(e) => {
+              e.stopPropagation()
+              setFilePanelDragData(e.dataTransfer, [{
+                path: filePath,
+                name,
+                isDirectory: false,
+                scope: 'project',
+              }])
+            }}
           >
             <span className="w-3.5 flex-shrink-0" />
             <FileTypeIcon name={name} isDirectory={false} />
             <span className="text-xs truncate flex-1" title={filePath}>{name}</span>
             <div
               className="flex-shrink-0 mr-1"
+              draggable={false}
               onClick={(e) => e.stopPropagation()}
               onMouseDown={(e) => e.stopPropagation()}
             >
@@ -651,6 +663,18 @@ function AttachedFilesSection({ attachedFiles, onDetach, onAddToChat, onFilePrev
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="w-40 z-[9999] min-w-0 p-0.5">
+                  <DropdownMenuItem
+                    className="text-xs py-1 [&>svg]:size-3.5"
+                    onSelect={() => dispatchInsertFileMention([{
+                      path: filePath,
+                      name,
+                      isDirectory: false,
+                      scope: 'project',
+                    }])}
+                  >
+                    <MessageSquarePlus />
+                    引用到 Agent
+                  </DropdownMenuItem>
                   {onAddToChat && (
                     <DropdownMenuItem
                       className="text-xs py-1 [&>svg]:size-3.5"
@@ -805,7 +829,7 @@ function AttachedDirTree({ dirPath, onDetach, selectedPaths, onSelect, refreshVe
   const [children, setChildren] = React.useState<FileEntry[]>([])
   const [loaded, setLoaded] = React.useState(false)
 
-  const dirName = dirPath.split('/').filter(Boolean).pop() || dirPath
+  const dirName = dirPath.split(/[\\/]/).filter(Boolean).pop() || dirPath
 
   // 计算从 dirPath 到 revealTarget 之间的祖先目录集合（用于子项决定是否自动展开）
   const revealAncestors = React.useMemo(
@@ -872,6 +896,16 @@ function AttachedDirTree({ dirPath, onDetach, selectedPaths, onSelect, refreshVe
         )}
         style={{ paddingLeft }}
         onClick={toggleExpand}
+        draggable
+        onDragStart={(e) => {
+          e.stopPropagation()
+          setFilePanelDragData(e.dataTransfer, [{
+            path: dirPath,
+            name: dirName,
+            isDirectory: true,
+            scope: 'project',
+          }])
+        }}
       >
         <span
           aria-hidden="true"
@@ -1104,6 +1138,16 @@ function AttachedDirItem({ entry, depth, selectedPaths, onSelect, refreshVersion
           zIndex: isSticky ? stickyZIndex : undefined,
         }}
         onClick={handleClick}
+        draggable={!isRenaming}
+        onDragStart={(e) => {
+          e.stopPropagation()
+          setFilePanelDragData(e.dataTransfer, [{
+            path: currentPath,
+            name: currentName,
+            isDirectory: entry.isDirectory,
+            scope: 'project',
+          }])
+        }}
       >
         <span
           aria-hidden="true"
@@ -1154,6 +1198,7 @@ function AttachedDirItem({ entry, depth, selectedPaths, onSelect, refreshVersion
         {/* 右侧操作按钮占位 */}
         <div
           className="relative z-10 flex-shrink-0 mr-1"
+          draggable={false}
           onClick={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
         >
@@ -1177,6 +1222,18 @@ function AttachedDirItem({ entry, depth, selectedPaths, onSelect, refreshVersion
               </button>
             </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-40 z-[9999] min-w-0 p-0.5">
+                <DropdownMenuItem
+                  className="text-xs py-1 [&>svg]:size-3.5"
+                  onSelect={() => dispatchInsertFileMention([{
+                    path: currentPath,
+                    name: currentName,
+                    isDirectory: entry.isDirectory,
+                    scope: 'project',
+                  }])}
+                >
+                  <MessageSquarePlus />
+                  引用到 Agent
+                </DropdownMenuItem>
                 {onAddToChat && !entry.isDirectory && (
                   <DropdownMenuItem
                     className="text-xs py-1 [&>svg]:size-3.5"
