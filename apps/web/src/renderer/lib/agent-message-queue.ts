@@ -117,6 +117,15 @@ export function queuedTextToParagraphHtml(text: string): string {
 
 const REF_PATTERN = /\/skill:(?<skill>\S+)|#mcp:(?<mcp>\S+)|&session:(?<session>\S+)/g
 
+/** 解码 @file 路径的百分号编码（含空格等），失败时原样返回 */
+function decodeReferenceLabel(value: string): string {
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return value
+  }
+}
+
 export function parseQueuedMessageMentions(text: string): ParsedQueuedMessageMentions {
   const mentionedSkills: string[] = []
   const mentionedMcpServers: string[] = []
@@ -130,7 +139,17 @@ export function parseQueuedMessageMentions(text: string): ParsedQueuedMessageMen
   }
 
   return {
-    cleanedText: text.replace(REF_PATTERN, '').trim(),
+    cleanedText: text
+      .replace(REF_PATTERN, '')
+      // @file: 路径在 htmlToMarkdown 序列化时已 encodeURIComponent（路径可能含空格），
+      // 这里还原为真实路径，保证 Agent 侧读取的是可访问的完整路径；
+      // 仅当含百分号编码时解码，避免破坏旧的未编码路径。
+      .replace(/@file:([^\s]+)/g, (full, encodedPath: string) =>
+        /%[0-9A-Fa-f]{2}/.test(encodedPath)
+          ? `@file:${decodeReferenceLabel(encodedPath)}`
+          : full
+      )
+      .trim(),
     mentionedSkills,
     mentionedMcpServers,
     mentionedSessionIds,
