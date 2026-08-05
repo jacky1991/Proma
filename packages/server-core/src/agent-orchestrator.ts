@@ -34,6 +34,7 @@ import {
 import type { PromaPermissionMode, AskUserRequest, ExitPlanModeRequest, SDKSystemMessage } from '@proma/shared'
 import { isPromptTooLongError, isThinkingSignatureError, friendlyErrorMessage, mapSDKErrorToTypedError, extractErrorDetails, shouldKeepChannelOpen } from './sdk-error-utils'
 import type { PiAgentQueryOptions } from './adapters/pi-agent-adapter'
+import { getPiAssistantErrorDetails, hasPiAssistantTextContent, stripPiAssistantError } from './adapters/pi-message-adapter'
 import { isTransientNetworkError, isMalformedResponseError, isSessionNotFoundError } from './error-patterns'
 import { AgentEventBus } from './agent-event-bus'
 import { decryptApiKey, getChannelById, listChannels, persistCodexOAuthCredentials, resolveChannelRuntimeApiKey, resolveCodexOAuthCredentials } from './channel-manager'
@@ -1852,7 +1853,11 @@ export class AgentOrchestrator {
             if (msg.type === 'assistant' && !isPartialMessage) {
               const assistantMsg = msg as SDKAssistantMessage
               if (assistantMsg.error) {
-                const { detailedMessage, originalError } = extractErrorDetails(assistantMsg as unknown as Parameters<typeof extractErrorDetails>[0])
+                // Pi 的 terminal error 与已生成正文是独立字段；Claude 的 content-first 提取器会把
+                // 已生成正文误当 error detail，导致错误分类（prompt_too_long / 可重试）偏移。
+                const { detailedMessage, originalError } = agentRuntime === 'pi'
+                  ? getPiAssistantErrorDetails(assistantMsg)
+                  : extractErrorDetails(assistantMsg as unknown as Parameters<typeof extractErrorDetails>[0])
                 let errorCode = assistantMsg.error.errorType || 'unknown_error'
                 if (isPromptTooLongError(detailedMessage, originalError)) {
                   errorCode = 'prompt_too_long'
@@ -1945,6 +1950,16 @@ export class AgentOrchestrator {
                 }
 
                 // 不可重试 → 终止
+                // Pi 可能在流失败前已生成正文：先剥离 error 作为正常 assistant 输出保留，再持久化。
+                // 错误本身仍由下方 errorSDKMsg 单独展示，避免正文随 terminal error 整条丢弃。
+                if (agentRuntime === 'pi' && hasPiAssistantTextContent(assistantMsg)) {
+                  const partialOutput = stripPiAssistantError(assistantMsg)
+                  if (modelId) partialOutput._channelModelId = modelId
+                  partialOutput._channelProvider = channel.provider
+                  accumulatedMessages.push(partialOutput)
+                  // 复用 Pi 的 assistant UUID：用无错的正文替换前端最后那帧带 error 的 partial。
+                  this.emitEvent(sessionId, { kind: 'sdk_message', message: partialOutput })
+                }
                 this.persistSDKMessages(sessionId, accumulatedMessages, Date.now() - queryStartedAt, scope)
                 if (typedError.code === 'prompt_too_long') {
                   try { updateAgentSessionMeta(sessionId, { sdkSessionId: undefined }, scope) } catch { /* 忽略 */ }

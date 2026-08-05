@@ -8,7 +8,7 @@
 import { randomUUID } from 'node:crypto'
 import type { AgentMessage } from '@earendil-works/pi-agent-core'
 import type { AssistantMessage, ToolResultMessage, UserMessage } from '@earendil-works/pi-ai/compat'
-import type { SDKMessage } from '@proma/shared'
+import type { SDKAssistantMessage, SDKMessage } from '@proma/shared'
 import type { RuntimeGuardResultOverride } from '../agent-runtime-guards'
 
 function getPiEditItems(input: Record<string, unknown>): Array<Record<string, unknown>> {
@@ -154,6 +154,27 @@ function contentToText(content: unknown): string {
 
 export function isAssistantPiMessage(message: AgentMessage): message is AssistantMessage {
   return !!message && typeof message === 'object' && 'role' in message && message.role === 'assistant'
+}
+
+/** Pi 的 terminal error 与已生成的 assistant 正文是相互独立的字段。 */
+export function getPiAssistantErrorDetails(message: SDKAssistantMessage): {
+  detailedMessage: string
+  originalError: string
+} {
+  const errorMessage = message.error?.message?.trim() || '未知错误'
+  return { detailedMessage: errorMessage, originalError: errorMessage }
+}
+
+/** Pi 可能在流失败前已生成正文：判定是否存在可保留的文本内容。 */
+export function hasPiAssistantTextContent(message: SDKAssistantMessage): boolean {
+  return contentToText(message.message.content).trim().length > 0
+}
+
+/** 复制 Pi 的已生成正文，剥离 terminal 传输/服务错误，作为正常 assistant 输出保留。 */
+export function stripPiAssistantError(message: SDKAssistantMessage): SDKAssistantMessage {
+  const contentMessage = { ...message }
+  delete contentMessage.error
+  return contentMessage
 }
 
 export function isAbortedAssistantMessage(message: AgentMessage): message is AssistantMessage {
