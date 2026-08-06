@@ -36,6 +36,7 @@ export interface AppSettings {
   notificationsEnabled?: boolean
   longTextPasteAsAttachmentEnabled?: boolean
   richTextRenderingEnabled?: boolean
+  sessionHoverPreviewEnabled?: boolean
   feishuSessionMirror?: { mode: string }
   [key: string]: unknown
 }
@@ -57,6 +58,7 @@ export function getSettings(scope?: UserScope): AppSettings {
       notificationsEnabled: true,
       longTextPasteAsAttachmentEnabled: false,
       richTextRenderingEnabled: false,
+      sessionHoverPreviewEnabled: false,
       feishuSessionMirror: { mode: 'off' },
       builtinMcpDisabledIds: [],
       agentRuntime: DEFAULT_AGENT_RUNTIME,
@@ -78,6 +80,7 @@ export function getSettings(scope?: UserScope): AppSettings {
       notificationsEnabled: data.notificationsEnabled ?? true,
       longTextPasteAsAttachmentEnabled: data.longTextPasteAsAttachmentEnabled ?? false,
       richTextRenderingEnabled: data.richTextRenderingEnabled ?? false,
+      sessionHoverPreviewEnabled: data.sessionHoverPreviewEnabled ?? false,
       feishuSessionMirror: data.feishuSessionMirror ?? { mode: 'off' },
       builtinMcpDisabledIds: settings.builtinMcpDisabledIds ?? [],
       agentRuntime: settings.agentRuntime ?? DEFAULT_AGENT_RUNTIME,
@@ -93,6 +96,7 @@ export function getSettings(scope?: UserScope): AppSettings {
       notificationsEnabled: true,
       longTextPasteAsAttachmentEnabled: false,
       richTextRenderingEnabled: false,
+      sessionHoverPreviewEnabled: false,
       feishuSessionMirror: { mode: 'off' },
       builtinMcpDisabledIds: [],
       agentRuntime: DEFAULT_AGENT_RUNTIME,

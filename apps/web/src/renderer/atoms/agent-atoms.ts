@@ -415,9 +415,9 @@ export const currentSessionSidePanelOpenAtom = atom<boolean>((get) => {
 export const agentSessionPathMapAtom = atom<Map<string, string>>(new Map())
 
 /**
- * 文件浏览器自动定位信号：当 Agent 调用写入类工具（Write/Edit/MultiEdit/NotebookEdit）时，
- * 设置该 atom；FileBrowser 实例订阅后，若路径落在自身 rootPath 下则展开祖先 + 滚动 + 高亮。
- * `ts` 用于触发同路径的二次脉冲（atom 比对引用）。
+ * 文件浏览器自动定位信号：当用户通过文件搜索点击结果时设置该 atom；
+ * FileBrowser 实例订阅后，若路径落在自身 rootPath 下则展开祖先 + 滚动定位。
+ * `ts` 用于触发同路径的二次定位（atom 比对引用）。
  */
 export interface FileBrowserAutoReveal {
   sessionId: string
@@ -431,7 +431,7 @@ export const fileBrowserAutoRevealAtom = atom<FileBrowserAutoReveal | null>(null
 /**
  * 最近被 Agent 修改的文件路径（per-session，path → 修改时间戳 ms）。
  * FileBrowser 据此在文件行左侧渲染竖条标记，60s 后自动消失，
- * 用于让用户在错过 0.8s 脉冲后仍能看到「最近修改」状态。
+ * 用于持续提示哪些文件是 Agent 刚修改的。
  */
 export const recentlyModifiedPathsAtom = atom<Map<string, Map<string, number>>>(new Map())
 

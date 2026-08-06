@@ -40,9 +40,11 @@ import {
 import {
   longTextPasteAsAttachmentEnabledAtom,
   richTextRenderingEnabledAtom,
+  sessionHoverPreviewEnabledAtom,
   stickyUserMessageEnabledAtom,
   updateLongTextPasteAsAttachmentEnabled,
   updateRichTextRenderingEnabled,
+  updateSessionHoverPreviewEnabled,
   updateStickyUserMessageEnabled,
 } from '@/atoms/ui-preferences'
 import { cn } from '@/lib/utils'
@@ -67,6 +69,7 @@ export function GeneralSettings(): React.ReactElement {
   const [stickyUserMessageEnabled, setStickyUserMessageEnabled] = useAtom(stickyUserMessageEnabledAtom)
   const [longTextPasteAsAttachmentEnabled, setLongTextPasteAsAttachmentEnabled] = useAtom(longTextPasteAsAttachmentEnabledAtom)
   const [richTextRenderingEnabled, setRichTextRenderingEnabled] = useAtom(richTextRenderingEnabledAtom)
+  const [sessionHoverPreviewEnabled, setSessionHoverPreviewEnabled] = useAtom(sessionHoverPreviewEnabledAtom)
   const [isEditingName, setIsEditingName] = React.useState(false)
   const [nameInput, setNameInput] = React.useState(userProfile.userName)
   const [showEmojiPicker, setShowEmojiPicker] = React.useState(false)
@@ -341,6 +344,15 @@ export function GeneralSettings(): React.ReactElement {
             onCheckedChange={(checked) => {
               setRichTextRenderingEnabled(checked)
               updateRichTextRenderingEnabled(checked)
+            }}
+          />
+          <SettingsToggle
+            label="会话悬浮预览"
+            description="鼠标悬停在左侧会话列表项上时，弹出会话内容迷你地图预览"
+            checked={sessionHoverPreviewEnabled}
+            onCheckedChange={(checked) => {
+              setSessionHoverPreviewEnabled(checked)
+              updateSessionHoverPreviewEnabled(checked)
             }}
           />
         </SettingsCard>

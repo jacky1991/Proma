@@ -79,6 +79,7 @@ import { searchDialogOpenAtom } from '@/atoms/search-atoms'
 import { draftSessionIdsAtom } from '@/atoms/draft-session-atoms'
 import { promptConfigAtom, selectedPromptIdAtom, conversationPromptIdAtom } from '@/atoms/system-prompt-atoms'
 import { interfaceVariantAtom } from '@/atoms/theme'
+import { sessionHoverPreviewEnabledAtom } from '@/atoms/ui-preferences'
 import { useOpenSession } from '@/hooks/useOpenSession'
 import { useSyncActiveTabSideEffects } from '@/hooks/useSyncActiveTabSideEffects'
 import { CollapsedWorkspacePopover } from '@/components/agent/CollapsedWorkspacePopover'
@@ -527,11 +528,13 @@ interface RailRecentItem {
 function RailRecentButton({
   item,
   onSelect,
+  miniMapDisabled,
 }: {
   item: RailRecentItem
   onSelect: (item: RailRecentItem) => void
+  miniMapDisabled?: boolean
 }): React.ReactElement {
-  const preview = useSessionMiniMapHover()
+  const preview = useSessionMiniMapHover(600, miniMapDisabled)
 
   return (
     <>
@@ -666,6 +669,7 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
   const setSelectedPromptId = useSetAtom(selectedPromptIdAtom)
   const interfaceVariant = useAtomValue(interfaceVariantAtom)
   const isClassic = interfaceVariant === 'classic'
+  const sessionHoverPreviewEnabled = useAtomValue(sessionHoverPreviewEnabledAtom)
 
   // Agent 模式状态
   const [agentSessions, setAgentSessions] = useAtom(agentSessionsAtom)
@@ -2431,6 +2435,7 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
               <RailRecentButton
                 key={`${item.type}-${item.id}`}
                 item={item}
+                miniMapDisabled={!sessionHoverPreviewEnabled}
                 onSelect={(selected) => {
                   if (selected.type === 'agent') {
                     handleSelectAgentSession(selected.id, selected.title)
@@ -2645,6 +2650,7 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
                             active={treeActive}
                             indicatorStatus={rowStatus}
                             showPinIcon={false}
+                            disableMiniMap={!sessionHoverPreviewEnabled}
                             delegationSummary={childCount > 0
                               ? {
                                 total: childCount,
@@ -2843,6 +2849,7 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
                             active={treeActive}
                             indicatorStatus={rowStatus}
                             showPinIcon={!!item.session.pinned}
+                            disableMiniMap={!sessionHoverPreviewEnabled}
                             delegationSummary={childCount > 0
                               ? {
                                 total: childCount,
@@ -3219,8 +3226,9 @@ const ConversationItem = React.memo(function ConversationItem({
   const [menuOpen, setMenuOpen] = React.useState(false)
   const inputRef = React.useRef<HTMLInputElement>(null)
   const justStartedEditing = React.useRef(false)
-  // 菜单打开时关闭迷你地图预览，避免预览面板盖住菜单项导致点不动
-  const preview = useSessionMiniMapHover(600, menuOpen)
+  // 设置关闭或菜单打开时禁用迷你地图预览（菜单打开时预览面板会盖住菜单项导致点不动）
+  const sessionHoverPreviewEnabled = useAtomValue(sessionHoverPreviewEnabledAtom)
+  const preview = useSessionMiniMapHover(600, !sessionHoverPreviewEnabled || menuOpen)
   const interfaceVariant = useAtomValue(interfaceVariantAtom)
   const isClassic = interfaceVariant === 'classic'
 
@@ -3367,18 +3375,20 @@ const ConversationItem = React.memo(function ConversationItem({
       <ContextMenuContent className="w-40 z-[9999] min-w-0 p-0.5">
         {menuItems(ContextMenuItem, ContextMenuSeparator)}
       </ContextMenuContent>
-      <SessionMiniMapPopover
-        target={{
-          type: 'chat',
-          sessionId: conversation.id,
-          title: conversation.title,
-        }}
-        anchorRef={preview.anchorRef}
-        open={preview.isOpen}
-        isLeaving={preview.isLeaving}
-        onMouseEnter={preview.handlePanelMouseEnter}
-        onMouseLeave={preview.handlePanelMouseLeave}
-      />
+      {sessionHoverPreviewEnabled && (
+        <SessionMiniMapPopover
+          target={{
+            type: 'chat',
+            sessionId: conversation.id,
+            title: conversation.title,
+          }}
+          anchorRef={preview.anchorRef}
+          open={preview.isOpen}
+          isLeaving={preview.isLeaving}
+          onMouseEnter={preview.handlePanelMouseEnter}
+          onMouseLeave={preview.handlePanelMouseLeave}
+        />
+      )}
     </ContextMenu>
   )
 })
@@ -3731,12 +3741,14 @@ const DelegatedChildSessionItem = React.memo(function DelegatedChildSessionItem(
   onToggleArchive,
 }: DelegatedChildSessionItemProps): React.ReactElement {
   const status = getDelegatedChildStatus(session, agentIndicatorMap)
+  const sessionHoverPreviewEnabled = useAtomValue(sessionHoverPreviewEnabledAtom)
 
   return (
     <AgentSessionItem
       session={session}
       active={session.id === activeSessionId}
       indicatorStatus={status}
+      disableMiniMap={!sessionHoverPreviewEnabled}
       relativeTimeNow={relativeTimeNow}
       workspaceName={workspaceName}
       onSelect={onSelect}
@@ -3828,6 +3840,7 @@ const AgentProjectGroupItem = React.memo(function AgentProjectGroupItem({
   onToggleDelegationParent,
 }: AgentProjectGroupItemProps): React.ReactElement {
   const isCurrent = group.workspace.id === currentWorkspaceId
+  const sessionHoverPreviewEnabled = useAtomValue(sessionHoverPreviewEnabledAtom)
 
   const [renamingWorkspace, setRenamingWorkspace] = React.useState(false)
   const [workspaceEditName, setWorkspaceEditName] = React.useState('')
@@ -4088,6 +4101,7 @@ const AgentProjectGroupItem = React.memo(function AgentProjectGroupItem({
                       active={treeActive}
                       indicatorStatus={rowStatus}
                       showPinIcon={!!item.session.pinned}
+                      disableMiniMap={!sessionHoverPreviewEnabled}
                       delegationSummary={childCount > 0
                         ? {
                           total: childCount,
