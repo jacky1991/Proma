@@ -153,8 +153,8 @@ function migrateLegacyOpenAIThinkingDefault(index: AgentSessionsIndex): boolean 
   if (index.openAIThinkingDefaultEnabledMigrationCompleted) return false
 
   for (const session of index.sessions) {
-    if (session.openAIThinkingLevel === 'off') {
-      session.openAIThinkingLevel = 'high'
+    if (session.reasoningLevel === 'off' || session.openAIThinkingLevel === 'off') {
+      session.reasoningLevel = 'high'
     }
   }
   index.openAIThinkingDefaultEnabledMigrationCompleted = true
@@ -245,7 +245,7 @@ export function createAgentSession(
     workspaceId,
     agentRuntime,
     // OpenAI 推理配置从创建起归属于会话；默认启用高思考深度。
-    openAIThinkingLevel: 'high',
+    reasoningLevel: 'high',
     createdAt: now,
     updatedAt: now,
   }
@@ -450,7 +450,7 @@ export function getAgentSessionSDKMessages(id: string, scope?: UserScope): SDKMe
  */
 export function updateAgentSessionMeta(
   id: string,
-  updates: Partial<Pick<AgentSessionMeta, 'title' | 'channelId' | 'modelId' | 'sdkSessionId' | 'piSessionFile' | 'piEntryBindings' | 'agentRuntime' | 'codexFastMode' | 'openAIThinkingLevel' | 'workspaceId' | 'pinned' | 'archived' | 'attachedDirectories' | 'attachedFiles' | 'forkSourceDir' | 'forkSourceSdkSessionId' | 'resumeAtMessageUuid' | 'stoppedByUser' | 'permissionMode' | 'completedButUnconfirmed' | 'sourceAutomationId' | 'automationGraduated' | 'parentSessionId' | 'rootSessionId' | 'sourceDelegationId' | 'delegationRole' | 'delegationStatus' | 'delegationDepth' | 'delegationGoal'>>,
+  updates: Partial<Pick<AgentSessionMeta, 'title' | 'channelId' | 'modelId' | 'sdkSessionId' | 'piSessionFile' | 'piEntryBindings' | 'agentRuntime' | 'codexFastMode' | 'reasoningLevel' | 'openAIThinkingLevel' | 'workspaceId' | 'pinned' | 'archived' | 'attachedDirectories' | 'attachedFiles' | 'forkSourceDir' | 'forkSourceSdkSessionId' | 'resumeAtMessageUuid' | 'stoppedByUser' | 'permissionMode' | 'completedButUnconfirmed' | 'sourceAutomationId' | 'automationGraduated' | 'parentSessionId' | 'rootSessionId' | 'sourceDelegationId' | 'delegationRole' | 'delegationStatus' | 'delegationDepth' | 'delegationGoal'>>,
   scope?: UserScope,
 ): AgentSessionMeta {
   const index = readIndex(scope)

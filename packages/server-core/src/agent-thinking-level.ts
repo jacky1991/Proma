@@ -1,4 +1,13 @@
-import type { AgentSessionMeta, AgentThinkingLevel, ProviderType, AgentEffort } from '@proma/shared'
+import {
+  inferReasoningTransport,
+  normalizeReasoningCapabilityLevel,
+  normalizeReasoningLevel,
+  resolveReasoningProfile,
+  type AgentSessionMeta,
+  type AgentThinkingLevel,
+  type ProviderType,
+  type ReasoningCapability,
+} from '@proma/shared'
 
 /** 思考设置（从 AppSettings 中提取的最小接口，避免依赖 Electron 类型） */
 interface ThinkingSettings {
@@ -6,19 +15,28 @@ interface ThinkingSettings {
   agentEffort?: string
 }
 
-type ThinkingSessionMeta = Pick<AgentSessionMeta, 'openAIThinkingLevel'>
-
-function isOpenAIReasoningProvider(provider: ProviderType | undefined): boolean {
-  return provider === 'openai-codex' || provider === 'openai-responses'
-}
+type ThinkingSessionMeta = Pick<AgentSessionMeta, 'reasoningLevel' | 'openAIThinkingLevel'>
 
 export function resolvePiThinkingLevel(
   settings: ThinkingSettings,
   sessionMeta: ThinkingSessionMeta | undefined,
   provider: ProviderType | undefined,
+  modelId?: string,
+  capability?: ReasoningCapability,
 ): AgentThinkingLevel {
-  if (isOpenAIReasoningProvider(provider) && sessionMeta?.openAIThinkingLevel) {
-    return sessionMeta.openAIThinkingLevel
+  const reasoningProfile = resolveReasoningProfile({
+    modelId,
+    transport: inferReasoningTransport(provider),
+  })
+  if (reasoningProfile) {
+    const persistedLevel = sessionMeta?.reasoningLevel ?? sessionMeta?.openAIThinkingLevel
+    const configuredLevel = settings.agentThinking?.type === 'disabled' ? 'off' : settings.agentEffort
+    return normalizeReasoningLevel(reasoningProfile, persistedLevel ?? (configuredLevel as AgentThinkingLevel | undefined))!
+  }
+  const configuredLevel = settings.agentThinking?.type === 'disabled' ? 'off' : settings.agentEffort
+  if (capability) {
+    const persistedLevel = sessionMeta?.reasoningLevel ?? sessionMeta?.openAIThinkingLevel
+    return normalizeReasoningCapabilityLevel(capability, persistedLevel ?? (configuredLevel as AgentThinkingLevel | undefined))!
   }
   if (settings.agentThinking?.type === 'disabled') return 'off'
   if (settings.agentEffort === 'max') return 'xhigh'

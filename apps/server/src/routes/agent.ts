@@ -79,6 +79,8 @@ import { askUserService } from '@proma/server-core/agent-ask-user-service'
 import { exitPlanService } from '@proma/server-core/agent-exit-plan-service'
 import { orchestrator, streamSink } from '../engine'
 import { createLogger } from '@proma/server-core/logger'
+import { getChannelById } from '@proma/server-core/channel-manager'
+import { resolvePiReasoningCapability } from '@proma/server-core/adapters/pi-model-registry'
 
 /** 模块日志器 */
 const logger = createLogger('Agent 路由')
@@ -1022,18 +1024,28 @@ agent.post(`/${AGENT_IPC_CHANNELS.UPDATE_SESSION_CODEX_FAST_MODE}`, async (c) =>
   return c.json(updateAgentSessionMeta(sessionId, { codexFastMode: enabled }, scope))
 })
 
-/** POST /api/agent:update-session-openai-reasoning → AgentSessionMeta */
-agent.post(`/${AGENT_IPC_CHANNELS.UPDATE_SESSION_OPENAI_REASONING}`, async (c) => {
+/** POST /api/agent:get-pi-reasoning-capability → ReasoningCapability | undefined */
+agent.post(`/${AGENT_IPC_CHANNELS.GET_PI_REASONING_CAPABILITY}`, async (c) => {
+  const scope = getUserScope(c)
+  const { channelId, modelId } = await c.req.json<{ channelId: string; modelId: string }>()
+  if (!channelId || !modelId) return c.json(undefined)
+  const channel = getChannelById(channelId)
+  if (!channel) return c.json(undefined)
+  return c.json(await resolvePiReasoningCapability(channel.provider, modelId))
+})
+
+/** POST /api/agent:update-session-reasoning-level → AgentSessionMeta */
+agent.post(`/${AGENT_IPC_CHANNELS.UPDATE_SESSION_REASONING_LEVEL}`, async (c) => {
   const scope = getUserScope(c)
   const { sessionId, thinkingLevel } = await c.req.json<{ sessionId: string; thinkingLevel: AgentThinkingLevel }>()
-  const validLevels: AgentThinkingLevel[] = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh']
+  const validLevels: AgentThinkingLevel[] = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
   if (!validLevels.includes(thinkingLevel)) {
-    return c.json({ error: `无效的 Codex 思考深度: ${String(thinkingLevel)}` }, 400)
+    return c.json({ error: `无效的推理深度: ${String(thinkingLevel)}` }, 400)
   }
   const meta = getAgentSessionMeta(sessionId, scope)
   if (!meta) return c.json({ error: `Agent 会话不存在: ${sessionId}` }, 404)
   // 当前运行已在启动时读取推理深度；此处只更新会话的下一轮配置，允许运行中切换、本轮结束后生效。
-  return c.json(updateAgentSessionMeta(sessionId, { openAIThinkingLevel: thinkingLevel }, scope))
+  return c.json(updateAgentSessionMeta(sessionId, { reasoningLevel: thinkingLevel }, scope))
 })
 
 // ===== 迭代 5：挂载文件操作 =====

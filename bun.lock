@@ -36,7 +36,7 @@
     },
     "apps/server": {
       "name": "@proma/server",
-      "version": "0.0.22",
+      "version": "0.0.24",
       "dependencies": {
         "@proma/server-core": "workspace:*",
         "@proma/shared": "workspace:*",
@@ -48,7 +48,7 @@
     },
     "apps/web": {
       "name": "@proma/web",
-      "version": "0.0.36",
+      "version": "0.0.39",
       "dependencies": {
         "@fontsource-variable/inter": "5.2.8",
         "@pierre/diffs": "^1.1.20",
@@ -127,7 +127,7 @@
     },
     "packages/core": {
       "name": "@proma/core",
-      "version": "0.2.17",
+      "version": "0.2.18",
       "dependencies": {
         "@proma/shared": "workspace:*",
         "highlight.js": "^11.11.1",
@@ -145,7 +145,7 @@
     },
     "packages/server-core": {
       "name": "@proma/server-core",
-      "version": "0.3.32",
+      "version": "0.3.35",
       "dependencies": {
         "@proma/core": "workspace:*",
         "@proma/shared": "workspace:*",
@@ -182,7 +182,7 @@
     },
     "packages/shared": {
       "name": "@proma/shared",
-      "version": "0.1.60",
+      "version": "0.1.62",
       "devDependencies": {
         "typescript": "^5.0.0",
       },

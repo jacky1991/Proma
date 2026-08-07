@@ -339,7 +339,8 @@ export function createMigrated(config: ShimConfig): Partial<PromaClientAPI> {
     // ===== Agent 会话设置 =====
     updateSessionAgentRuntime: (sessionId: string, runtime: string) => invoke('agent:update-session-agent-runtime', { sessionId, runtime }),
     updateSessionCodexFastMode: (sessionId: string, enabled: boolean) => invoke('agent:update-session-codex-fast-mode', { sessionId, enabled }),
-    updateSessionOpenAIThinkingLevel: (sessionId: string, thinkingLevel: string) => invoke('agent:update-session-openai-reasoning', { sessionId, thinkingLevel }),
+    getPiReasoningCapability: (channelId: string, modelId: string) => invoke('agent:get-pi-reasoning-capability', { channelId, modelId }),
+    updateSessionReasoningLevel: (sessionId: string, thinkingLevel: string) => invoke('agent:update-session-reasoning-level', { sessionId, thinkingLevel }),
 
     // ===== WS 推送事件订阅 =====
     onCapabilitiesChanged: (cb: () => void) =>
@@ -678,7 +679,8 @@ export const migratedNames: ReadonlySet<string> = new Set([
   // Agent 会话设置
   'updateSessionAgentRuntime',
   'updateSessionCodexFastMode',
-  'updateSessionOpenAIThinkingLevel',
+  'getPiReasoningCapability',
+  'updateSessionReasoningLevel',
   // WS 推送事件订阅
   'onCapabilitiesChanged',
   'onWorkspaceFilesChanged',

@@ -28,7 +28,8 @@ import type {
 import {
   calculatePiAutoCompactionReserveTokens,
   isCodexFastModeSupportedModel,
-  isOpenAIReasoningSupportedModel,
+  inferReasoningTransport,
+  resolveReasoningProfile,
 } from '@proma/shared'
 import {
   THINKING_SIGNATURE_ERROR_MESSAGE,
@@ -55,7 +56,8 @@ import {
   type AgentRuntimeGuard,
 } from '../agent-runtime-guards'
 import { createPromaAgentsFilesOverride } from './pi-resource-loader-overrides'
-import { createCodexRequestSettingsExtension, withCodexFastModeServiceTier } from './pi-codex-request-settings'
+import { createCodexFastModeExtension, withCodexFastModeServiceTier } from './pi-codex-request-settings'
+import { createOpenAIReasoningRequestExtension } from './pi-openai-reasoning-request-settings'
 import { mergeRuntimeEnv, type AgentRuntimeEnv } from '../agent-runtime-env'
 import {
   convertPiMessage,
@@ -1486,6 +1488,23 @@ export class PiAgentAdapter implements AgentProviderAdapter {
         },
         ...buildPiRemoteConnectionSettings(input),
       })
+      const openAIReasoningProfile = (input.provider === 'openai-codex' || input.provider === 'openai-responses')
+        ? resolveReasoningProfile({
+          modelId: input.model,
+          transport: inferReasoningTransport(input.provider),
+        })
+        : undefined
+      const extensionFactories = [
+        ...(openAIReasoningProfile
+          ? [createOpenAIReasoningRequestExtension({
+            profile: openAIReasoningProfile,
+            thinkingLevel: input.openAIThinkingLevel,
+          })]
+          : []),
+        ...(input.provider === 'openai-codex' && input.codexFastMode
+          ? [createCodexFastModeExtension({ fastMode: true })]
+          : []),
+      ]
       const resourceLoader = new sdk.DefaultResourceLoader({
         cwd,
         agentDir: input.piAgentDir,
@@ -1494,14 +1513,7 @@ export class PiAgentAdapter implements AgentProviderAdapter {
         additionalSkillPaths: input.additionalSkillPaths ?? [],
         skillsOverride: createPromaSkillsOverride(input.additionalSkillPaths, input.disabledSkillSlugs),
         agentsFilesOverride: createPromaAgentsFilesOverride(),
-        ...((input.provider === 'openai-codex' || input.provider === 'openai-responses')
-          && model.reasoning
-          && isOpenAIReasoningSupportedModel(input.model) && {
-            extensionFactories: [createCodexRequestSettingsExtension({
-            fastMode: input.codexFastMode,
-            thinkingLevel: input.openAIThinkingLevel,
-          })],
-        }),
+        ...(model.reasoning && extensionFactories.length > 0 && { extensionFactories }),
         systemPromptOverride: () => input.systemPrompt,
       })
       await resourceLoader.reload()

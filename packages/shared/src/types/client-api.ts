@@ -54,6 +54,7 @@ import type {
   WorkspaceMemorySummary,
   WorkspaceWorktreeRepo,
 } from './agent'
+import type { ReasoningCapability } from './reasoning-profile'
 import type {
   AgentRuntime,
 } from './agent-provider'
@@ -440,8 +441,11 @@ export interface PromaClientAPI {
   /** 切换当前会话的 ChatGPT Codex Fast Mode */
   updateSessionCodexFastMode: (sessionId: string, enabled: boolean) => Promise<AgentSessionMeta>
 
-  /** 更新当前会话的 Codex 思考深度 */
-  updateSessionOpenAIThinkingLevel: (sessionId: string, thinkingLevel: AgentThinkingLevel) => Promise<AgentSessionMeta>
+  /** 查询 Pi catalog 或专属 profile 支持的会话级推理档位 */
+  getPiReasoningCapability: (channelId: string, modelId: string) => Promise<ReasoningCapability | undefined>
+
+  /** 更新当前会话的推理深度 */
+  updateSessionReasoningLevel: (sessionId: string, thinkingLevel: AgentThinkingLevel) => Promise<AgentSessionMeta>
 
   /** 更新 Agent 会话模型选择 */
   updateAgentSessionModel: (id: string, channelId?: string, modelId?: string) => Promise<AgentSessionMeta>

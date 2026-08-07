@@ -15,6 +15,7 @@ export {
   supports1MContext,
   inferContextWindow,
   inferAgentSdkContextWindow,
+  inferCodexAlignedGPT5ContextWindow,
   resolveAgentSdkModelId,
 } from './context-window'
 export {
