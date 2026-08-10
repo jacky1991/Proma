@@ -14,6 +14,7 @@ import {
   currentAgentWorkspaceIdAtom,
   workspaceCapabilitiesVersionAtom,
 } from '@/atoms/agent-atoms'
+import { canManageAtom } from '@/atoms/auth'
 import type { BuiltinMcpServerSummary, SkillsGroupConfig, SkillMeta, WorkspaceCapabilities, WorkspaceMcpConfig } from '@proma/shared'
 
 export interface AgentSkillsData {
@@ -47,6 +48,7 @@ export function useAgentSkillsData(): AgentSkillsData {
   const currentWorkspaceId = useAtomValue(currentAgentWorkspaceIdAtom)
   const bumpCapabilitiesVersion = useSetAtom(workspaceCapabilitiesVersionAtom)
   const capabilitiesVersion = useAtomValue(workspaceCapabilitiesVersionAtom)
+  const canManage = useAtomValue(canManageAtom)
 
   const currentWorkspace = workspaces.find((w) => w.id === currentWorkspaceId)
   const workspaceSlug = currentWorkspace?.slug ?? ''
@@ -71,8 +73,12 @@ export function useAgentSkillsData(): AgentSkillsData {
       return
     }
     try {
+      // getWorkspaceMcpConfig 为管理员专属路由（含命令/参数/env 敏感配置），
+      // 普通用户不调用；MCP tab 本身对普通用户不可见（AgentSkillsView 中 canManage 门控）。
       const [config, skillList, dir, defaultSlugs, capabilities, groupsCfg] = await Promise.all([
-        window.electronAPI.getWorkspaceMcpConfig(workspaceSlug),
+        canManage
+          ? window.electronAPI.getWorkspaceMcpConfig(workspaceSlug)
+          : Promise.resolve<WorkspaceMcpConfig>({ servers: {} }),
         window.electronAPI.getWorkspaceSkills(workspaceSlug),
         window.electronAPI.getWorkspaceSkillsDir(workspaceSlug),
         window.electronAPI.getDefaultSkillSlugs(),
@@ -91,7 +97,7 @@ export function useAgentSkillsData(): AgentSkillsData {
     } finally {
       setLoading(false)
     }
-  }, [workspaceSlug])
+  }, [workspaceSlug, canManage])
 
   // workspaceSlug 或外部能力版本变化时重新拉取
   React.useEffect(() => {

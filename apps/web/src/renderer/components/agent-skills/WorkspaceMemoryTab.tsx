@@ -305,21 +305,35 @@ export function WorkspaceMemoryTab({ workspaceSlug, search }: WorkspaceMemoryTab
     setLoading(true)
     void (async () => {
       try {
+        // CLAUDE.md 为管理员专属（团队共享项目指令），普通用户不读取；
+        // 普通用户默认选中 Auto Memory 索引（用户层级记忆）。
         const [nextSummary, files, claudeFile] = await Promise.all([
           window.electronAPI.getWorkspaceMemorySummary(workspaceSlug),
           window.electronAPI.listWorkspaceAutoMemoryFiles(workspaceSlug),
-          window.electronAPI.readWorkspaceClaudeMd(workspaceSlug),
+          isAdmin
+            ? window.electronAPI.readWorkspaceClaudeMd(workspaceSlug)
+            : Promise.resolve({ relativePath: 'CLAUDE.md', isText: true, size: 0, content: '' }),
         ])
         if (cancelled) return
         setSummary(nextSummary)
         setAutoFiles(files)
-        setSelected({
-          kind: 'claude',
-          relativePath: 'CLAUDE.md',
-          title: 'CLAUDE.md',
-          absolutePath: nextSummary.claudeMd.path,
-        })
-        setEditText(claudeFile.content ?? '')
+        if (isAdmin) {
+          setSelected({
+            kind: 'claude',
+            relativePath: 'CLAUDE.md',
+            title: 'CLAUDE.md',
+            absolutePath: nextSummary.claudeMd.path,
+          })
+          setEditText(claudeFile.content ?? '')
+        } else {
+          setSelected({
+            kind: 'auto',
+            relativePath: AUTO_MEMORY_INDEX,
+            title: AUTO_MEMORY_INDEX,
+            absolutePath: autoMemoryPath(nextSummary, AUTO_MEMORY_INDEX),
+          })
+          setEditText('')
+        }
         setIsDirty(false)
       } catch (err) {
         console.error('[工作区记忆] 加载失败:', err)
@@ -329,7 +343,7 @@ export function WorkspaceMemoryTab({ workspaceSlug, search }: WorkspaceMemoryTab
       }
     })()
     return () => { cancelled = true }
-  }, [workspaceSlug])
+  }, [workspaceSlug, isAdmin])
 
   // 防抖自动保存：编辑内容变脏后 800ms 内无新输入则自动保存（按钮显示 loading 动画）
   React.useEffect(() => {
