@@ -1075,8 +1075,15 @@ export function assertAttachedPathAllowed(targetPath: string, access?: FileAcces
     allowedDirs.push(getWorkspaceFilesDir(access.workspaceSlug))
   }
 
-  // 始终允许 agent-workspaces 根目录
+  // 始终允许 agent-workspaces 根目录（全局团队共享工作区）
   allowedDirs.push(getAgentWorkspacesDir())
+  // Web 多用户：同时允许当前用户级会话工作区根目录，
+  // 与 assertWorkspacePath 对齐，否则用户 scope 下的工作区文件
+  // （users/{userId}/agent-workspaces/...）在无 access 挂载时会误判越权，
+  // 导致 file:read-binary 读取/下载失败。
+  if (scope) {
+    allowedDirs.push(getUserSessionWorkspacesDir(scope))
+  }
 
   const isAllowed = allowedDirs.some((dir) => {
     const resolvedDir = resolve(dir)

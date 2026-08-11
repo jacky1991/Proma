@@ -19,7 +19,7 @@ import {
   ExternalLink,
   FolderSearch,
   MoreHorizontal,
-  FolderInput,
+  Download,
   Pencil,
   MessageSquarePlus,
 } from 'lucide-react'
@@ -45,6 +45,7 @@ import {
 import { cn } from '@/lib/utils'
 import { isWebRuntime } from '@/lib/web-runtime'
 import { workspaceFilesVersionAtom, fileBrowserAutoRevealAtom, recentlyModifiedPathsAtom, currentAgentSessionIdAtom } from '@/atoms/agent-atoms'
+import { canManageAtom } from '@/atoms/auth'
 import type { FileEntry } from '@proma/shared'
 import { FileTypeIcon } from './FileTypeIcon'
 import { DefaultAppMenuItem } from './DefaultAppMenuItem'
@@ -55,6 +56,7 @@ import {
   canBeSticky,
 } from './tree-row-layout'
 import { setFilePanelDragData, dispatchInsertFileMention } from '@/lib/file-panel-drag'
+import { downloadAttachedFile } from '@/lib/file-utils'
 
 /** 计算目标路径相对 rootPath 的祖先目录集合（不含 rootPath 自身、含目标的所有上级） */
 export function computeRevealAncestors(rootPath: string, targetPath: string): Set<string> {
@@ -152,8 +154,6 @@ export function FileBrowser({ rootPath, hideToolbar, embedded, hideEmpty, onAddT
   const [deleteCount, setDeleteCount] = React.useState(1)
   // 重命名状态
   const [renamingPath, setRenamingPath] = React.useState<string | null>(null)
-  // 移动中状态
-  const [moving, setMoving] = React.useState(false)
 
   const selectedCount = selectedPaths.size
 
@@ -272,28 +272,18 @@ export function FileBrowser({ rootPath, hideToolbar, embedded, hideEmpty, onAddT
     setDeleteTarget(null)
   }, [deleteTarget, selectedPaths, loadRoot])
 
-  /** 移动文件 */
-  const handleMove = React.useCallback(async (entry: FileEntry) => {
-    setMoving(true)
-    try {
-      const result = await window.electronAPI.openFolderDialog()
-      if (!result) return
-
-      if (selectedPaths.size > 1) {
-        for (const path of selectedPaths) {
-          await window.electronAPI.moveFile(path, result.path)
-        }
-      } else {
-        await window.electronAPI.moveFile(entry.path, result.path)
+  /** 下载文件（支持多选，逐个下载；目录会被服务端读取拒绝，已静默跳过） */
+  const handleDownload = React.useCallback(async (entry: FileEntry) => {
+    const targets = selectedPaths.size > 1 ? Array.from(selectedPaths) : [entry.path]
+    for (const path of targets) {
+      const name = path.substring(path.lastIndexOf('/') + 1) || 'download'
+      try {
+        await downloadAttachedFile(path, name)
+      } catch (err) {
+        console.error('[FileBrowser] 下载失败:', path, err)
       }
-      setSelectedPaths(new Set())
-      await loadRoot()
-    } catch (err) {
-      console.error('[FileBrowser] 移动失败:', err)
-    } finally {
-      setMoving(false)
     }
-  }, [selectedPaths, loadRoot])
+  }, [selectedPaths])
 
   // 显示根路径最后两段作为面包屑
   const breadcrumb = React.useMemo(() => {
@@ -319,7 +309,6 @@ export function FileBrowser({ rootPath, hideToolbar, embedded, hideEmpty, onAddT
           selectedPaths={selectedPaths}
           selectedCount={selectedCount}
           renamingPath={renamingPath}
-          moving={moving}
           refreshVersion={filesVersion}
           revealAncestors={revealAncestors}
           revealTarget={revealTarget}
@@ -331,7 +320,7 @@ export function FileBrowser({ rootPath, hideToolbar, embedded, hideEmpty, onAddT
           onCancelRename={handleCancelRename}
           onRename={handleRename}
           onDelete={handleRequestDelete}
-          onMove={handleMove}
+          onDownload={handleDownload}
           onRefresh={loadRoot}
           onClearSelection={() => setSelectedPaths(new Set())}
           onAddToChat={onAddToChat}
@@ -418,7 +407,6 @@ interface FileTreeItemProps {
   selectedPaths: Set<string>
   selectedCount: number
   renamingPath: string | null
-  moving: boolean
   /** 文件版本号，变化时已展开的文件夹自动重新加载子项 */
   refreshVersion: number
   /** 自动定位：祖先目录路径集合（命中则自动展开） */
@@ -435,7 +423,7 @@ interface FileTreeItemProps {
   onCancelRename: () => void
   onRename: (filePath: string, newName: string) => Promise<string | null>
   onDelete: (entry: FileEntry) => void
-  onMove: (entry: FileEntry) => void
+  onDownload: (entry: FileEntry) => void
   onRefresh: () => Promise<void>
   onClearSelection: () => void
   onAddToChat?: (entry: FileEntry) => void
@@ -448,7 +436,6 @@ function FileTreeItem({
   selectedPaths,
   selectedCount,
   renamingPath,
-  moving,
   refreshVersion,
   revealAncestors,
   revealTarget,
@@ -460,12 +447,14 @@ function FileTreeItem({
   onCancelRename,
   onRename,
   onDelete,
-  onMove,
+  onDownload,
   onRefresh,
   onClearSelection,
   onAddToChat,
   onFilePreview,
 }: FileTreeItemProps): React.ReactElement {
+  // 工作区文件删除为管理员专属（共享资源写操作），普通用户隐藏删除项
+  const canManage = useAtomValue(canManageAtom)
   const [expanded, setExpanded] = React.useState(false)
   const [children, setChildren] = React.useState<FileEntry[]>([])
   const [childrenLoaded, setChildrenLoaded] = React.useState(false)
@@ -828,11 +817,10 @@ function FileTreeItem({
                 )}
                 <DropdownMenuItem
                   className="text-xs py-1 [&>svg]:size-3.5"
-                  disabled={moving}
-                  onSelect={() => { void onMove(entry) }}
+                  onSelect={() => { void onDownload(entry) }}
                 >
-                  <FolderInput />
-                  {menuSelectedCount > 1 ? `移动选中 (${menuSelectedCount})` : '移动到...'}
+                  <Download />
+                  {menuSelectedCount > 1 ? `下载选中 (${menuSelectedCount})` : '下载'}
                 </DropdownMenuItem>
                 {menuSelectedCount === 1 && (
                   <DropdownMenuItem
@@ -843,14 +831,18 @@ function FileTreeItem({
                     重命名
                   </DropdownMenuItem>
                 )}
-                <DropdownMenuSeparator className="my-0.5" />
-                <DropdownMenuItem
-                  className="text-xs py-1 [&>svg]:size-3.5 text-destructive"
-                  onSelect={() => onDelete(entry)}
-                >
-                  <Trash2 />
-                  {menuSelectedCount > 1 ? `删除选中 (${menuSelectedCount})` : '删除'}
-                </DropdownMenuItem>
+                {canManage && (
+                  <>
+                    <DropdownMenuSeparator className="my-0.5" />
+                    <DropdownMenuItem
+                      className="text-xs py-1 [&>svg]:size-3.5 text-destructive"
+                      onSelect={() => onDelete(entry)}
+                    >
+                      <Trash2 />
+                      {menuSelectedCount > 1 ? `删除选中 (${menuSelectedCount})` : '删除'}
+                    </DropdownMenuItem>
+                  </>
+                )}
               </DropdownMenuContent>
           </DropdownMenu>
           )}
@@ -881,7 +873,6 @@ function FileTreeItem({
               selectedPaths={selectedPaths}
               selectedCount={selectedCount}
               renamingPath={renamingPath}
-              moving={moving}
               refreshVersion={refreshVersion}
               revealAncestors={revealAncestors}
               revealTarget={revealTarget}
@@ -893,7 +884,7 @@ function FileTreeItem({
               onCancelRename={onCancelRename}
               onRename={onRename}
               onDelete={onDelete}
-              onMove={onMove}
+              onDownload={onDownload}
               onRefresh={handleRefreshAfterDelete}
               onClearSelection={onClearSelection}
               onAddToChat={onAddToChat}

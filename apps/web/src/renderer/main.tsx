@@ -41,7 +41,7 @@ import {
   agentSettingsReadyAtom,
   automationGroupOrderAtom,
 } from './atoms/agent-atoms'
-import { authUserAtom } from './atoms/auth'
+import { authUserAtom, canManageAtom } from './atoms/auth'
 import { brandingConfigAtom, displayLogoUrlAtom, displayProductNameAtom } from './atoms/branding-atoms'
 import { automationsAtom } from './atoms/automation-atoms'
 import {
@@ -377,16 +377,20 @@ function AgentSettingsInitializer(): null {
 function AutomationInitializer(): null {
   const setAutomations = useSetAtom(automationsAtom)
   const setAgentSessions = useSetAtom(agentSessionsAtom)
+  // 自动化为管理员专属（路由全部 adminOnly）；普通用户跳过加载，避免无谓 403
+  const canManage = useAtomValue(canManageAtom)
 
   useEffect(() => {
     const load = (): void => {
-      window.electronAPI.listAutomations().then(setAutomations).catch(console.error)
+      if (canManage) {
+        window.electronAPI.listAutomations().then(setAutomations).catch(console.error)
+      }
       window.electronAPI.listAgentSessions().then(setAgentSessions).catch(console.error)
     }
     load()
     const unsub = window.electronAPI.onAutomationChanged(load)
     return unsub
-  }, [setAutomations, setAgentSessions])
+  }, [setAutomations, setAgentSessions, canManage])
 
   return null
 }

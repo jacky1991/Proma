@@ -7,7 +7,7 @@
 
 import * as React from 'react'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
-import { X, FolderOpen, ExternalLink, ChevronRight, MoreHorizontal, FolderSearch, Pencil, FolderInput, Info, FolderHeart, MessageSquarePlus } from 'lucide-react'
+import { X, FolderOpen, ExternalLink, ChevronRight, MoreHorizontal, FolderSearch, Pencil, Download, Info, FolderHeart, MessageSquarePlus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
@@ -40,6 +40,7 @@ import { detectIsWindows } from '@/lib/platform'
 import { isWebRuntime } from '@/lib/web-runtime'
 import type { FileEntry, AgentPendingFile } from '@proma/shared'
 import { setFilePanelDragData, getMediaTypeFromFilename, dispatchInsertFileMention } from '@/lib/file-panel-drag'
+import { downloadAttachedFile } from '@/lib/file-utils'
 
 function getPathBasename(filePath: string): string {
   return filePath.split(/[\\/]/).filter(Boolean).pop() || filePath
@@ -1082,20 +1083,6 @@ function AttachedDirItem({ entry, depth, selectedPaths, onSelect, refreshVersion
     setRenameValue(currentName)
   }
 
-  // 移动到文件夹
-  const handleMove = async (): Promise<void> => {
-    try {
-      const result = await window.electronAPI.openFolderDialog()
-      if (!result) return
-      await window.electronAPI.moveAttachedFile(currentPath, result.path, { sessionId, candidateBasePaths: allowedPaths })
-      // 移动后更新路径
-      const newPath = `${result.path}/${currentName}`
-      setCurrentPath(newPath)
-    } catch (err) {
-      console.error('[AttachedDirItem] 移动失败:', err)
-    }
-  }
-
   const { paddingLeft, guideLeft, stickyTop, stickyZIndex } = computeTreeRowLayout(depth)
   const isSticky = entry.isDirectory && expanded && canBeSticky(depth)
 
@@ -1244,13 +1231,15 @@ function AttachedDirItem({ entry, depth, selectedPaths, onSelect, refreshVersion
                   <Pencil />
                   重命名
                 </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="text-xs py-1 [&>svg]:size-3.5"
-                  onSelect={handleMove}
-                >
-                  <FolderInput />
-                  移动到...
-                </DropdownMenuItem>
+                {!entry.isDirectory && (
+                  <DropdownMenuItem
+                    className="text-xs py-1 [&>svg]:size-3.5"
+                    onSelect={() => void downloadAttachedFile(currentPath, currentName, { sessionId, candidateBasePaths: allowedPaths })}
+                  >
+                    <Download />
+                    下载
+                  </DropdownMenuItem>
+                )}
               </DropdownMenuContent>
           </DropdownMenu>
           )}

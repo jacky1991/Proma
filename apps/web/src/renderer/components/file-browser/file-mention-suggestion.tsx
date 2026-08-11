@@ -125,15 +125,14 @@ export function createFileMentionSuggestion(
 
       return {
         onStart(props) {
-          if (!requestGuard.isLatest(props.items)) {
-            return
-          }
-          // 防御竞态：如果上一次弹窗未被正确清理，先清理残留
+          // TipTap 3.29+ 重构：onStart 在 fetch 前同步调用，props.items 为空初始数组，
+          // 不能用 requestGuard.isLatest 判定（空数组未过 attachResult，恒为 stale）。
+          // 真正的 fetched items 经 onUpdate 到达，其上的 isLatest 守卫仍有效。
           if (popup || renderer) {
             cleanup()
           }
 
-          // 防御异步竞态：await items() 期间 @ 触发符可能已被删除导致 suggestion 退出，
+          // 防御异步竞态：@ 触发符可能已被删除导致 suggestion 退出，
           // 插件仍会用过期 props 调用 onStart；过期则跳过建弹窗，避免残留幽灵弹窗。
           if (!isSuggestionTriggerPresent(props.editor, props.range, '@')) {
             return

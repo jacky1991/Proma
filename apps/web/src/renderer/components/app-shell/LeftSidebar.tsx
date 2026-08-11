@@ -77,6 +77,7 @@ import { userProfileAtom } from '@/atoms/user-profile'
 import { sidebarViewModeAtom } from '@/atoms/sidebar-atoms'
 import { searchDialogOpenAtom } from '@/atoms/search-atoms'
 import { draftSessionIdsAtom } from '@/atoms/draft-session-atoms'
+import { canManageAtom } from '@/atoms/auth'
 import { promptConfigAtom, selectedPromptIdAtom, conversationPromptIdAtom } from '@/atoms/system-prompt-atoms'
 import { interfaceVariantAtom } from '@/atoms/theme'
 import { sessionHoverPreviewEnabledAtom } from '@/atoms/ui-preferences'
@@ -625,6 +626,8 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
   const automations = useAtomValue(automationsAtom)
   const setAutomations = useSetAtom(automationsAtom)
   const automationCount = automations.length
+  // 自动化为管理员专属（路由全部 adminOnly），普通用户隐藏入口
+  const canManage = useAtomValue(canManageAtom)
   const settingsOpen = useAtomValue(settingsOpenAtom)
   const setSettingsOpen = useSetAtom(settingsOpenAtom)
   const setSettingsTab = useSetAtom(settingsTabAtom)
@@ -2371,6 +2374,7 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
             <TooltipContent side="right">搜索</TooltipContent>
           </Tooltip>
 
+          {canManage && (
           <Tooltip>
             <TooltipTrigger asChild>
               <button
@@ -2403,6 +2407,7 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
               自动任务（{automationCount} 个任务已创建）
             </TooltipContent>
           </Tooltip>
+          )}
 
           {mode === 'agent' && (
             <Tooltip>
@@ -2542,14 +2547,17 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
         </Tooltip>
       </div>
 
-      {/* 自动任务入口：作为任务中心入口放在置顶区上方，不参与置顶列表层级。 */}
-      <div className="px-3 pt-2 pb-0.5">
-        <AutomationSidebarEntry
-          count={automationCount}
-          active={activeView === 'automations'}
-          onClick={handleOpenAutomations}
-        />
-      </div>
+      {/* 自动任务入口：作为任务中心入口放在置顶区上方，不参与置顶列表层级。
+          管理员专属（路由全部 adminOnly），普通用户隐藏。 */}
+      {canManage && (
+        <div className="px-3 pt-2 pb-0.5">
+          <AutomationSidebarEntry
+            count={automationCount}
+            active={activeView === 'automations'}
+            onClick={handleOpenAutomations}
+          />
+        </div>
+      )}
 
       {/* Agent 技能入口：Skills / MCP 能力中心，仅 Agent 模式可见 */}
       {mode === 'agent' && (
