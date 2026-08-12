@@ -1,6 +1,6 @@
 {
   "name": "@proma/server",
-  "version": "0.0.25",
+  "version": "0.0.26",
   "description": "Proma Web 服务端（Bun + Hono）—— M1 骨架，承接 electronAPI shim 的 HTTP 调用",
   "private": true,
   "type": "module",

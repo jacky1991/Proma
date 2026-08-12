@@ -18,6 +18,9 @@ import { getConnectionCount, getBufferedSessionCount } from './ws'
 import { orchestrator } from './engine'
 import { getServerVersion } from './utils/version'
 import { createLogger } from '@proma/server-core/logger'
+import { serveStatic } from 'hono/bun'
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 
 const app = new Hono()
 
@@ -82,6 +85,30 @@ app.route('/api', chatTool)
 app.route('/api', storage)
 app.route('/api', automation)
 app.route('/api', file)
+
+// ─── 同源前端静态资源服务（仅 PROMA_WEB_DIST 设置且目录存在时启用）───
+// /api/* 已在前挂载；/ws 已在 index.ts 的 Bun.serve.fetch 内早于 app.fetch 拦截。
+// 开发模式（未设 PROMA_WEB_DIST）不启用，仍由 vite(5174) 提供前端。
+const WEB_DIST = process.env.PROMA_WEB_DIST
+if (WEB_DIST && existsSync(WEB_DIST)) {
+  // 1) 根路径显式返回 index.html（避免 serveStatic 把目录 '/' 当文件命中）
+  app.get('/', (c) => new Response(Bun.file(join(WEB_DIST, 'index.html'))))
+
+  // 2) 静态资源（/assets/*、favicon、带 hash 的文件）。未命中文件 → next() 落入 fallback
+  app.get('*', serveStatic({ root: WEB_DIST }))
+
+  // 3) SPA history fallback：深路径未命中静态文件 → index.html。
+  //    显式排除 /api/* 与 /ws，让未匹配的 API 请求返回 404 JSON 而非 HTML。
+  app.get('*', async (c) => {
+    const { pathname } = new URL(c.req.url)
+    if (pathname === '/ws' || pathname.startsWith('/api/')) {
+      return c.notFound()
+    }
+    return new Response(Bun.file(join(WEB_DIST, 'index.html')))
+  })
+
+  logger.info('已启用同源前端静态资源服务', { webDist: WEB_DIST })
+}
 
 /**
  * 全局错误处理

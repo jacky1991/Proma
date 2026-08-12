@@ -1,0 +1,37 @@
+# 版本控制与 IDE
+.git
+.gitignore
+.github
+.vscode
+.idea
+.DS_Store
+
+# 依赖与构建产物（镜像内重新安装 / 构建，避免本地脏产物污染）
+**/node_modules
+**/dist
+**/build
+**/.tsbuildinfo
+
+# 测试与临时
+**/*.test.ts
+**/*.spec.ts
+**/__tests__
+tests
+**/.cache
+**/.turbo
+*.log
+
+# 仅排除根级文档（保留 packages/server-core/default-skills/ 下全部 skill 资源）
+README.md
+CLAUDE.md
+docs
+
+# 环境与本地配置（敏感）
+.env
+.env.*
+!.env.example
+
+# Docker 描述文件不入镜像（docker/ 目录需保留，供 COPY entrypoint / bunfig）
+Dockerfile
+.dockerignore
+docker-compose.yml
