@@ -9,9 +9,6 @@
 import { atom } from 'jotai'
 import { atomWithStorage } from 'jotai/utils'
 import {
-  streamingConversationIdsAtom,
-} from './chat-atoms'
-import {
   agentRunningSessionIdsAtom,
   agentSessionIndicatorMapAtom,
   unviewedCompletedSessionIdsAtom,
@@ -134,35 +131,31 @@ export const activeSessionIdAtom = atom<string | null>((get) => {
   return activeTab?.sessionId ?? null
 })
 
-/** 标签是否在流式输出中（派生，从现有流式 atoms 计算） */
+/** 标签是否在流式输出中（派生，从 Agent 流式 atom 计算） */
 export const tabStreamingMapAtom = atom<Map<string, boolean>>((get) => {
   const tabs = get(tabsAtom)
-  const chatStreaming = get(streamingConversationIdsAtom)
   const agentRunning = get(agentRunningSessionIdsAtom)
   const map = new Map<string, boolean>()
   for (const tab of tabs) {
     if (tab.type === 'scratch') continue
-    if (tab.type === 'chat') {
-      map.set(tab.id, chatStreaming.has(tab.sessionId))
-    } else if (tab.type === 'agent') {
+    // Agent 入口不再产生 chat 标签，仅处理 agent 流式状态
+    if (tab.type === 'agent') {
       map.set(tab.id, agentRunning.has(tab.sessionId))
     }
   }
   return map
 })
 
-/** 标签页指示点状态（chat 用 running/idle，agent 用完整 SessionIndicatorStatus） */
+/** 标签页指示点状态（agent 用完整 SessionIndicatorStatus） */
 export const tabIndicatorMapAtom = atom<Map<string, SessionIndicatorStatus>>((get) => {
   const tabs = get(tabsAtom)
-  const chatStreaming = get(streamingConversationIdsAtom)
   const agentIndicator = get(agentSessionIndicatorMapAtom)
   const unviewedCompletedIds = get(unviewedCompletedSessionIdsAtom)
   const map = new Map<string, SessionIndicatorStatus>()
   for (const tab of tabs) {
     if (tab.type === 'scratch') continue
-    if (tab.type === 'chat') {
-      map.set(tab.id, chatStreaming.has(tab.sessionId) ? 'running' : 'idle')
-    } else if (tab.type === 'agent') {
+    // Agent 入口不再产生 chat 标签，仅处理 agent 指示点
+    if (tab.type === 'agent') {
       const status = agentIndicator.get(tab.sessionId)
         ?? (unviewedCompletedIds.has(tab.sessionId) ? 'completed' : 'idle')
       map.set(tab.id, status)

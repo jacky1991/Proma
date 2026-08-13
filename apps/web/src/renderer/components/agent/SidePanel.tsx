@@ -19,7 +19,6 @@ import {
 import { cn } from '@/lib/utils'
 import { FileBrowser, FileDropZone, FileTypeIcon, FileSearchBar, computeRevealAncestors, isPathUnderRoot, computeTreeRowLayout, AncestorGuides, STICKY_ROW_BASE_CLASS, canBeSticky } from '@/components/file-browser'
 import { DiffPanelTabBar } from '@/components/diff/DiffPanelTabBar'
-import { ChatView } from '@/components/chat/ChatView'
 import {
   agentSidePanelOpenAtom,
   workspaceFilesVersionAtom,
@@ -33,7 +32,6 @@ import {
   fileBrowserAutoRevealAtom,
 } from '@/atoms/agent-atoms'
 import type { AgentSidePanelTab } from '@/atoms/agent-atoms'
-import { agentSideChatMapAtom } from '@/atoms/chat-atoms'
 import { interfaceVariantAtom } from '@/atoms/theme'
 import { useOpenPreview } from '@/components/diff/preview-opener'
 import { detectIsWindows } from '@/lib/platform'
@@ -343,24 +341,6 @@ export function SidePanel({ sessionId, sessionPath, activeTab, onTabChange, widt
   const hasWorkspaceAttachedItems = wsAttachedDirs.length > 0 || wsAttachedFiles.length > 0
   const interfaceVariant = useAtomValue(interfaceVariantAtom)
   const isClassic = interfaceVariant === 'classic'
-  const sideChatMap = useAtomValue(agentSideChatMapAtom)
-  const setSideChatMap = useSetAtom(agentSideChatMapAtom)
-  const sideChatConversationId = sideChatMap.get(sessionId) ?? null
-  const effectiveActiveTab: AgentSidePanelTab = activeTab === 'chat' && !sideChatConversationId
-    ? 'session'
-    : activeTab
-
-  const handleCloseChatTab = React.useCallback(() => {
-    setSideChatMap((prev) => {
-      if (!prev.has(sessionId)) return prev
-      const next = new Map(prev)
-      next.delete(sessionId)
-      return next
-    })
-    if (activeTab === 'chat') {
-      onTabChange('session')
-    }
-  }, [activeTab, onTabChange, sessionId, setSideChatMap])
 
   return (
     <div
@@ -382,23 +362,13 @@ export function SidePanel({ sessionId, sessionPath, activeTab, onTabChange, widt
         )}
         >
           <DiffPanelTabBar
-            activeTab={effectiveActiveTab}
+            activeTab={activeTab}
             onTabChange={onTabChange}
             onClose={() => setIsOpen(false)}
-            onCloseChat={handleCloseChatTab}
-            showChatTab={Boolean(sideChatConversationId)}
             isWindows={isWindows}
           />
 
-          {effectiveActiveTab === 'chat' ? (
-            sideChatConversationId ? (
-              <div className="min-h-0 flex-1 overflow-hidden">
-                <ChatView conversationId={sideChatConversationId} />
-              </div>
-            ) : (
-              <div className="flex-1 flex items-center justify-center text-muted-foreground text-xs">暂无问答会话</div>
-            )
-          ) : effectiveActiveTab === 'session' ? (
+          {activeTab === 'session' ? (
             <div className="flex-1 min-h-0 flex flex-col pt-0.5 mx-2 mb-2">
               {sessionPath ? (
                 <>

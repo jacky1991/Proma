@@ -1,29 +1,21 @@
 /**
- * MigrateToAgentButton — 切换到 Agent 模式按钮
+ * MigrateToAgentButton — 切换到 Agent 入口按钮
  *
  * 常驻在助手消息 Action Bar 中，点击后：
- * 1. 创建 Agent 会话（绑定默认工作区）
+ * 1. 创建 Agent 会话（渠道/模型/工作区取自设置）
  * 2. 迁移当前 Chat 对话历史到新 Agent 会话
- * 3. 打开 Agent 会话 Tab 并自动激活
+ * 3. 跳转到 Agent 入口（/agent?session=<id>），由 AgentShell 负责打开该会话
  * 4. 通过 Sonner 通知用户已完成切换
+ *
+ * 解耦：不直接写 agent-atoms / tab-atoms / appMode，避免 Chat bundle 传递性引入 Agent 代码；
+ * 跨入口传参全部走 URL query。
  */
 
 import * as React from 'react'
-import { useStore } from 'jotai'
 import { toast } from 'sonner'
 import { Bot, Loader2 } from 'lucide-react'
 import { MessageAction } from '@/components/ai-elements/message'
-import {
-  agentChannelIdAtom,
-  agentModelIdAtom,
-  agentWorkspacesAtom,
-  agentSessionsAtom,
-  currentAgentSessionIdAtom,
-  currentAgentWorkspaceIdAtom,
-} from '@/atoms/agent-atoms'
-import { tabsAtom, activeTabIdAtom, openTab } from '@/atoms/tab-atoms'
-import { activeViewAtom } from '@/atoms/active-view'
-import { appModeAtom } from '@/atoms/app-mode'
+import { navigate } from '@/lib/router'
 
 interface MigrateToAgentButtonProps {
   /** 当前对话 ID */
@@ -31,63 +23,36 @@ interface MigrateToAgentButtonProps {
 }
 
 export function MigrateToAgentButton({ conversationId }: MigrateToAgentButtonProps): React.ReactElement {
-  const store = useStore()
   const [migrating, setMigrating] = React.useState(false)
 
   const handleMigrate = async (): Promise<void> => {
     if (migrating) return
 
-    const agentChannelId = store.get(agentChannelIdAtom)
-    if (!agentChannelId) {
-      toast.error('请先在设置中配置 Agent 渠道')
-      return
-    }
-
     setMigrating(true)
     try {
-      const workspaces = store.get(agentWorkspacesAtom)
-      const defaultWorkspaceId = workspaces[0]?.id ?? null
+      // 渠道/模型/工作区均从设置读取，避免引入 agent-atoms
+      const settings = await window.electronAPI.getSettings()
+      const agentChannelId = settings.agentChannelId
+      if (!agentChannelId) {
+        toast.error('请先在设置中配置 Agent 渠道')
+        return
+      }
 
       // 1. 创建 Agent 会话
       const session = await window.electronAPI.createAgentSession(
         undefined,
         agentChannelId,
-        defaultWorkspaceId ?? undefined,
-        store.get(agentModelIdAtom) || undefined,
+        settings.agentWorkspaceId ?? undefined,
+        settings.agentModelId || undefined,
       )
 
       // 2. 迁移 Chat 对话记录到新 Agent 会话
       await window.electronAPI.migrateChatToAgent(conversationId, session.id)
 
-      // 3. 刷新会话列表
-      const sessions = await window.electronAPI.listAgentSessions()
-      store.set(agentSessionsAtom, sessions)
+      // 3. 跳转到 Agent 入口并定位到新会话（AgentShell 挂载时会刷新会话列表并打开 ?session）
+      navigate(`/agent?session=${encodeURIComponent(session.id)}`)
 
-      // 4. 切换到默认工作区
-      if (defaultWorkspaceId) {
-        store.set(currentAgentWorkspaceIdAtom, defaultWorkspaceId)
-        window.electronAPI.updateSettings({
-          agentWorkspaceId: defaultWorkspaceId,
-        }).catch(console.error)
-      }
-
-      // 5. 切换到 Agent 模式
-      store.set(appModeAtom, 'agent')
-      store.set(activeViewAtom, 'conversations')
-
-      // 6. 打开 Agent 会话 Tab 并激活
-      const sessionTitle = session.title ?? '新 Agent 会话'
-      const tabs = store.get(tabsAtom)
-      const result = openTab(tabs, {
-        type: 'agent',
-        sessionId: session.id,
-        title: sessionTitle,
-      })
-      store.set(tabsAtom, result.tabs)
-      store.set(activeTabIdAtom, result.activeTabId)
-      store.set(currentAgentSessionIdAtom, session.id)
-
-      // 7. 通知用户
+      // 4. 通知用户
       toast.success('已切换到 Agent 模式', {
         description: '对话历史已迁移到新的 Agent 会话',
       })

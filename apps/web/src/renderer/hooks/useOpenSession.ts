@@ -1,8 +1,11 @@
 /**
- * useOpenSession — 统一的"打开/聚焦会话 Tab"操作
+ * useOpenSession — Agent 入口的「打开/聚焦会话 Tab」操作
  *
- * 封装 openTab + setTabs + setActiveTabId + setAppMode + setCurrentXxxId，
- * 确保所有打开会话的入口都能正确同步 appMode 和 currentSessionId。
+ * 封装 openTab + setTabs + setActiveTabId + setCurrentAgentSessionId 等，
+ * 仅处理 Agent 侧状态（agent 会话/tab/工作区）。
+ *
+ * Chat 入口已独立（/chat），不再经此 hook；选中对话改用 useOpenConversation。
+ * appMode 不再由此写入，改由各 Shell 挂载时设定为 shell 身份。
  */
 
 import * as React from 'react'
@@ -16,10 +19,8 @@ import {
   type TabType,
 } from '@/atoms/tab-atoms'
 import { previewFileMapAtom } from '@/atoms/preview-atoms'
-import { appModeAtom } from '@/atoms/app-mode'
 import { activeViewAtom } from '@/atoms/active-view'
 import { automationFormAtom } from '@/atoms/automation-atoms'
-import { currentConversationIdAtom } from '@/atoms/chat-atoms'
 import {
   currentAgentSessionIdAtom,
   agentSessionsAtom,
@@ -33,10 +34,8 @@ export function useOpenSession(): OpenSessionFn {
   const store = useStore()
   const [tabs, setTabs] = useAtom(tabsAtom)
   const setActiveTabId = useSetAtom(activeTabIdAtom)
-  const setAppMode = useSetAtom(appModeAtom)
   const setActiveView = useSetAtom(activeViewAtom)
   const setAutomationForm = useSetAtom(automationFormAtom)
-  const setCurrentConversationId = useSetAtom(currentConversationIdAtom)
   const setCurrentAgentSessionId = useSetAtom(currentAgentSessionIdAtom)
   const agentSessions = useAtomValue(agentSessionsAtom)
   const setCurrentAgentWorkspaceId = useSetAtom(currentAgentWorkspaceIdAtom)
@@ -45,7 +44,7 @@ export function useOpenSession(): OpenSessionFn {
   return React.useCallback(
     (type: TabType, sessionId: string, title: string): void => {
       // 切回 agent 会话时，若该会话上次开着预览 Tab 则一并重建并回到上次视图
-      const restore = type === 'agent'
+      const restore = type === 'agent' || type === 'preview'
         ? buildOpenTabRestore(
             sessionId,
             store.get(sessionViewStateMapAtom),
@@ -58,11 +57,7 @@ export function useOpenSession(): OpenSessionFn {
       setAutomationForm({ open: false, draft: null })
       setActiveView('conversations')
 
-      if (type === 'chat') {
-        setAppMode('chat')
-        setCurrentConversationId(sessionId)
-      } else if (type === 'agent' || type === 'preview') {
-        setAppMode('agent')
+      if (type === 'agent' || type === 'preview') {
         setCurrentAgentSessionId(sessionId)
 
         // 用户打开查看后只清除未读角标；是否完成由用户通过对勾确认。
@@ -82,11 +77,9 @@ export function useOpenSession(): OpenSessionFn {
           }).catch(console.error)
         }
       } else {
-        setAppMode('scratch')
-        setCurrentConversationId(null)
-        setCurrentAgentSessionId(null)
+        // scratch 等非 agent 会话入口：不切走 Agent 会话标识由 useSyncActiveTabSideEffects 处理
       }
     },
-    [tabs, setTabs, setActiveTabId, setAutomationForm, setActiveView, setAppMode, setCurrentConversationId, setCurrentAgentSessionId, agentSessions, setCurrentAgentWorkspaceId, setUnviewedCompleted],
+    [tabs, setTabs, setActiveTabId, setAutomationForm, setActiveView, setCurrentAgentSessionId, agentSessions, setCurrentAgentWorkspaceId, setUnviewedCompleted],
   )
 }

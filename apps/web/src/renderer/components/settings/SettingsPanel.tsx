@@ -27,6 +27,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { settingsTabAtom, channelFormDirtyAtom, settingsCloseRequestedAtom } from "@/atoms/settings-tab";
 import type { SettingsTab } from "@/atoms/settings-tab";
 import { canManageAtom } from "@/atoms/auth";
+import { useRoute } from "@/lib/router";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -213,12 +214,15 @@ export function SettingsPanel({
   // - 桌面端无登录概念：全部 tab 可见（仅排除 Web 登录相关的账号/用户管理）
   // - Web 管理员：全部可见（含账号设置 / 用户管理）
   // - Web 普通用户：隐藏 adminOnly 标记的管理员专属导航项
+  // Chat 工具仅在 /chat 入口显示（Agent 入口不加载 Chat 工具）
+  const route = useRoute()
   const tabs = React.useMemo(() => {
-    const all = isWebRuntime()
+    const webFiltered = isWebRuntime()
       ? ALL_TABS
       : ALL_TABS.filter((tab) => tab.id !== "account" && tab.id !== "users" && tab.id !== "branding")
+    const all = route === 'chat' ? webFiltered : webFiltered.filter((tab) => tab.id !== "tools")
     return canManage ? all : all.filter((tab) => !tab.adminOnly)
-  }, [canManage]);
+  }, [canManage, route]);
 
   // 深链防御：当前 tab 不在可见列表时（如普通用户被外部直接指定管理员专属 tab id，
   // 或默认值 channels 对普通用户不可见），回退到该用户可见列表的首个 tab（恒为「通用设置」）。

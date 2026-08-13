@@ -66,13 +66,15 @@ import { useGlobalChatListeners } from './hooks/useGlobalChatListeners'
 import { tabsAtom, activeTabIdAtom, ensureScratchPadTab, getPersistableTabState, scratchPadContentAtom, scratchPadLoadedAtom, SCRATCH_PAD_ID } from './atoms/tab-atoms'
 import type { TabItem } from './atoms/tab-atoms'
 import { chatToolsAtom } from './atoms/chat-tool-atoms'
-import { currentConversationIdAtom, channelsAtom, channelsLoadedAtom, selectedModelAtom } from './atoms/chat-atoms'
+import { selectedModelAtom } from './atoms/chat-atoms'
+import { channelsAtom, channelsLoadedAtom } from './atoms/channels-atoms'
 import { appModeAtom } from './atoms/app-mode'
 import { Toaster } from './components/ui/sonner'
 import { toast } from 'sonner'
 import { diffCapabilities } from '@proma/shared'
 import type { WorkspaceCapabilities } from '@proma/shared'
 import { showCapabilityChangeToasts } from './lib/capabilities-toast'
+import { getQueryParam } from './lib/router'
 import { GlobalShortcuts } from './components/shortcuts/GlobalShortcuts'
 import { TabSwitcher } from './components/tabs/TabSwitcher'
 import { htmlToMarkdown, markdownToHtml } from './lib/markdown-rich-text'
@@ -191,9 +193,45 @@ function BrandingInitializer(): null {
 }
 
 /**
+ * 渠道列表初始化组件（共享，根常驻）
+ *
+ * 启动时加载全局渠道列表写入共享 atom（Chat 与 Agent 都从这里取），
+ * 并校验 Chat 全局默认模型是否仍指向有效渠道。原职责从 AgentSettingsInitializer 上提，
+ * 以便 Chat 入口（不挂载 AgentSettingsInitializer）也能拿到渠道列表。
+ */
+function ChannelsInitializer(): null {
+  const setChannels = useSetAtom(channelsAtom)
+  const setChannelsLoaded = useSetAtom(channelsLoadedAtom)
+  const store = useStore()
+
+  useEffect(() => {
+    window.electronAPI.listChannels()
+      .then((channels) => {
+        setChannels(channels)
+        setChannelsLoaded(true)
+
+        // 校验 Chat 全局默认模型（localStorage 持久化的可能指向已删除渠道）
+        const channelIds = new Set(channels.map((c) => c.id))
+        const chatModel = store.get(selectedModelAtom)
+        if (chatModel && !channelIds.has(chatModel.channelId)) {
+          console.warn('[Channels] selectedModel 指向已删除的渠道，清除')
+          store.set(selectedModelAtom, null)
+        }
+      })
+      .catch((err) => {
+        console.error('[ChannelsInitializer] 加载渠道失败:', err)
+        setChannelsLoaded(true) // 即使出错也标记就绪，避免 AgentSettingsInitializer 永远等待
+      })
+  }, [setChannels, setChannelsLoaded, store])
+
+  return null
+}
+
+/**
  * Agent 设置初始化组件
  *
- * 从主进程加载 Agent 渠道/模型设置并写入 atoms。
+ * 加载 Agent 运行时/渠道/模型/工作区等设置并写入 atoms。
+ * 渠道列表由共享 ChannelsInitializer 加载，这里等其就绪后再做 Agent 侧校验。
  */
 function AgentSettingsInitializer(): null {
   const setAgentChannelId = useSetAtom(agentChannelIdAtom)
@@ -211,9 +249,10 @@ function AgentSettingsInitializer(): null {
   const setAutomationGroupOrder = useSetAtom(automationGroupOrderAtom)
 
   const setAgentSettingsReady = useSetAtom(agentSettingsReadyAtom)
-  const setChannels = useSetAtom(channelsAtom)
-  const setChannelsLoaded = useSetAtom(channelsLoadedAtom)
   const store = useStore()
+
+  // 渠道列表由共享 ChannelsInitializer 加载；此处等其就绪后再做 Agent 渠道/模型校验
+  const channelsLoaded = useAtomValue(channelsLoadedAtom)
 
   // 读取当前工作区信息（用于能力变化 diff）
   const currentWorkspaceId = useAtomValue(currentAgentWorkspaceIdAtom)
@@ -225,24 +264,11 @@ function AgentSettingsInitializer(): null {
   const suppressToastRef = useRef(true)
 
   useEffect(() => {
-    // 并行加载渠道列表和设置，确保两者都就绪后再验证渠道有效性
-    Promise.all([
-      window.electronAPI.listChannels(),
-      window.electronAPI.getSettings(),
-    ]).then(([channels, settings]) => {
-      // 缓存渠道列表
-      setChannels(channels)
-      setChannelsLoaded(true)
+    // 等共享 ChannelsInitializer 把渠道列表写入 atom 后，再做 Agent 渠道/模型校验
+    if (!channelsLoaded) return
+    const channels = store.get(channelsAtom)
 
-      const channelIds = new Set(channels.map((c) => c.id))
-
-      // 验证 Chat 模式的全局默认模型（localStorage 持久化的可能指向已删除渠道）
-      const chatModel = store.get(selectedModelAtom)
-      if (chatModel && !channelIds.has(chatModel.channelId)) {
-        console.warn('[AgentSettings] Chat selectedModel 指向已删除的渠道，清除')
-        store.set(selectedModelAtom, null)
-      }
-
+    window.electronAPI.getSettings().then((settings) => {
       const defaultAgentRuntime = settings.agentRuntime ?? 'pi'
       setAgentRuntime(defaultAgentRuntime)
 
@@ -314,7 +340,7 @@ function AgentSettingsInitializer(): null {
       console.error(err)
       setAgentSettingsReady(true) // 即使出错也标记就绪，避免永远阻塞
     })
-  }, [setAgentChannelId, setAgentModelId, setAgentChannelIds, setAgentRuntime, setAgentWorkspaces, setCurrentWorkspaceId, setThinking, setEffort, setMaxBudget, setMaxTurns, setAutomationGroupOrder, setChannels, setChannelsLoaded, setAgentSettingsReady])
+  }, [channelsLoaded, store, setAgentChannelId, setAgentModelId, setAgentChannelIds, setAgentRuntime, setAgentWorkspaces, setCurrentWorkspaceId, setThinking, setEffort, setMaxBudget, setMaxTurns, setAutomationGroupOrder, setAgentSettingsReady])
 
   // 工作区切换时重置能力缓存，预加载基线
   useEffect(() => {
@@ -537,6 +563,11 @@ function TabStatePersistenceInitializer(): null {
 
   // 启动恢复：读取 settings.tabState + 校验会话有效性
   useEffect(() => {
+    // 跨入口跳转（/agent?session=...）由 AgentShell 负责打开目标会话，跳过标签恢复以免覆盖
+    if (getQueryParam('session')) {
+      restoredRef.current = true
+      return
+    }
     Promise.all([
       window.electronAPI.getSettings(),
       window.electronAPI.listConversations(),
@@ -554,7 +585,8 @@ function TabStatePersistenceInitializer(): null {
         ...agentSessions.map((s) => s.id),
       ])
 
-      // 过滤 diff 类型 Tab（不持久化），同时过滤掉已被删除的会话
+      // 过滤 diff 类型 Tab（不持久化），过滤掉已被删除的会话；
+      // 同时丢弃残留的 chat 标签（chat 会话现归 /chat 入口，Agent 入口不再产生 chat 标签）
       const validTabs = tabState.tabs.filter(
         (t): t is TabItem =>
           typeof t === 'object' &&
@@ -563,7 +595,7 @@ function TabStatePersistenceInitializer(): null {
           'sessionId' in t &&
           'type' in t &&
           'title' in t &&
-          (t.type === 'chat' || t.type === 'agent') &&
+          t.type === 'agent' &&
           validSessionIds.has(t.sessionId),
       )
       if (validTabs.length === 0) {
@@ -591,15 +623,10 @@ function TabStatePersistenceInitializer(): null {
       store.set(tabsAtom, ensureScratchPadTab(activeTab ? [activeTab] : []))
       store.set(activeTabIdAtom, restoredActiveTabId)
 
-      // 同步 appMode 和 currentSessionId
+      // 同步 appMode 和 currentSessionId（恢复的标签已过滤为 agent 专属）
       if (activeTab) {
-        if (activeTab.type === 'chat') {
-          store.set(appModeAtom, 'chat')
-          store.set(currentConversationIdAtom, activeTab.sessionId)
-        } else {
-          store.set(appModeAtom, 'agent')
-          store.set(currentAgentSessionIdAtom, activeTab.sessionId)
-        }
+        store.set(appModeAtom, 'agent')
+        store.set(currentAgentSessionIdAtom, activeTab.sessionId)
       }
 
       console.log(`[TabRestore] 已恢复当前会话入口，历史标签 ${validTabs.length} 个已收敛到左侧列表`)
@@ -769,6 +796,7 @@ function ScratchPadPersistence(): null {
       <ThemeInitializer />
       <AuthInitializer />
       <BrandingInitializer />
+      <ChannelsInitializer />
       <AgentSettingsInitializer />
       <NotificationsInitializer />
       <UiPreferencesInitializer />

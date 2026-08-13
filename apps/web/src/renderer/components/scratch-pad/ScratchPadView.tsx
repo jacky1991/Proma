@@ -17,14 +17,9 @@ import { FileDown, List, ListTodo, PanelRight, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { scratchPadContentAtom, scratchPadLoadedAtom, tabsAtom, activeTabIdAtom } from '@/atoms/tab-atoms'
 import {
-  agentDiffPanelTabAtom,
-  agentSidePanelOpenAtom,
-  currentAgentSessionIdAtom,
   currentAgentWorkspaceIdAtom,
   agentWorkspacesAtom,
 } from '@/atoms/agent-atoms'
-import { agentSideChatMapAtom, conversationsAtom, conversationDraftsAtom, selectedModelAtom } from '@/atoms/chat-atoms'
-import { appModeAtom } from '@/atoms/app-mode'
 import { quotedSelectionMapAtom } from '@/atoms/preview-atoms'
 import {
   DropdownMenu,
@@ -124,21 +119,12 @@ function ScratchPadEditor({ variant }: ScratchPadEditorProps): React.ReactElemen
   const [selection, setSelection] = React.useState<ScratchPadSelection | null>(null)
   const pointerSelectingRef = React.useRef(false)
   const captureTimerRef = React.useRef<number | null>(null)
-  const openSideChatPendingRef = React.useRef(false)
 
   // 用 ref 追踪最新内容，避免在 useEffect deps 里包含 content 导致循环
   const contentRef = React.useRef(content)
   contentRef.current = content
 
   const setQuotedSelectionMap = useSetAtom(quotedSelectionMapAtom)
-  const selectedChatModel = useAtomValue(selectedModelAtom)
-  const setConversations = useSetAtom(conversationsAtom)
-  const setConversationDrafts = useSetAtom(conversationDraftsAtom)
-  const setAgentSideChatMap = useSetAtom(agentSideChatMapAtom)
-  const setAgentSidePanelOpen = useSetAtom(agentSidePanelOpenAtom)
-  const setAgentSidePanelTabMap = useSetAtom(agentDiffPanelTabAtom)
-  const setCurrentAgentSessionId = useSetAtom(currentAgentSessionIdAtom)
-  const setAppMode = useSetAtom(appModeAtom)
 
   const extensions = React.useMemo(() => [
     StarterKit.configure({
@@ -343,75 +329,6 @@ function ScratchPadEditor({ variant }: ScratchPadEditorProps): React.ReactElemen
     toast.success('已添加到 Agent 引用')
   }, [clearSelection, getTargetAgentSessionId, selection, setQuotedSelectionMap])
 
-  const handleOpenSideChat = React.useCallback(async (): Promise<void> => {
-    if (!selection) return
-    if (openSideChatPendingRef.current) return
-    const sessionId = getTargetAgentSessionId()
-    if (!sessionId) return
-
-    openSideChatPendingRef.current = true
-    try {
-      const conversation = await window.electronAPI.createConversation(
-        '草稿选区问答',
-        selectedChatModel?.modelId,
-        selectedChatModel?.channelId,
-      )
-      setConversations((prev) => {
-        if (prev.some((item) => item.id === conversation.id)) return prev
-        return [conversation, ...prev]
-      })
-      setConversationDrafts((prev) => {
-        const next = new Map(prev)
-        next.set(conversation.id, '我的问题：')
-        return next
-      })
-      setQuotedSelectionMap((prev) => {
-        const next = new Map(prev)
-        next.set(conversation.id, {
-          text: selection.text,
-          filePath: '草稿页',
-          sourceType: 'scratch-pad',
-          sourceLabel: '草稿页',
-          capturedAt: Date.now(),
-        })
-        return next
-      })
-      setCurrentAgentSessionId(sessionId)
-      setAppMode('agent')
-      setAgentSideChatMap((prev) => {
-        const next = new Map(prev)
-        next.set(sessionId, conversation.id)
-        return next
-      })
-      setAgentSidePanelOpen(true)
-      setAgentSidePanelTabMap((prev) => {
-        const next = new Map(prev)
-        next.set(sessionId, 'chat')
-        return next
-      })
-      window.getSelection()?.removeAllRanges()
-      clearSelection()
-    } catch (error) {
-      console.error('[ScratchPad] 打开草稿选区右侧问答失败:', error)
-      toast.error('打开右侧问答失败')
-    } finally {
-      openSideChatPendingRef.current = false
-    }
-  }, [
-    clearSelection,
-    getTargetAgentSessionId,
-    selectedChatModel,
-    selection,
-    setAgentSideChatMap,
-    setAgentSidePanelOpen,
-    setAgentSidePanelTabMap,
-    setAppMode,
-    setConversationDrafts,
-    setConversations,
-    setCurrentAgentSessionId,
-    setQuotedSelectionMap,
-  ])
-
   const makeFilename = () => {
     const now = new Date()
     const pad = (n: number) => String(n).padStart(2, '0')
@@ -568,7 +485,6 @@ function ScratchPadEditor({ variant }: ScratchPadEditorProps): React.ReactElemen
           x={selection.x}
           y={selection.y}
           onAddToAgent={handleAddToAgent}
-          onOpenChat={handleOpenSideChat}
         />
       )}
       <div className="h-[28px] border-t border-border/40 px-4 flex items-center justify-between">

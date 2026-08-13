@@ -21,7 +21,8 @@ import { Search, X, MessageSquare, Bot, Archive, Loader2 } from 'lucide-react'
 import { Dialog, DialogContent, DialogPortal, DialogTitle } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { searchDialogOpenAtom } from '@/atoms/search-atoms'
-import { conversationsAtom, channelsAtom } from '@/atoms/chat-atoms'
+import { conversationsAtom } from '@/atoms/chat-atoms'
+import { channelsAtom } from '@/atoms/channels-atoms'
 import {
   agentSessionsAtom,
   agentWorkspacesAtom,

@@ -387,7 +387,7 @@ export const agentSidePanelWidthAtom = atomWithStorage<number>('proma-agent-side
 /** @deprecated 保留以兼容旧代码，但实际所有 session 都读全局 atom */
 export const agentSidePanelOpenMapAtom = atom<Map<string, boolean>>(new Map())
 
-export type AgentSidePanelTab = 'session' | 'workspace' | 'chat'
+export type AgentSidePanelTab = 'session' | 'workspace'
 
 /** 侧面板当前 Tab：会话文件 / 工作区文件 / Chat（per-session Map） */
 export const agentDiffPanelTabAtom = atom<Map<string, AgentSidePanelTab>>(new Map())

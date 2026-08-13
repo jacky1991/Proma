@@ -47,7 +47,7 @@ import { ScrollPositionManager } from '@/hooks/useScrollPositionMemory'
 import { useConversationParallelMode } from '@/hooks/useConversationSettings'
 import { getModelLogo, resolveModelProvider } from '@/lib/model-logo'
 import { userProfileAtom } from '@/atoms/user-profile'
-import { channelsAtom } from '@/atoms/chat-atoms'
+import { channelsAtom } from '@/atoms/channels-atoms'
 import { tabMinimapCacheAtom } from '@/atoms/tab-atoms'
 import type { ChatMessage, ChatToolActivity } from '@proma/shared'
 

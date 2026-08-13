@@ -1,18 +1,13 @@
 /**
- * useSyncActiveTabSideEffects — 将"新激活标签"的副作用同步到全局原子
+ * useSyncActiveTabSideEffects — 将「新激活标签」的副作用同步到全局原子
  *
- * 标签页切换/关闭时，需要把 appMode、currentConversationId、
- * currentAgentSessionId、currentAgentWorkspaceId、unviewedCompletedSessionIds
- * 等全局状态同步到新激活的标签。该逻辑原本在 TabBar.handleClose 和
- * GlobalShortcuts.handleCloseTab 中各写一份，此 hook 统一封装，避免
- * 两处出现细节漂移（历史上 GlobalShortcuts 曾漏掉清除 unviewedCompleted
- * 与该条分支对齐）。
+ * 标签页切换/关闭时，把 currentAgentSessionId、currentAgentWorkspaceId、
+ * unviewedCompletedSessionIds 等同步到新激活的标签。Agent 入口专用，
+ * 不再处理 chat 标签，也不再写 appMode（appMode 由 Shell 挂载时设定）。
  */
 
 import { useCallback } from 'react'
 import { useAtomValue, useSetAtom } from 'jotai'
-import { appModeAtom } from '@/atoms/app-mode'
-import { currentConversationIdAtom } from '@/atoms/chat-atoms'
 import {
   agentSessionsAtom,
   currentAgentSessionIdAtom,
@@ -24,45 +19,28 @@ import type { TabItem } from '@/atoms/tab-atoms'
 export type SyncActiveTabSideEffects = (newActiveTab: TabItem | null) => void
 
 export function useSyncActiveTabSideEffects(): SyncActiveTabSideEffects {
-  const setAppMode = useSetAtom(appModeAtom)
-  const setCurrentConversationId = useSetAtom(currentConversationIdAtom)
   const setCurrentAgentSessionId = useSetAtom(currentAgentSessionIdAtom)
   const setCurrentAgentWorkspaceId = useSetAtom(currentAgentWorkspaceIdAtom)
   const setUnviewedCompleted = useSetAtom(unviewedCompletedSessionIdsAtom)
   const agentSessions = useAtomValue(agentSessionsAtom)
-  const appMode = useAtomValue(appModeAtom)
 
   return useCallback<SyncActiveTabSideEffects>(
     (newActiveTab) => {
       if (!newActiveTab) {
         // 所有标签都已关闭
-        setCurrentConversationId(null)
-        setCurrentAgentSessionId(null)
-        return
-      }
-
-      if (newActiveTab.type === 'chat') {
-        setAppMode('chat')
-        setCurrentConversationId(newActiveTab.sessionId)
         setCurrentAgentSessionId(null)
         return
       }
 
       if (newActiveTab.type === 'scratch') {
-        // Agent 模式下切到 Scratch Pad 时保持右侧文件面板不收起
-        setCurrentConversationId(null)
-        if (appMode !== 'agent') {
-          setCurrentAgentSessionId(null)
-        }
+        // Scratch Pad 不切走当前 Agent 会话标识（保持右侧文件面板状态自洽）
         return
       }
 
       // Agent / 会话预览
-      setAppMode('agent')
       setCurrentAgentSessionId(newActiveTab.sessionId)
-      setCurrentConversationId(null)
 
-      // 清除该会话的"已完成未查看"标记
+      // 清除该会话的「已完成未查看」标记
       setUnviewedCompleted((prev) => {
         if (!prev.has(newActiveTab.sessionId)) return prev
         const next = new Set(prev)
@@ -80,9 +58,6 @@ export function useSyncActiveTabSideEffects(): SyncActiveTabSideEffects {
       }
     },
     [
-      appMode,
-      setAppMode,
-      setCurrentConversationId,
       setCurrentAgentSessionId,
       setCurrentAgentWorkspaceId,
       setUnviewedCompleted,

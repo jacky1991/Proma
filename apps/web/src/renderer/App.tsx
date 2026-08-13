@@ -1,25 +1,24 @@
 import * as React from 'react'
-import { AppShell } from './components/app-shell/AppShell'
 import { TooltipProvider } from './components/ui/tooltip'
 import { SettingsDialog } from './components/settings/SettingsDialog'
 import { LazyFallback } from './components/ui/lazy-fallback'
-import type { AppShellContextType } from './contexts/AppShellContext'
+import { useRoute } from './lib/router'
 
-// 路由级懒加载：首装引导仅在首次启动时需要，拆出独立 chunk，避免其内容进入首屏 main.js。
+// 路由级懒加载：Shell 与首装引导各自独立 chunk，避免相互进入首屏。
 const OnboardingView = React.lazy(() =>
   import('./components/onboarding/OnboardingView').then((m) => ({ default: m.OnboardingView })),
 )
+const ChatShell = React.lazy(() =>
+  import('./shells/ChatShell').then((m) => ({ default: m.ChatShell })),
+)
+const AgentShell = React.lazy(() =>
+  import('./shells/AgentShell').then((m) => ({ default: m.AgentShell })),
+)
 
 export default function App(): React.ReactElement {
-  // [FLASH-DEBUG] 监控 App 组件重渲染（如果看到频繁日志，说明根组件被频繁重渲染）
-  const appRenderCountRef = React.useRef(0)
-  appRenderCountRef.current++
-  if (appRenderCountRef.current > 1) {
-    console.warn(`[FLASH-DEBUG] App re-render #${appRenderCountRef.current}, isLoading/showOnboarding may have changed`)
-  }
-
   const [isLoading, setIsLoading] = React.useState(true)
   const [showOnboarding, setShowOnboarding] = React.useState(false)
+  const route = useRoute()
 
   // 初始化：检查是否需要显示 Onboarding
   // Web 端不做本地环境检测（Node/Git/Shell 在服务端），首装仅展示欢迎页。
@@ -68,13 +67,12 @@ export default function App(): React.ReactElement {
     )
   }
 
-  // Placeholder context value
-  const contextValue: AppShellContextType = {}
-
-  // 显示主界面
+  // 路由主机：按 route 选择 Shell，Suspense 兜底懒加载；SettingsDialog 共享
   return (
     <TooltipProvider delayDuration={200}>
-      <AppShell contextValue={contextValue} />
+      <React.Suspense fallback={<LazyFallback className="h-screen" />}>
+        {route === 'chat' ? <ChatShell /> : <AgentShell />}
+      </React.Suspense>
       <SettingsDialog />
     </TooltipProvider>
   )

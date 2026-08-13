@@ -14,7 +14,7 @@ import remarkGfm from 'remark-gfm'
 import { AlertTriangle } from 'lucide-react'
 import { UserAvatar } from '@/components/chat/UserAvatar'
 import { getModelLogo, resolveModelProvider } from '@/lib/model-logo'
-import { channelsAtom } from '@/atoms/chat-atoms'
+import { channelsAtom } from '@/atoms/channels-atoms'
 import { cn } from '@/lib/utils'
 import type { TabMinimapItem } from '@/atoms/tab-atoms'
 

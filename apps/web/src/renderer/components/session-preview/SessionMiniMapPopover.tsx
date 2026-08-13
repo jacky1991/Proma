@@ -15,7 +15,7 @@ import { UserAvatar } from '@/components/chat/UserAvatar'
 import { tabMinimapCacheAtom, type TabMinimapItem } from '@/atoms/tab-atoms'
 import { userProfileAtom } from '@/atoms/user-profile'
 import { getModelLogo, resolveModelProvider } from '@/lib/model-logo'
-import { channelsAtom } from '@/atoms/chat-atoms'
+import { channelsAtom } from '@/atoms/channels-atoms'
 import { cn } from '@/lib/utils'
 import type {
   ChatMessage,

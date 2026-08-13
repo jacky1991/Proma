@@ -11,29 +11,20 @@
 import * as React from 'react'
 import { useAtom, useSetAtom, useAtomValue, useStore } from 'jotai'
 import { toast } from 'sonner'
-import { Pin, PinOff, Settings, Plus, Trash2, Pencil, PanelLeftClose, PanelLeftOpen, ArrowRightLeft, Search, Archive, ArchiveRestore, ArrowLeft, Bot, MessageSquare, MoreHorizontal, FolderOpen, GripVertical, Clock, AlarmClock, ChevronRight, Blocks, GitBranch } from 'lucide-react'
+import { Pin, PinOff, Settings, Plus, Trash2, Pencil, PanelLeftOpen, ArrowRightLeft, Search, Archive, ArchiveRestore, ArrowLeft, MoreHorizontal, FolderOpen, GripVertical, Clock, AlarmClock, ChevronRight, Blocks, GitBranch } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { isWebRuntime } from '@/lib/web-runtime'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
-import { ModeSwitcher } from './ModeSwitcher'
 import { BrandingHeader } from './BrandingHeader'
+import { SafeTooltip, SessionItemActions, SessionQuickSwitchKeycap, groupByDate } from './list-items'
 import { SearchDialog } from './SearchDialog'
 import { UserAvatar } from '@/components/chat/UserAvatar'
+import { ConversationList } from '@/components/chat/ConversationList'
+import { useCreateConversation } from '@/hooks/useCreateConversation'
 import { activeViewAtom, agentSkillsTabAtom } from '@/atoms/active-view'
 import { automationFormAtom, automationsAtom } from '@/atoms/automation-atoms'
-import { appModeAtom, type AppMode } from '@/atoms/app-mode'
+import { useRoute } from '@/lib/router'
 import { settingsOpenAtom, settingsTabAtom } from '@/atoms/settings-tab'
-import {
-  conversationsAtom,
-  currentConversationIdAtom,
-  selectedModelAtom,
-  streamingConversationIdsAtom,
-  conversationModelsAtom,
-  conversationContextLengthAtom,
-  conversationThinkingEnabledAtom,
-  conversationParallelModeAtom,
-  agentSideChatMapAtom,
-} from '@/atoms/chat-atoms'
 import {
   agentSessionsAtom,
   agentSDKMessagesCacheAtom,
@@ -78,7 +69,6 @@ import { sidebarViewModeAtom } from '@/atoms/sidebar-atoms'
 import { searchDialogOpenAtom } from '@/atoms/search-atoms'
 import { draftSessionIdsAtom } from '@/atoms/draft-session-atoms'
 import { canManageAtom } from '@/atoms/auth'
-import { promptConfigAtom, selectedPromptIdAtom, conversationPromptIdAtom } from '@/atoms/system-prompt-atoms'
 import { interfaceVariantAtom } from '@/atoms/theme'
 import { sessionHoverPreviewEnabledAtom } from '@/atoms/ui-preferences'
 import { useOpenSession } from '@/hooks/useOpenSession'
@@ -122,7 +112,7 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
-import type { ConversationMeta, AgentSessionMeta, AgentWorkspace, WorkspaceCapabilities } from '@proma/shared'
+import type { AgentSessionMeta, AgentWorkspace, WorkspaceCapabilities } from '@proma/shared'
 
 function formatAutomationCount(count: number): string {
   return count > 99 ? '99+' : String(count)
@@ -213,9 +203,6 @@ export interface LeftSidebarProps {
   noTransition?: boolean
 }
 
-/** 日期分组标签 */
-type DateGroup = '今天' | '昨天' | '更早'
-
 interface AgentProjectGroup {
   workspace: AgentWorkspace
   sessions: AgentSessionMeta[]
@@ -253,49 +240,6 @@ const ACTIVE_SESSION_STATUS_PRIORITY: Record<SessionIndicatorStatus, number> = {
   running: 1,
   completed: 2,
   idle: 3,
-}
-
-function formatRelativeUpdatedAt(updatedAt: number, now: number): string {
-  const diff = Math.max(0, now - updatedAt)
-  const minute = 60_000
-  const hour = 60 * minute
-  const day = 24 * hour
-  const month = 30 * day
-  const year = 365 * day
-
-  if (diff < minute) return '刚刚'
-  if (diff < hour) return `${Math.max(1, Math.floor(diff / minute))} 分钟`
-  if (diff < day) return `${Math.floor(diff / hour)} 小时`
-  if (diff < month) return `${Math.floor(diff / day)} 天`
-  if (diff < year) return `${Math.floor(diff / month)} 月`
-  return `${Math.floor(diff / year)} 年`
-}
-
-/** 按 updatedAt 将项目分为 今天 / 昨天 / 更早 三组 */
-function groupByDate<T extends { updatedAt: number }>(items: T[]): Array<{ label: DateGroup; items: T[] }> {
-  const now = new Date()
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
-  const yesterdayStart = todayStart - 86_400_000
-
-  const today: T[] = []
-  const yesterday: T[] = []
-  const earlier: T[] = []
-
-  for (const item of items) {
-    if (item.updatedAt >= todayStart) {
-      today.push(item)
-    } else if (item.updatedAt >= yesterdayStart) {
-      yesterday.push(item)
-    } else {
-      earlier.push(item)
-    }
-  }
-
-  const groups: Array<{ label: DateGroup; items: T[] }> = []
-  if (today.length > 0) groups.push({ label: '今天', items: today })
-  if (yesterday.length > 0) groups.push({ label: '昨天', items: yesterday })
-  if (earlier.length > 0) groups.push({ label: '更早', items: earlier })
-  return groups
 }
 
 const RAIL_STATUS_CLASS: Record<SessionIndicatorStatus, string> = {
@@ -361,15 +305,6 @@ function isQuickSwitchRowVisible(row: HTMLElement, root: HTMLElement): boolean {
   }
 
   return true
-}
-
-function SessionQuickSwitchKeycap(): React.ReactElement {
-  return (
-    <span className="session-quick-switch-keycap" aria-hidden="true">
-      <span className="session-quick-switch-modifier" />
-      <span className="session-quick-switch-number" />
-    </span>
-  )
 }
 
 function getRailInitial(title: string): string {
@@ -631,8 +566,6 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
   const settingsOpen = useAtomValue(settingsOpenAtom)
   const setSettingsOpen = useSetAtom(settingsOpenAtom)
   const setSettingsTab = useSetAtom(settingsTabAtom)
-  const [conversations, setConversations] = useAtom(conversationsAtom)
-  const [currentConversationId, setCurrentConversationId] = useAtom(currentConversationIdAtom)
   const draftSessionIds = useAtomValue(draftSessionIdsAtom)
   const setDraftSessionIds = useSetAtom(draftSessionIdsAtom)
   const setAgentMessagesCache = useSetAtom(agentSDKMessagesCacheAtom)
@@ -664,12 +597,9 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
   const newProjectInputRef = React.useRef<HTMLInputElement>(null)
   const [relativeTimeNow, setRelativeTimeNow] = React.useState(() => Date.now())
   const [userProfile, setUserProfile] = useAtom(userProfileAtom)
-  const selectedModel = useAtomValue(selectedModelAtom)
-  const streamingIds = useAtomValue(streamingConversationIdsAtom)
-  const mode = useAtomValue(appModeAtom)
+  // 当前入口身份直接取自路由（/agent | /chat），避免依赖持久化的 appMode 造成首屏错档闪烁
+  const mode = useRoute()
   const isMac = React.useMemo(() => detectIsMac(), [])
-  const promptConfig = useAtomValue(promptConfigAtom)
-  const setSelectedPromptId = useSetAtom(selectedPromptIdAtom)
   const interfaceVariant = useAtomValue(interfaceVariantAtom)
   const isClassic = interfaceVariant === 'classic'
   const sessionHoverPreviewEnabled = useAtomValue(sessionHoverPreviewEnabledAtom)
@@ -687,7 +617,6 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
   const setSessionPathMap = useSetAtom(agentSessionPathMapAtom)
   const [currentWorkspaceId, setCurrentWorkspaceId] = useAtom(currentAgentWorkspaceIdAtom)
   const [workspaces, setWorkspaces] = useAtom(agentWorkspacesAtom)
-  const setMode = useSetAtom(appModeAtom)
 
   // 当前项目能力（MCP + Skill 计数）
   const [capabilities, setCapabilities] = React.useState<WorkspaceCapabilities | null>(null)
@@ -731,22 +660,17 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
     })
   }, [activeTabId])
 
-  // per-conversation/session Map atoms（删除时清理）
-  const setConvModels = useSetAtom(conversationModelsAtom)
-  const setConvContextLength = useSetAtom(conversationContextLengthAtom)
-  const setConvThinking = useSetAtom(conversationThinkingEnabledAtom)
-  const setConvParallel = useSetAtom(conversationParallelModeAtom)
-  const setConvPromptId = useSetAtom(conversationPromptIdAtom)
+  // per-session Map atoms（删除/归档时清理；LeftSidebar 已收敛为 Agent 专属，
+  // 此处只保留 Agent 会话相关的清理，Chat 对话的清理由 ConversationList 自带）
   const setPreviewPanelOpen = useSetAtom(previewPanelOpenMapAtom)
   const setPreviewFile = useSetAtom(previewFileMapAtom)
-  const setAgentSideChatMap = useSetAtom(agentSideChatMapAtom)
   const setDiffPanelTab = useSetAtom(agentDiffPanelTabAtom)
   const setStreamingStates = useSetAtom(agentStreamingStatesAtom)
   const setLiveMessagesMap = useSetAtom(liveMessagesMapAtom)
   const setSessionPendingFiles = useSetAtom(agentSessionPendingFilesAtom)
   const setSessionViewStateMap = useSetAtom(sessionViewStateMapAtom)
 
-  /** 清理 per-conversation/session Map atoms 条目 */
+  /** 清理 per-session Map atoms 条目（Agent 会话删除/归档/迁移时调用） */
   const cleanupMapAtoms = React.useCallback((id: string) => {
     const deleteKey = <T,>(prev: Map<string, T>): Map<string, T> => {
       if (!prev.has(id)) return prev
@@ -754,25 +678,8 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
       map.delete(id)
       return map
     }
-    setConvModels(deleteKey)
-    setConvContextLength(deleteKey)
-    setConvThinking(deleteKey)
-    setConvParallel(deleteKey)
-    setConvPromptId(deleteKey)
     setPreviewPanelOpen(deleteKey)
     setPreviewFile(deleteKey)
-    setAgentSideChatMap((prev) => {
-      let changed = false
-      const map = new Map(prev)
-      if (map.delete(id)) changed = true
-      for (const [sessionId, conversationId] of map) {
-        if (conversationId === id) {
-          map.delete(sessionId)
-          changed = true
-        }
-      }
-      return changed ? map : prev
-    })
     setDiffPanelTab(deleteKey)
     setSessionChannelMap(deleteKey)
     setSessionModelMap(deleteKey)
@@ -807,7 +714,7 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
     sessionExistsAtom.remove(id)
 
     clearPreviewCacheForSession(id)
-  }, [setConvModels, setConvContextLength, setConvThinking, setConvParallel, setConvPromptId, setPreviewPanelOpen, setPreviewFile, setDiffPanelTab, setSessionChannelMap, setSessionModelMap, setSessionPathMap, setSessionViewStateMap, setStreamingStates, setLiveMessagesMap, setSessionPendingFiles, store])
+  }, [setPreviewPanelOpen, setPreviewFile, setDiffPanelTab, setSessionChannelMap, setSessionModelMap, setSessionPathMap, setSessionViewStateMap, setStreamingStates, setLiveMessagesMap, setSessionPendingFiles, store])
 
   const currentWorkspaceSlug = React.useMemo(() => {
     if (!currentWorkspaceId) return null
@@ -842,12 +749,6 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
       .catch(console.error)
   }, [currentWorkspaceSlug, mode, activeView, capabilitiesVersion])
 
-  /** 置顶对话列表（仅活跃模式显示，排除 draft） */
-  const pinnedConversations = React.useMemo(
-    () => viewMode === 'active' ? conversations.filter((c) => c.pinned && !draftSessionIds.has(c.id)) : [],
-    [conversations, viewMode, draftSessionIds]
-  )
-
   /** 置顶 Agent 会话列表（仅活跃模式显示，跨项目展示，排除 draft） */
   const pinnedAgentSessions = React.useMemo(
     () => {
@@ -874,37 +775,14 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
     [agentSessions, draftSessionIds, pinnedAgentSessions],
   )
 
-  /** 对话按日期分组（根据 viewMode 过滤归档状态，排除 draft） */
-  const conversationGroups = React.useMemo(
-    () => {
-      const filtered = viewMode === 'archived'
-        ? conversations.filter((c) => c.archived && !draftSessionIds.has(c.id))
-        : conversations.filter((c) => !c.archived && !c.pinned && !draftSessionIds.has(c.id))
-      return groupByDate(filtered)
-    },
-    [conversations, viewMode, draftSessionIds]
-  )
-
-  /** 已归档对话数量 */
-  const archivedConversationCount = React.useMemo(
-    () => conversations.filter((c) => c.archived).length,
-    [conversations]
-  )
-
   /** 已归档 Agent 会话数量（跨项目） */
   const archivedAgentSessionCount = React.useMemo(
     () => agentSessions.filter((s) => s.archived && !draftSessionIds.has(s.id)).length,
     [agentSessions, draftSessionIds]
   )
 
-  // 初始加载对话列表 + 用户档案 + Agent 会话
+  // 初始加载用户档案 + Agent 会话（Chat 对话列表由 ConversationList 自管）
   React.useEffect(() => {
-    window.electronAPI
-      .listConversations()
-      .then((list) => {
-        setConversations(list)
-      })
-      .catch(console.error)
     window.electronAPI
       .getUserProfile()
       .then(setUserProfile)
@@ -914,17 +792,16 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
       .then(setAgentSessions)
       .catch(console.error)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [setConversations, setUserProfile, setAgentSessions])
+  }, [setUserProfile, setAgentSessions])
 
-  // 窗口聚焦时重新同步列表，修复长时间后前后端不一致
+  // 窗口聚焦时重新同步 Agent 会话列表，修复长时间后前后端不一致
   React.useEffect(() => {
     const handleFocus = (): void => {
-      window.electronAPI.listConversations().then(setConversations).catch(console.error)
       window.electronAPI.listAgentSessions().then(setAgentSessions).catch(console.error)
     }
     window.addEventListener('focus', handleFocus)
     return () => window.removeEventListener('focus', handleFocus)
-  }, [setConversations, setAgentSessions])
+  }, [setAgentSessions])
 
   /** 打开/关闭自动任务列表 */
   const handleOpenAutomations = React.useCallback((): void => {
@@ -961,103 +838,12 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
     setViewMode('active')
   }, [mode, setViewMode])
 
-  /** 创建新对话（继承当前选中的模型/渠道） */
-  const handleNewConversation = async (): Promise<void> => {
-    setActiveView('conversations')
-    try {
-      const meta = await window.electronAPI.createConversation(
-        undefined,
-        selectedModel?.modelId,
-        selectedModel?.channelId,
-      )
-      setConversations((prev) => [meta, ...prev])
-      // 打开新标签页
-      openSession('chat', meta.id, meta.title)
-      // 确保在对话视图
-      setActiveView('conversations')
-      // 根据默认提示词重置选中
-      if (promptConfig.defaultPromptId) {
-        setSelectedPromptId(promptConfig.defaultPromptId)
-      }
-    } catch (error) {
-      console.error('[侧边栏] 创建对话失败:', error)
-    }
-  }
-
-  /** 选择对话（打开或聚焦标签页） */
-  const handleSelectConversation = React.useCallback((id: string, title: string): void => {
-    openSession('chat', id, title)
-    setActiveView('conversations')
-  }, [openSession, setActiveView])
-
-  /** 请求删除对话（弹出确认框） */
+  /** 请求删除会话（弹出确认框；Chat 对话的删除由 ConversationList 自管，此处只服务 Agent） */
   const handleRequestDelete = React.useCallback((id: string): void => {
     setPendingDeleteId(id)
   }, [])
 
-  /** 重命名对话标题 */
-  const handleRename = React.useCallback(async (id: string, newTitle: string): Promise<void> => {
-    try {
-      const updated = await window.electronAPI.updateConversationTitle(id, newTitle)
-      setConversations((prev) =>
-        prev.map((c) => (c.id === updated.id ? updated : c))
-      )
-      // 同步更新标签页标题
-      setTabs((prev) => updateTabTitle(prev, id, newTitle))
-    } catch (error) {
-      console.error('[侧边栏] 重命名对话失败:', error)
-    }
-  }, [setConversations, setTabs])
-
-  /** 切换对话置顶状态 */
-  const handleTogglePin = React.useCallback(async (id: string): Promise<void> => {
-    try {
-      const original = store.get(conversationsAtom).find((c) => c.id === id)
-      const updated = await window.electronAPI.togglePinConversation(id)
-      setConversations((prev) =>
-        prev.map((c) => (c.id === updated.id ? updated : c))
-      )
-      // 归档会话被置顶时会自动取消归档
-      if (original?.archived && updated.pinned && !updated.archived) {
-        toast.success('已取消归档并置顶')
-      }
-    } catch (error) {
-      console.error('[侧边栏] 切换置顶失败:', error)
-    }
-  }, [store, setConversations])
-
-  /** 切换对话归档状态 */
-  const handleToggleArchive = React.useCallback(async (id: string): Promise<void> => {
-    try {
-      const updated = await window.electronAPI.toggleArchiveConversation(id)
-      setConversations((prev) =>
-        prev.map((c) => (c.id === updated.id ? updated : c))
-      )
-      // 归档时自动关闭该对话的标签页，并同步新激活标签的副作用
-      // （appMode、currentXxxId 等），避免文件面板/工具栏等 per-tab
-      // 状态被遗留为旧值或被错误地置 null。
-      if (updated.archived) {
-        const currentTabs = store.get(tabsAtom)
-        const currentActiveTabId = store.get(activeTabIdAtom)
-        const wasActive = currentActiveTabId === id
-        const tabResult = closeTab(currentTabs, currentActiveTabId, id)
-        setTabs(tabResult.tabs)
-        setActiveTabId(tabResult.activeTabId)
-        cleanupMapAtoms(id)
-        if (wasActive) {
-          const newActiveTab = tabResult.activeTabId
-            ? tabResult.tabs.find((t) => t.id === tabResult.activeTabId) ?? null
-            : null
-          syncActiveTabSideEffects(newActiveTab)
-        }
-      }
-      toast.success(updated.archived ? '已归档' : '已取消归档')
-    } catch (error) {
-      console.error('[侧边栏] 切换归档失败:', error)
-    }
-  }, [store, setConversations, setTabs, setActiveTabId, cleanupMapAtoms, syncActiveTabSideEffects])
-
-  /** 确认删除对话 */
+  /** 确认删除会话（Agent 侧；Chat 删除由 ConversationList 自管） */
   const handleConfirmDelete = async (cascade: boolean = false): Promise<void> => {
     if (!pendingDeleteId) return
 
@@ -1088,78 +874,62 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
       return next
     })
 
-    // 清理 per-conversation/session Map atoms 条目
+    // 清理 per-session Map atoms 条目
     cleanupMapAtoms(pendingDeleteId)
     setExpandedDelegationParentIds((prev) => deleteSetEntry(prev, pendingDeleteId))
 
-    if (mode === 'agent') {
-      // Agent 模式：删除 Agent 会话
-      // 注意：当前会话指针（currentAgentSessionId）已由上面的
-      // syncActiveTabSideEffects 在 wasActive 分支同步到新激活标签，
-      // 这里不要再按旧闭包值强制置 null，否则会覆盖新 sessionId，
-      // 导致 RightSidePanel 消失（依赖 currentAgentSessionIdAtom）。
-      // 级联删除时在发起 IPC 前固定子会话快照，确保删除范围与弹窗展示一致，
-      // 避免弹窗打开期间新增的子会话被意外删除。
-      const childIds = cascade
-        ? getDirectDelegatedChildren(store.get(agentSessionsAtom), pendingDeleteId).map((child) => child.id)
-        : []
-      try {
-        // 先删子后删父：若子会话删除中途失败，父会话仍在，UI 一致性更好。
-        if (childIds.length > 0) {
-          const failedChildIds: string[] = []
-          for (const childId of childIds) {
-            try {
-              await window.electronAPI.deleteAgentSession(childId)
-            } catch (error) {
-              console.error(`[侧边栏] 级联删除子会话失败 (${childId}):`, error)
-              failedChildIds.push(childId)
-            }
-          }
-          if (failedChildIds.length > 0) {
-            toast.error(`部分子会话删除失败（${failedChildIds.length} 个），请手动清理`)
-          }
-          closeArchivedAgentTabs(childIds)
-          for (const childId of childIds) {
-            setExpandedDelegationParentIds((prev) => deleteSetEntry(prev, childId))
-            setAgentMessagesCache((prev) => {
-              if (!prev.has(childId)) return prev
-              const next = new Map(prev)
-              next.delete(childId)
-              return next
-            })
+    // Agent 会话删除：
+    // 注意：当前会话指针（currentAgentSessionId）已由上面的
+    // syncActiveTabSideEffects 在 wasActive 分支同步到新激活标签，
+    // 这里不要再按旧闭包值强制置 null，否则会覆盖新 sessionId，
+    // 导致 RightSidePanel 消失（依赖 currentAgentSessionIdAtom）。
+    // 级联删除时在发起 IPC 前固定子会话快照，确保删除范围与弹窗展示一致，
+    // 避免弹窗打开期间新增的子会话被意外删除。
+    const childIds = cascade
+      ? getDirectDelegatedChildren(store.get(agentSessionsAtom), pendingDeleteId).map((child) => child.id)
+      : []
+    try {
+      // 先删子后删父：若子会话删除中途失败，父会话仍在，UI 一致性更好。
+      if (childIds.length > 0) {
+        const failedChildIds: string[] = []
+        for (const childId of childIds) {
+          try {
+            await window.electronAPI.deleteAgentSession(childId)
+          } catch (error) {
+            console.error(`[侧边栏] 级联删除子会话失败 (${childId}):`, error)
+            failedChildIds.push(childId)
           }
         }
-        await window.electronAPI.deleteAgentSession(pendingDeleteId)
-        // 全量刷新确保与后端同步
-        const sessions = await window.electronAPI.listAgentSessions()
-        setAgentSessions(sessions)
-      } catch (error) {
-        console.error('[侧边栏] 删除 Agent 会话失败:', error)
-        // 即使后端报错，也从本地列表移除（可能是会话已不存在）
-        setAgentSessions((prev) => prev.filter((s) => s.id !== pendingDeleteId))
-      } finally {
-        // 清理该会话的消息缓存，避免已删除会话的消息数组滞留内存
-        setAgentMessagesCache((prev) => {
-          if (!prev.has(pendingDeleteId)) return prev
-          const next = new Map(prev)
-          next.delete(pendingDeleteId)
-          return next
-        })
-        setPendingDeleteId(null)
+        if (failedChildIds.length > 0) {
+          toast.error(`部分子会话删除失败（${failedChildIds.length} 个），请手动清理`)
+        }
+        closeArchivedAgentTabs(childIds)
+        for (const childId of childIds) {
+          setExpandedDelegationParentIds((prev) => deleteSetEntry(prev, childId))
+          setAgentMessagesCache((prev) => {
+            if (!prev.has(childId)) return prev
+            const next = new Map(prev)
+            next.delete(childId)
+            return next
+          })
+        }
       }
-      return
-    }
-
-    try {
-      await window.electronAPI.deleteConversation(pendingDeleteId)
+      await window.electronAPI.deleteAgentSession(pendingDeleteId)
       // 全量刷新确保与后端同步
-      const conversations = await window.electronAPI.listConversations()
-      setConversations(conversations)
+      const sessions = await window.electronAPI.listAgentSessions()
+      setAgentSessions(sessions)
     } catch (error) {
-      console.error('[侧边栏] 删除对话失败:', error)
-      // 即使后端报错，也从本地列表移除（可能是对话已不存在）
-      setConversations((prev) => prev.filter((c) => c.id !== pendingDeleteId))
+      console.error('[侧边栏] 删除 Agent 会话失败:', error)
+      // 即使后端报错，也从本地列表移除（可能是会话已不存在）
+      setAgentSessions((prev) => prev.filter((s) => s.id !== pendingDeleteId))
     } finally {
+      // 清理该会话的消息缓存，避免已删除会话的消息数组滞留内存
+      setAgentMessagesCache((prev) => {
+        if (!prev.has(pendingDeleteId)) return prev
+        const next = new Map(prev)
+        next.delete(pendingDeleteId)
+        return next
+      })
       setPendingDeleteId(null)
     }
   }
@@ -1210,6 +980,10 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
     setActiveView('conversations')
     await createAgentSessionInWorkspace()
   }, [createAgentSessionInWorkspace, setActiveView])
+
+  // Chat 模式下复用 Chat 的新建对话逻辑；Agent 模式沿用新建会话。两者签名一致，按 mode 选择。
+  const createConversation = useCreateConversation()
+  const handleNew = mode === 'chat' ? createConversation : handleNewAgentSession
 
   /** 切换当前项目；点击当前已选中工作区标题时则折叠/展开其会话列表 */
   const handleSelectProject = React.useCallback((workspaceId: string): void => {
@@ -1663,11 +1437,8 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
     sidebarCollapsed,
     mode,
     viewMode,
-    conversations,
     agentSessions,
-    pinnedConversations,
     pinnedAgentSessions,
-    conversationGroups,
     expandedExtraCountMap,
     collapsedWorkspaceIds,
     expandedDelegationParentIds,
@@ -1702,11 +1473,8 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
 
         event.preventDefault()
         event.stopPropagation()
-        if (target.type === 'agent') {
-          handleSelectAgentSession(target.id, target.title)
-        } else {
-          handleSelectConversation(target.id, target.title)
-        }
+        // LeftSidebar 已收敛为 Agent 专属，快捷切换只对应 Agent 会话
+        handleSelectAgentSession(target.id, target.title)
         return
       }
 
@@ -1759,7 +1527,6 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
     settingsOpen,
     searchDialogOpen,
     handleSelectAgentSession,
-    handleSelectConversation,
     refreshQuickSwitchTargets,
   ])
 
@@ -2034,74 +1801,7 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
     return groupByDate(wrapped).map((g) => ({ label: g.label, items: g.items.map((w) => w.tree) }))
   }, [agentSessions, draftSessionIds])
 
-  const handleRailModeSwitch = React.useCallback((targetMode: AppMode) => {
-    setViewMode('active')
-    if (targetMode === mode) return
-
-    const isChatMode = targetMode === 'chat'
-    const sessions = isChatMode ? conversations : agentSessions
-    const lastId = isChatMode ? currentConversationId : currentAgentSessionId
-
-    if (lastId) {
-      const match = sessions.find((s) => s.id === lastId)
-      if (match) {
-        openSession(targetMode, match.id, match.title)
-        return
-      }
-    }
-
-    const tab = tabs.find((t) => t.type === targetMode)
-    if (tab) {
-      openSession(targetMode, tab.sessionId, tab.title)
-      return
-    }
-
-    const recent = sessions.find((s) => !s.archived && !draftSessionIds.has(s.id))
-    if (recent) {
-      openSession(targetMode, recent.id, recent.title)
-      return
-    }
-
-    setMode(targetMode)
-  }, [
-    mode,
-    conversations,
-    agentSessions,
-    currentConversationId,
-    currentAgentSessionId,
-    tabs,
-    draftSessionIds,
-    openSession,
-    setMode,
-    setViewMode,
-  ])
-
   const railRecentItems = React.useMemo(() => {
-    if (mode === 'chat') {
-      return conversations
-        .filter((c) => !c.archived && !draftSessionIds.has(c.id))
-        .sort((a, b) => {
-          const activeDelta = Number(b.id === activeSessionId) - Number(a.id === activeSessionId)
-          if (activeDelta !== 0) return activeDelta
-          const streamingDelta = Number(streamingIds.has(b.id)) - Number(streamingIds.has(a.id))
-          if (streamingDelta !== 0) return streamingDelta
-          const pinnedDelta = Number(!!b.pinned) - Number(!!a.pinned)
-          if (pinnedDelta !== 0) return pinnedDelta
-          return b.updatedAt - a.updatedAt
-        })
-        .slice(0, 5)
-        .map((conversation) => ({
-          id: conversation.id,
-          title: conversation.title,
-          type: 'chat' as const,
-          initial: getRailInitial(conversation.title),
-          active: conversation.id === activeSessionId,
-          status: streamingIds.has(conversation.id) ? 'running' as const : 'idle' as const,
-          pinned: !!conversation.pinned,
-          workspaceName: undefined,
-        }))
-    }
-
     return agentSessions
       .filter((session) =>
         !session.archived
@@ -2139,13 +1839,10 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
         isDelegation: !!session.sourceDelegationId,
       }))
   }, [
-    mode,
-    conversations,
     agentSessions,
     draftSessionIds,
     currentWorkspaceId,
     activeSessionId,
-    streamingIds,
     agentIndicatorMap,
     unviewedCompletedSessionIds,
     workspaceNameMap,
@@ -2169,16 +1866,16 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
         }}
       >
         <AlertDialogHeader>
-          <AlertDialogTitle>确认删除{mode === 'agent' ? '会话' : '对话'}</AlertDialogTitle>
+          <AlertDialogTitle>确认删除会话</AlertDialogTitle>
           <AlertDialogDescription>
-            {mode === 'agent' && pendingDeleteChildCount > 0
+            {pendingDeleteChildCount > 0
               ? `此会话下还有 ${pendingDeleteChildCount} 个子会话。删除后将无法恢复，请选择是否一并删除子会话。`
-              : '删除后将无法恢复，确定要删除这个对话吗？'}
+              : '删除后将无法恢复，确定要删除这个会话吗？'}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>取消</AlertDialogCancel>
-          {mode === 'agent' && pendingDeleteChildCount > 0 ? (
+          {pendingDeleteChildCount > 0 ? (
             <>
               <AlertDialogAction
                 onClick={() => { void handleConfirmDelete(false) }}
@@ -2302,62 +1999,20 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
 
         <div className="my-3 h-px w-8 bg-border/70" />
 
-        {/* 模式切换 */}
-        <div className="flex flex-col items-center gap-1.5">
-          <CollapsedWorkspacePopover>
-            <button
-              type="button"
-              aria-label="切换到 Agent 模式（悬停查看项目）"
-              onClick={() => handleRailModeSwitch('agent')}
-              className={cn(
-                'relative size-10 flex items-center justify-center rounded-[12px] transition-colors titlebar-no-drag',
-                mode === 'agent'
-                  ? 'bg-primary/10 text-foreground shadow-[0_1px_2px_0_rgba(0,0,0,0.05)]'
-                  : 'text-foreground/45 hover:bg-foreground/[0.06] hover:text-foreground/75'
-              )}
-            >
-              <Bot size={18} />
-            </button>
-          </CollapsedWorkspacePopover>
-
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                aria-label="切换到 Chat 模式"
-                onClick={() => handleRailModeSwitch('chat')}
-                className={cn(
-                  'relative size-10 flex items-center justify-center rounded-[12px] transition-colors titlebar-no-drag',
-                  mode === 'chat'
-                    ? 'bg-primary/10 text-foreground shadow-[0_1px_2px_0_rgba(0,0,0,0.05)]'
-                    : 'text-foreground/45 hover:bg-foreground/[0.06] hover:text-foreground/75'
-                )}
-              >
-                <MessageSquare size={17} />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="right">Chat 模式</TooltipContent>
-          </Tooltip>
-        </div>
-
-        <div className="my-3 h-px w-8 bg-border/70" />
-
         {/* 高频操作 */}
         <div className="flex flex-col items-center gap-1.5">
           <Tooltip>
             <TooltipTrigger asChild>
               <button
                 type="button"
-                aria-label={mode === 'agent' ? '新建 Agent 会话' : '新建 Chat 对话'}
-                onClick={mode === 'agent' ? handleNewAgentSession : handleNewConversation}
+                aria-label={mode === 'chat' ? '新对话' : '新建 Agent 会话'}
+                onClick={handleNew}
                 className="size-10 flex items-center justify-center rounded-[12px] text-foreground/70 sidebar-control-surface hover:text-foreground transition-[background-color,color] duration-150 titlebar-no-drag"
               >
                 <Plus size={16} />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="right">
-              {mode === 'agent' ? '新会话' : '新对话'}
-            </TooltipContent>
+            <TooltipContent side="right">{mode === 'chat' ? '新对话' : '新会话'}</TooltipContent>
           </Tooltip>
 
           <Tooltip>
@@ -2374,7 +2029,7 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
             <TooltipContent side="right">搜索</TooltipContent>
           </Tooltip>
 
-          {canManage && (
+          {canManage && mode === 'agent' && (
           <Tooltip>
             <TooltipTrigger asChild>
               <button
@@ -2433,25 +2088,26 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
 
         <div className="my-3 h-px w-8 bg-border/70" />
 
-        {/* 最近/关键会话入口 */}
-        <div className="flex-1 min-h-0 w-full overflow-y-auto scrollbar-thin">
-          <div className="flex flex-col items-center gap-1.5 pb-2">
-            {railRecentItems.map((item) => (
-              <RailRecentButton
-                key={`${item.type}-${item.id}`}
-                item={item}
-                miniMapDisabled={!sessionHoverPreviewEnabled}
-                onSelect={(selected) => {
-                  if (selected.type === 'agent') {
+        {/* 最近/关键会话入口（仅 Agent 模式；Chat 模式留空占位，把头像顶到底部） */}
+        {mode === 'agent' ? (
+          <div className="flex-1 min-h-0 w-full overflow-y-auto scrollbar-thin">
+            <div className="flex flex-col items-center gap-1.5 pb-2">
+              {railRecentItems.map((item) => (
+                <RailRecentButton
+                  key={`${item.type}-${item.id}`}
+                  item={item}
+                  miniMapDisabled={!sessionHoverPreviewEnabled}
+                  onSelect={(selected) => {
+                    // Rail 只展示 Agent 会话，selected 恒为 agent 类型
                     handleSelectAgentSession(selected.id, selected.title)
-                  } else {
-                    handleSelectConversation(selected.id, selected.title)
-                  }
-                }}
-              />
-            ))}
+                  }}
+                />
+              ))}
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="flex-1" />
+        )}
 
         {/* 用户头像（点击打开设置） */}
         <div className="flex flex-col items-center gap-1.5 pt-3 pb-3">
@@ -2502,37 +2158,17 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
         </>
       )}
 
-      {/* 品牌区：产品 Logo + 名称（仅 Web 端） */}
-      <BrandingHeader collapsed={false} />
+      {/* 品牌区：产品 Logo + 名称 + 收起按钮（仅 Web 端；收起按钮并入品牌行右侧，纯图标无边框） */}
+      <BrandingHeader collapsed={false} onToggleCollapse={() => setSidebarCollapsed(true)} />
 
-      {/* 模式切换器 + 折叠按钮 */}
-      <div className="titlebar-drag-region flex items-start gap-1.5 px-3">
-        <div className="flex-1 min-w-0">
-          <ModeSwitcher />
-        </div>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              onClick={() => setSidebarCollapsed(true)}
-              className={cn(
-                'sidebar-collapse-button mt-2 size-10 flex-shrink-0 flex items-center justify-center rounded-[10px] text-foreground/40 sidebar-control-surface hover:text-foreground/60 titlebar-no-drag transition-[background-color,color] duration-150'
-              )}
-            >
-              <PanelLeftClose size={14} />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="right">收起侧边栏 ({navigator.platform.includes('Mac') ? '⌘B' : 'Ctrl+B'})</TooltipContent>
-        </Tooltip>
-      </div>
-
-      {/* 新对话/新会话按钮 + 搜索按钮 */}
+      {/* 新会话按钮 + 搜索按钮 */}
       <div className="px-3 pt-2 flex items-center gap-1.5">
         <button
-          onClick={mode === 'agent' ? handleNewAgentSession : handleNewConversation}
+          onClick={handleNew}
           className="flex-1 flex items-center gap-2 h-10 px-3 rounded-[10px] text-[13px] font-medium text-foreground/70 sidebar-control-surface hover:text-foreground transition-[background-color,color] duration-150 titlebar-no-drag"
         >
           <Plus size={14} />
-          <span>{mode === 'agent' ? '新会话' : '新对话'}</span>
+          <span>{mode === 'chat' ? '新对话' : '新会话'}</span>
         </button>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -2548,8 +2184,8 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
       </div>
 
       {/* 自动任务入口：作为任务中心入口放在置顶区上方，不参与置顶列表层级。
-          管理员专属（路由全部 adminOnly），普通用户隐藏。 */}
-      {canManage && (
+          管理员专属（路由全部 adminOnly），普通用户隐藏；仅 Agent 模式可见。 */}
+      {canManage && mode === 'agent' && (
         <div className="px-3 pt-2 pb-0.5">
           <AutomationSidebarEntry
             count={automationCount}
@@ -2570,70 +2206,14 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
         </div>
       )}
 
-      {/* Chat 模式 active 视图：置顶 + 对话历史，结构与 Agent active 视图保持一致 */}
-      {mode === 'chat' && viewMode === 'active' ? (
-        <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin titlebar-no-drag">
-          {pinnedConversations.length > 0 && (
-            <div className="pt-2 pb-1 flex-shrink-0 titlebar-no-drag">
-              <div className="px-3.5 pb-1 text-[11px] font-medium text-foreground/40 select-none">
-                置顶
-              </div>
-              <div>
-                <div className="px-2">
-                  <div className="ml-4 flex flex-col gap-0.5">
-                    {pinnedConversations.map((conv) => (
-                      <ConversationItem
-                        key={`pinned-${conv.id}`}
-                        conversation={conv}
-                        active={conv.id === activeSessionId}
-                        streaming={streamingIds.has(conv.id)}
-                        showPinIcon={false}
-                        relativeTimeNow={relativeTimeNow}
-                        onSelect={handleSelectConversation}
-                        onRequestDelete={handleRequestDelete}
-                        onRename={handleRename}
-                        onTogglePin={handleTogglePin}
-                        onToggleArchive={handleToggleArchive}
-                      />
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div className="px-2 pt-2 pb-1 flex-shrink-0">
-            <span className="px-1.5 text-[11px] font-medium text-foreground/40 select-none">对话</span>
-          </div>
-
-          <div className="px-2 pb-3">
-            {conversationGroups.map((group) => (
-              <div key={group.label} className="mb-1">
-                <div className="px-1.5 pt-2 pb-1 text-[11px] font-medium text-foreground/40 select-none">
-                  {group.label}
-                </div>
-                <div className="flex flex-col gap-0.5">
-                  {group.items.map((conv) => (
-                    <ConversationItem
-                      key={conv.id}
-                      conversation={conv}
-                      active={conv.id === activeSessionId}
-                      streaming={streamingIds.has(conv.id)}
-                      showPinIcon={!!conv.pinned}
-                      relativeTimeNow={relativeTimeNow}
-                      onSelect={handleSelectConversation}
-                      onRequestDelete={handleRequestDelete}
-                      onRename={handleRename}
-                      onTogglePin={handleTogglePin}
-                      onToggleArchive={handleToggleArchive}
-                    />
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : mode === 'agent' && viewMode === 'active' ? (
+      {/* 列表主体：Chat 模式渲染对话列表（复用 ConversationList，顶栏由本组件提供）；
+          Agent 模式渲染会话树 + 归档入口 */}
+      {mode === 'chat' ? (
+        <ConversationList showHeader={false} />
+      ) : (
+        <>
+      {/* Agent active 视图：置顶 + 项目历史 */}
+      {viewMode === 'active' ? (
         <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin titlebar-no-drag">
           {pinnedAgentSessions.length > 0 && (
             <div className="pt-2 pb-1 flex-shrink-0 titlebar-no-drag">
@@ -2801,42 +2381,15 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
           {viewMode === 'archived' && (
             <div className="px-6 pt-3 pb-1">
               <div className="text-[12px] font-medium text-foreground/40">
-                已归档{mode === 'agent' ? '会话' : '对话'}
+                已归档会话
               </div>
             </div>
           )}
 
           {/* 归档视图：单列表布局 */}
           <div className="flex-1 overflow-y-auto px-3 pt-2 pb-3 scrollbar-thin titlebar-no-drag">
-            {mode === 'chat' ? (
-              /* Chat 归档：对话按日期分组 */
-              conversationGroups.map((group) => (
-                <div key={group.label} className="mb-1">
-                  <div className="px-3 pt-2 pb-1 text-[11px] font-medium text-foreground/40 select-none">
-                    {group.label}
-                  </div>
-                  <div className="flex flex-col gap-0.5">
-                    {group.items.map((conv) => (
-                      <ConversationItem
-                        key={conv.id}
-                        conversation={conv}
-                        active={conv.id === activeSessionId}
-                        streaming={streamingIds.has(conv.id)}
-                        showPinIcon={!!conv.pinned}
-                        relativeTimeNow={relativeTimeNow}
-                        onSelect={handleSelectConversation}
-                        onRequestDelete={handleRequestDelete}
-                        onRename={handleRename}
-                        onTogglePin={handleTogglePin}
-                        onToggleArchive={handleToggleArchive}
-                      />
-                    ))}
-                  </div>
-                </div>
-              ))
-            ) : (
-              /* Agent 模式归档：Agent 会话按日期分组，含委派树 */
-              archivedAgentSessionTrees.map((group) => (
+            {/* Agent 归档：Agent 会话按日期分组，含委派树 */}
+            {archivedAgentSessionTrees.map((group) => (
                 <div key={group.label} className="mb-1">
                   <div className="px-3 pt-2 pb-1 text-[11px] font-medium text-foreground/40 select-none">
                     {group.label}
@@ -2903,7 +2456,7 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
                   </div>
                 </div>
               ))
-            )}
+            }
           </div>
         </>
       )}
@@ -2912,16 +2465,7 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
       <div className="px-3 pb-1">
         {viewMode === 'active' ? (
           <>
-            {mode === 'chat' && archivedConversationCount > 0 && (
-              <button
-                onClick={() => setViewMode('archived')}
-                className="w-full flex items-center gap-2 px-3 py-2 rounded-[10px] text-[12px] text-foreground/40 hover:bg-foreground/[0.04] hover:text-foreground/60 transition-colors titlebar-no-drag"
-              >
-                <Archive size={13} className="text-foreground/30" />
-                <span>已归档 ({archivedConversationCount})</span>
-              </button>
-            )}
-            {mode === 'agent' && archivedAgentSessionCount > 0 && (
+            {archivedAgentSessionCount > 0 && (
               <button
                 onClick={() => setViewMode('archived')}
                 className="w-full flex items-center gap-2 px-3 py-2 rounded-[10px] text-[12px] text-foreground/40 hover:bg-foreground/[0.04] hover:text-foreground/60 transition-colors titlebar-no-drag"
@@ -2937,10 +2481,12 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
             className="w-full flex items-center gap-2 px-3 py-2 rounded-[10px] text-[12px] text-foreground/60 bg-foreground/[0.04] hover:bg-foreground/[0.07] hover:text-foreground/80 transition-colors titlebar-no-drag"
           >
             <ArrowLeft size={13} className="text-foreground/50" />
-            <span>返回活跃{mode === 'agent' ? '会话' : '对话'}</span>
+            <span>返回活跃会话</span>
           </button>
         )}
       </div>
+        </>
+      )}
 
       {/* 底部：用户资料 + 设置入口 */}
       <div className="px-3 pb-3">
@@ -2972,434 +2518,6 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
     </div>
   )
 }
-
-// ===== 列表项操作按钮（时间/置顶/归档/三点菜单） =====
-
-interface SessionItemActionsProps {
-  updatedAt: number
-  relativeTimeNow: number
-  pinned: boolean
-  archived: boolean
-  onTogglePin: () => void
-  onToggleArchive: () => void
-  menuItems: (
-    MenuItem: typeof DropdownMenuItem,
-    MenuSeparator: typeof DropdownMenuSeparator,
-  ) => React.ReactNode
-  onMenuOpenChange?: (open: boolean) => void
-}
-
-/**
- * 安全 Tooltip：延迟渲染 Content，避开 Popper 初始定位 (0,0) 的闪现。
- *
- * 左侧列表项的操作按钮默认 hidden，hover 时才显示。Radix Popper 在 Content 首次挂载
- * 时若 trigger 尚未完成布局，会先把浮层放到视口左上角 (0,0)，再跳到正确位置。这里
- * 在 Radix 进入打开状态后，先让 Popper 有一小段时间完成定位，再真正渲染 Content；
- * 同时 trigger rect 为 0 时直接不打开。
- */
-interface SafeTooltipProps {
-  children: React.ReactElement
-  content: React.ReactNode
-  side?: React.ComponentPropsWithoutRef<typeof TooltipContent>['side']
-}
-
-function SafeTooltip({ children, content, side = 'top' }: SafeTooltipProps): React.ReactElement {
-  const [open, setOpen] = React.useState(false)
-  const [showContent, setShowContent] = React.useState(false)
-  const triggerRef = React.useRef<HTMLButtonElement>(null)
-  const timerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  const getUsableTriggerRect = React.useCallback((): DOMRect | null => {
-    const rect = triggerRef.current?.getBoundingClientRect()
-    if (!rect || rect.width === 0 || rect.height === 0) return null
-    if (rect.right <= 0 || rect.bottom <= 0) return null
-    if (rect.left >= window.innerWidth || rect.top >= window.innerHeight) return null
-    return rect
-  }, [])
-
-  React.useEffect(() => {
-    return () => {
-      if (timerRef.current !== null) {
-        clearTimeout(timerRef.current)
-      }
-    }
-  }, [])
-
-  const handleOpenChange = React.useCallback((nextOpen: boolean): void => {
-    if (timerRef.current !== null) {
-      clearTimeout(timerRef.current)
-      timerRef.current = null
-    }
-
-    if (!nextOpen) {
-      setOpen(false)
-      setShowContent(false)
-      return
-    }
-
-    // trigger 还没完成布局或已经离开视口时不打开。
-    if (!getUsableTriggerRect()) return
-
-    setOpen(true)
-    // 先让 Radix 完成 Popper 定位，再渲染 Content，避免看到 (0,0) 初始位置。
-    timerRef.current = setTimeout(() => {
-      timerRef.current = null
-      if (!getUsableTriggerRect()) {
-        setOpen(false)
-        setShowContent(false)
-        return
-      }
-      setShowContent(true)
-    }, 60)
-  }, [getUsableTriggerRect])
-
-  return (
-    <Tooltip open={open} onOpenChange={handleOpenChange}>
-      <TooltipTrigger asChild ref={triggerRef}>
-        {children}
-      </TooltipTrigger>
-      {showContent && <TooltipContent side={side} hideWhenDetached>{content}</TooltipContent>}
-    </Tooltip>
-  )
-}
-
-/**
- * 列表项右侧操作区：默认显示相对更新时间，hover 时切换为「置顶 / 归档 / 三点菜单」按钮组。
- * 归档需要二次确认；进入确认态后强制保持按钮可见，避免鼠标移开后用户失去反馈。
- */
-function SessionItemActions({
-  updatedAt,
-  relativeTimeNow,
-  pinned,
-  archived,
-  onTogglePin,
-  onToggleArchive,
-  menuItems,
-  onMenuOpenChange,
-}: SessionItemActionsProps): React.ReactElement {
-  const [archiveConfirming, setArchiveConfirming] = React.useState(false)
-  // 菜单打开时强制保持按钮组可见：按钮始终保留布局，只切换透明度和 pointer-events。
-  // 这样 Radix Popper 不会在 hover 切换瞬间读到 display:none 的 0 尺寸 trigger。
-  const [menuOpen, setMenuOpen] = React.useState(false)
-
-  React.useEffect(() => {
-    if (!archiveConfirming) return
-    const timer = setTimeout(() => setArchiveConfirming(false), 3000)
-    return () => clearTimeout(timer)
-  }, [archiveConfirming])
-
-  const handleArchiveClick = (): void => {
-    if (archived) {
-      onToggleArchive()
-      return
-    }
-    if (archiveConfirming) {
-      setArchiveConfirming(false)
-      onToggleArchive()
-      return
-    }
-    setArchiveConfirming(true)
-  }
-
-  const closeTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  const handleMenuOpenChange = (open: boolean): void => {
-    if (open) {
-      if (closeTimerRef.current !== null) {
-        clearTimeout(closeTimerRef.current)
-        closeTimerRef.current = null
-      }
-      setMenuOpen(true)
-    } else {
-      // Delay hiding the trigger so Radix Popper can still read its rect during the close animation (~150ms).
-      closeTimerRef.current = setTimeout(() => {
-        closeTimerRef.current = null
-        setMenuOpen(false)
-      }, 200)
-    }
-    onMenuOpenChange?.(open)
-  }
-
-  React.useEffect(() => {
-    return () => {
-      if (closeTimerRef.current !== null) clearTimeout(closeTimerRef.current)
-    }
-  }, [])
-
-  const forceVisible = archiveConfirming || menuOpen
-
-  return (
-    <div
-      className="session-item-actions relative flex-shrink-0 h-[18px] w-[58px]"
-      onClick={(e) => e.stopPropagation()}
-    >
-      <span
-        title={`最后更新：${new Date(updatedAt).toLocaleString('zh-CN')}`}
-        className={cn(
-          'absolute inset-y-0 right-0 block w-full overflow-hidden whitespace-nowrap text-right text-[11px] leading-[18px] tabular-nums text-foreground/35 transition-opacity duration-100',
-          forceVisible ? 'opacity-0' : 'opacity-100 group-hover:opacity-0',
-        )}
-      >
-        {formatRelativeUpdatedAt(updatedAt, relativeTimeNow)}
-      </span>
-      <div
-        className={cn(
-          'absolute right-1 top-0 flex items-center gap-0.5 transition-opacity duration-100',
-          forceVisible
-            ? 'opacity-100 pointer-events-auto'
-            : 'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto',
-        )}
-      >
-        <SafeTooltip content={pinned ? '取消置顶' : '置顶'} side="top">
-          <button
-            className={cn(
-              'p-0.5 rounded transition-colors',
-              pinned
-                ? 'text-primary/60 hover:bg-foreground/[0.08] hover:text-primary'
-                : 'text-foreground/30 hover:bg-foreground/[0.08] hover:text-foreground/60',
-            )}
-            onClick={onTogglePin}
-          >
-            {pinned ? <PinOff size={14} /> : <Pin size={14} />}
-          </button>
-        </SafeTooltip>
-        <SafeTooltip
-          content={archiveConfirming ? '再次点击确认归档' : archived ? '取消归档' : '归档'}
-          side="top"
-        >
-          <button
-            className={cn(
-              'p-0.5 rounded transition-colors',
-              archiveConfirming
-                ? 'text-destructive bg-destructive/10'
-                : archived
-                  ? 'text-foreground/60 hover:bg-foreground/[0.08]'
-                  : 'text-foreground/30 hover:bg-foreground/[0.08] hover:text-foreground/60',
-            )}
-            onClick={handleArchiveClick}
-          >
-            {archived ? <ArchiveRestore size={14} /> : <Archive size={14} />}
-          </button>
-        </SafeTooltip>
-        <DropdownMenu onOpenChange={handleMenuOpenChange}>
-          <DropdownMenuTrigger asChild>
-            <button
-              className={cn(
-                'p-0.5 rounded text-foreground/30 hover:bg-foreground/[0.08] hover:text-foreground/60 transition-colors',
-                'data-[state=open]:bg-foreground/[0.08] data-[state=open]:text-foreground/60',
-              )}
-            >
-              <MoreHorizontal size={14} />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-40 z-[9999] min-w-0 p-0.5">
-            {menuItems(DropdownMenuItem, DropdownMenuSeparator)}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-    </div>
-  )
-}
-
-// ===== 对话列表项 =====
-
-interface ConversationItemProps {
-  conversation: ConversationMeta
-  active: boolean
-  streaming: boolean
-  /** 是否在标题旁显示 Pin 图标 */
-  showPinIcon: boolean
-  relativeTimeNow: number
-  onSelect: (id: string, title: string) => void
-  onRequestDelete: (id: string) => void
-  onRename: (id: string, newTitle: string) => Promise<void>
-  onTogglePin: (id: string) => Promise<void>
-  onToggleArchive: (id: string) => Promise<void>
-}
-
-const ConversationItem = React.memo(function ConversationItem({
-  conversation,
-  active,
-  streaming,
-  showPinIcon,
-  relativeTimeNow,
-  onSelect,
-  onRequestDelete,
-  onRename,
-  onTogglePin,
-  onToggleArchive,
-}: ConversationItemProps): React.ReactElement {
-  const [editing, setEditing] = React.useState(false)
-  const [editTitle, setEditTitle] = React.useState('')
-  const [menuOpen, setMenuOpen] = React.useState(false)
-  const inputRef = React.useRef<HTMLInputElement>(null)
-  const justStartedEditing = React.useRef(false)
-  // 设置关闭或菜单打开时禁用迷你地图预览（菜单打开时预览面板会盖住菜单项导致点不动）
-  const sessionHoverPreviewEnabled = useAtomValue(sessionHoverPreviewEnabledAtom)
-  const preview = useSessionMiniMapHover(600, !sessionHoverPreviewEnabled || menuOpen)
-  const interfaceVariant = useAtomValue(interfaceVariantAtom)
-  const isClassic = interfaceVariant === 'classic'
-
-  /** 进入编辑模式 */
-  const startEdit = (): void => {
-    setEditTitle(conversation.title)
-    setEditing(true)
-    justStartedEditing.current = true
-    // 延迟聚焦，等待 ContextMenu 完全关闭后再 focus
-    setTimeout(() => {
-      justStartedEditing.current = false
-      inputRef.current?.focus()
-      inputRef.current?.select()
-    }, 300)
-  }
-
-  /** 保存标题 */
-  const saveTitle = async (): Promise<void> => {
-    // ContextMenu 关闭导致的 blur，忽略
-    if (justStartedEditing.current) return
-    const trimmed = editTitle.trim()
-    if (!trimmed || trimmed === conversation.title) {
-      setEditing(false)
-      return
-    }
-    await onRename(conversation.id, trimmed)
-    setEditing(false)
-  }
-
-  /** 键盘事件 */
-  const handleKeyDown = (e: React.KeyboardEvent): void => {
-    if (e.key === 'Enter') {
-      e.preventDefault()
-      saveTitle()
-    } else if (e.key === 'Escape') {
-      setEditing(false)
-    }
-  }
-
-  const isPinned = !!conversation.pinned
-
-  const menuItems = (
-    MenuItem: typeof ContextMenuItem | typeof DropdownMenuItem,
-    MenuSeparator: typeof ContextMenuSeparator | typeof DropdownMenuSeparator,
-  ) => (
-    <>
-      <MenuItem className="text-xs py-1 [&>svg]:size-3.5" onSelect={() => onTogglePin(conversation.id)}>
-        {isPinned ? <PinOff size={14} /> : <Pin size={14} />}
-        {isPinned ? '取消置顶' : '置顶对话'}
-      </MenuItem>
-      <MenuItem className="text-xs py-1 [&>svg]:size-3.5" onSelect={() => startEdit()}>
-        <Pencil size={14} />
-        重命名
-      </MenuItem>
-      <MenuItem className="text-xs py-1 [&>svg]:size-3.5" onSelect={() => onToggleArchive(conversation.id)}>
-        {conversation.archived ? <ArchiveRestore size={14} /> : <Archive size={14} />}
-        {conversation.archived ? '取消归档' : '归档'}
-      </MenuItem>
-      <MenuSeparator className="my-0.5" />
-      <MenuItem className="text-xs py-1 [&>svg]:size-3.5 text-destructive" onSelect={() => onRequestDelete(conversation.id)}>
-        <Trash2 size={14} />
-        删除对话
-      </MenuItem>
-    </>
-  )
-
-  return (
-    <ContextMenu>
-      <ContextMenuTrigger asChild>
-        <div
-          ref={preview.setAnchorRef}
-          role="button"
-          tabIndex={0}
-          data-session-switch-id={conversation.id}
-          data-session-switch-title={conversation.title}
-          data-session-switch-type="chat"
-          onClick={() => onSelect(conversation.id, conversation.title)}
-          onMouseEnter={preview.handleMouseEnter}
-          onMouseLeave={preview.handleMouseLeave}
-          onDoubleClick={(e) => {
-            e.stopPropagation()
-            startEdit()
-          }}
-          className={cn(
-            'session-quick-switch-row group relative w-full flex items-center gap-1.5 rounded-md py-1 pl-2.5 pr-1.5 transition-colors duration-100 titlebar-no-drag text-left',
-            active && 'session-item-selected',
-            streaming
-              ? 'text-foreground font-medium hover:bg-foreground/[0.03]'
-              : 'hover:bg-foreground/[0.03]',
-            active && 'bg-foreground/[0.08]',
-          )}
-        >
-          {(streaming || (isClassic && active)) && (
-            <span
-              className={cn(
-                'absolute inset-y-0 left-0 w-[3px] rounded-l-md pointer-events-none',
-                streaming ? 'bg-blue-500 animate-pulse' : 'bg-primary',
-              )}
-              aria-hidden="true"
-            />
-          )}
-          <div className="flex-1 min-w-0">
-            {editing ? (
-              <input
-                ref={inputRef}
-                value={editTitle}
-                onChange={(e) => setEditTitle(e.target.value)}
-                onKeyDown={handleKeyDown}
-                onBlur={saveTitle}
-                onClick={(e) => e.stopPropagation()}
-                className="w-full bg-transparent text-[13px] leading-5 text-foreground border-b border-primary/50 outline-none px-0 py-0"
-                maxLength={100}
-              />
-            ) : (
-              <div className={cn(
-                'truncate text-[13px] leading-[18px] flex items-center gap-1.5',
-                active ? 'text-foreground' : 'text-foreground/80'
-              )}>
-                {/* 置顶标记 */}
-                {showPinIcon && (
-                  <Pin size={11} className="flex-shrink-0 text-primary/60" />
-                )}
-                <span className="truncate">{conversation.title}</span>
-              </div>
-            )}
-          </div>
-
-          {/* 默认显示时间，hover 时显示操作按钮 */}
-          {!editing && (
-            <SessionItemActions
-              updatedAt={conversation.updatedAt}
-              relativeTimeNow={relativeTimeNow}
-              pinned={isPinned}
-              archived={!!conversation.archived}
-              onTogglePin={() => onTogglePin(conversation.id)}
-              onToggleArchive={() => onToggleArchive(conversation.id)}
-              onMenuOpenChange={setMenuOpen}
-              menuItems={menuItems}
-            />
-          )}
-          <SessionQuickSwitchKeycap />
-        </div>
-      </ContextMenuTrigger>
-      <ContextMenuContent className="w-40 z-[9999] min-w-0 p-0.5">
-        {menuItems(ContextMenuItem, ContextMenuSeparator)}
-      </ContextMenuContent>
-      {sessionHoverPreviewEnabled && (
-        <SessionMiniMapPopover
-          target={{
-            type: 'chat',
-            sessionId: conversation.id,
-            title: conversation.title,
-          }}
-          anchorRef={preview.anchorRef}
-          open={preview.isOpen}
-          isLeaving={preview.isLeaving}
-          onMouseEnter={preview.handlePanelMouseEnter}
-          onMouseLeave={preview.handlePanelMouseLeave}
-        />
-      )}
-    </ContextMenu>
-  )
-})
 
 // ===== Agent 会话列表项 =====
 

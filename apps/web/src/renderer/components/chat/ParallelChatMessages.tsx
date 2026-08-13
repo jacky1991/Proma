@@ -28,7 +28,8 @@ import {
   ReasoningTrigger,
   ReasoningContent,
 } from '@/components/ai-elements/reasoning'
-import { streamingModelAtom, channelsAtom } from '@/atoms/chat-atoms'
+import { streamingModelAtom } from '@/atoms/chat-atoms'
+import { channelsAtom } from '@/atoms/channels-atoms'
 import { getModelLogo, resolveModelProvider } from '@/lib/model-logo'
 import type { ChatMessage } from '@proma/shared'
 

@@ -1,22 +1,14 @@
 /**
  * AgentHistorySelectionLayer — Agent 历史选区引用入口
  *
- * 在 Agent 历史消息里划选文本后，提供两个轻量动作：
+ * 在 Agent 历史消息里划选文本后，提供一个轻量动作：
  * 1. 添加到当前 Agent 输入框引用
- * 2. 打开 Agent 右侧问答 Tab，用选区作为上下文提问
  */
 
 import * as React from 'react'
-import { useAtomValue, useSetAtom } from 'jotai'
+import { useSetAtom } from 'jotai'
 import { toast } from 'sonner'
-import {
-  agentSideChatMapAtom,
-  conversationsAtom,
-  conversationDraftsAtom,
-  selectedModelAtom,
-} from '@/atoms/chat-atoms'
 import { quotedSelectionMapAtom } from '@/atoms/preview-atoms'
-import { agentDiffPanelTabAtom, agentSidePanelOpenAtom } from '@/atoms/agent-atoms'
 import { SelectionActionPopover } from '@/components/selection/SelectionActionPopover'
 import { SELECTION_ACTION_POPOVER_SELECTOR } from '@/lib/quoted-selection'
 
@@ -57,16 +49,9 @@ export function AgentHistorySelectionLayer({
   rootRef,
 }: AgentHistorySelectionLayerProps): React.ReactElement {
   const setQuotedSelectionMap = useSetAtom(quotedSelectionMapAtom)
-  const selectedChatModel = useAtomValue(selectedModelAtom)
-  const setConversations = useSetAtom(conversationsAtom)
-  const setConversationDrafts = useSetAtom(conversationDraftsAtom)
-  const setSideChatMap = useSetAtom(agentSideChatMapAtom)
-  const setSidePanelOpen = useSetAtom(agentSidePanelOpenAtom)
-  const setSidePanelTabMap = useSetAtom(agentDiffPanelTabAtom)
   const [selection, setSelection] = React.useState<AgentHistorySelection | null>(null)
   const pointerSelectingRef = React.useRef(false)
   const captureTimerRef = React.useRef<number | null>(null)
-  const openChatPendingRef = React.useRef(false)
 
   const clearSelection = React.useCallback((): void => {
     setSelection(null)
@@ -212,70 +197,6 @@ export function AgentHistorySelectionLayer({
     toast.success('已添加到 Agent 引用')
   }, [clearSelection, selection, sessionId, setQuotedSelectionMap])
 
-  const handleOpenChatTab = React.useCallback(async (): Promise<void> => {
-    if (!selection) return
-    if (openChatPendingRef.current) return
-    openChatPendingRef.current = true
-    try {
-      const conversation = await window.electronAPI.createConversation(
-        '历史选区问答',
-        selectedChatModel?.modelId,
-        selectedChatModel?.channelId,
-      )
-      setConversations((prev) => {
-        if (prev.some((item) => item.id === conversation.id)) return prev
-        return [conversation, ...prev]
-      })
-      setConversationDrafts((prev) => {
-        const next = new Map(prev)
-        next.set(conversation.id, '我的问题：')
-        return next
-      })
-      setQuotedSelectionMap((prev) => {
-        const next = new Map(prev)
-        next.set(conversation.id, {
-          text: selection.text,
-          filePath: selection.sourceLabel,
-          sourceType: 'agent-history',
-          sourceLabel: selection.sourceLabel,
-          messageId: selection.messageId,
-          messageRole: selection.messageRole,
-          capturedAt: Date.now(),
-        })
-        return next
-      })
-      setSideChatMap((prev) => {
-        const next = new Map(prev)
-        next.set(sessionId, conversation.id)
-        return next
-      })
-      setSidePanelOpen(true)
-      setSidePanelTabMap((prev) => {
-        const next = new Map(prev)
-        next.set(sessionId, 'chat')
-        return next
-      })
-      window.getSelection()?.removeAllRanges()
-      clearSelection()
-    } catch (error) {
-      console.error('[AgentMessages] 打开历史选区聊天标签失败:', error)
-      toast.error('打开聊天标签失败')
-    } finally {
-      openChatPendingRef.current = false
-    }
-  }, [
-    clearSelection,
-    selectedChatModel,
-    selection,
-    sessionId,
-    setConversationDrafts,
-    setConversations,
-    setQuotedSelectionMap,
-    setSideChatMap,
-    setSidePanelOpen,
-    setSidePanelTabMap,
-  ])
-
   return (
     <>
       {selection && (
@@ -283,7 +204,6 @@ export function AgentHistorySelectionLayer({
           x={selection.x}
           y={selection.y}
           onAddToAgent={handleAddToAgent}
-          onOpenChat={handleOpenChatTab}
         />
       )}
     </>

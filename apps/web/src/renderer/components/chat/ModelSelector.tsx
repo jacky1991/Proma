@@ -20,10 +20,9 @@ import {
 import {
   conversationsAtom,
   selectedModelAtom,
-  channelsAtom,
-  channelsLoadedAtom,
   modelSelectorOpenAtom,
 } from '@/atoms/chat-atoms'
+import { channelsAtom, channelsLoadedAtom } from '@/atoms/channels-atoms'
 import { useConversationModelOptional } from '@/hooks/useConversationSettings'
 import { useConversationIdOptional } from '@/contexts/session-context'
 import { getModelLogo, getChannelLogo, DefaultLogo } from '@/lib/model-logo'

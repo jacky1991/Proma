@@ -16,7 +16,7 @@ import { useStickToBottomContext } from 'use-stick-to-bottom'
 import { Input } from '@/components/ui/input'
 import { UserAvatar } from '@/components/chat/UserAvatar'
 import { getModelLogo, resolveModelProvider } from '@/lib/model-logo'
-import { channelsAtom } from '@/atoms/chat-atoms'
+import { channelsAtom } from '@/atoms/channels-atoms'
 import { useShortcut } from '@/hooks/useShortcut'
 import { cn } from '@/lib/utils'
 

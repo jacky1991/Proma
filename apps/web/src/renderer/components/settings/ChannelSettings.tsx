@@ -16,7 +16,7 @@ import type { Channel } from '@proma/shared'
 import { getChannelLogo } from '@/lib/model-logo'
 import { getEnabledClaudeAgentChannelIds } from '@/lib/agent-channel-selection'
 import { agentChannelIdAtom, agentModelIdAtom, agentChannelIdsAtom } from '@/atoms/agent-atoms'
-import { channelsAtom } from '@/atoms/chat-atoms'
+import { channelsAtom } from '@/atoms/channels-atoms'
 import { canManageAtom } from '@/atoms/auth'
 import { SettingsSection, SettingsCard, SettingsRow } from './primitives'
 import {
