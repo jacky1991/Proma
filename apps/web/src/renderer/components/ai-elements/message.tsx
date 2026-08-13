@@ -24,6 +24,7 @@ import { ChevronDown, ChevronUp, Paperclip, FileText, Sparkles, Server, Download
 import { cn } from '@/lib/utils'
 import { shouldInspectMermaidCodeBlock, shouldRenderMermaidCodeBlock } from '@/lib/mermaid-detection'
 import { normalizeLatexDelimiters } from '@/lib/normalize-latex'
+import { normalizeMalformedStrongDelimiters } from '@/lib/markdown-emphasis'
 import { Button } from '@/components/ui/button'
 import { ImageLightbox, type LightboxImage } from '@/components/ui/image-lightbox'
 import {
@@ -547,7 +548,7 @@ export const MessageResponse = React.memo(
 
     // 归一化 + 自动化占位剥离；数学检测决定是否走懒加载的 KaTeX 渲染分支
     const processed = React.useMemo(
-      () => normalizeLatexDelimiters(children.replace(/<!--PROMA_AUTOMATION:[\s\S]*?-->/g, '').trim()),
+      () => normalizeMalformedStrongDelimiters(normalizeLatexDelimiters(children.replace(/<!--PROMA_AUTOMATION:[\s\S]*?-->/g, '').trim())),
       [children],
     )
     const isMath = hasMath(processed)
