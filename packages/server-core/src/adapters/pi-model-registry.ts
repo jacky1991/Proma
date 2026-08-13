@@ -97,6 +97,11 @@ function compilePiReasoningCapabilities(
         compat: { forceAdaptiveThinking: true },
         thinkingLevelMap,
       }
+    // DeepSeek V4 的 Anthropic 兼容协议不是 adaptive thinking。
+    // Pi 的通用流会发出旧的 budget；运行时请求 extension 会将其替换为
+    // thinking: enabled + output_config.effort。
+    case 'deepseek-output-effort':
+      return { thinkingLevelMap }
     case 'openai-reasoning-effort':
       return {
         compat: { supportsReasoningEffort: true },
