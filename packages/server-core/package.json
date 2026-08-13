@@ -28,6 +28,7 @@
     "officeparser": "4.2.0",
     "pdf-parse": "1.1.1",
     "pdfjs-dist": "^4.10.38",
+    "sharp": "^0.35.3",
     "word-extractor": "1.0.4"
   },
   "peerDependencies": {

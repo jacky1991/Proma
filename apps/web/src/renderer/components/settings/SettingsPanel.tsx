@@ -21,6 +21,7 @@ import {
   CircleUser,
   Users,
   Image as ImageIcon,
+  Eye,
 } from "lucide-react";
 import { isWebRuntime } from "@/lib/web-runtime";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -49,6 +50,7 @@ import { StorageSettings } from "./StorageSettings";
 import { AccountSettings } from "./AccountSettings";
 import { UserSettings } from "./UserSettings";
 import { BrandingSettings } from "./BrandingSettings";
+import { VisionRelaySettings } from "./VisionRelaySettings";
 
 /** 设置 Tab 定义 */
 interface TabItem {
@@ -67,6 +69,8 @@ const BASE_TABS: TabItem[] = [
   { id: "general", label: "通用设置", icon: <Settings size={16} /> },
   // 管理员专属：普通用户用 Chat 时经 ChatHeader 选模型，无需直接配置渠道
   { id: "channels", label: "模型配置", icon: <Radio size={16} />, adminOnly: true },
+  // 管理员专属：视觉助手需要选择渠道/模型，与渠道配置同级
+  { id: "vision-relay", label: "视觉助手", icon: <Eye size={16} />, adminOnly: true },
   // 管理员专属：普通用户无需管理系统提示词
   { id: "prompts", label: "提示词管理", icon: <BookOpen size={16} />, adminOnly: true },
   // 管理员专属：路由层已 adminOnly（含读取）
@@ -133,6 +137,8 @@ function renderTabContent(tab: SettingsTab): React.ReactElement {
       return <BrandingSettings />;
     case "channels":
       return <ChannelSettings />;
+    case "vision-relay":
+      return <VisionRelaySettings />;
     case "prompts":
       return <PromptSettings />;
     case "proxy":

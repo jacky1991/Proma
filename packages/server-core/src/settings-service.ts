@@ -38,6 +38,7 @@ export interface AppSettings {
   richTextRenderingEnabled?: boolean
   sessionHoverPreviewEnabled?: boolean
   feishuSessionMirror?: { mode: string }
+  visionRelay?: { enabled: boolean; channelId?: string; modelId?: string }
   [key: string]: unknown
 }
 
@@ -63,6 +64,7 @@ export function getSettings(scope?: UserScope): AppSettings {
       builtinMcpDisabledIds: [],
       agentRuntime: DEFAULT_AGENT_RUNTIME,
       agentThinking: { type: 'adaptive' },
+      visionRelay: { enabled: false },
     }
   }
 
@@ -85,6 +87,7 @@ export function getSettings(scope?: UserScope): AppSettings {
       builtinMcpDisabledIds: settings.builtinMcpDisabledIds ?? [],
       agentRuntime: settings.agentRuntime ?? DEFAULT_AGENT_RUNTIME,
       agentThinking: settings.agentThinking ?? { type: 'adaptive' },
+      visionRelay: data.visionRelay ?? { enabled: false },
     }
   } catch (error) {
     console.error('[设置] 读取失败:', error)
@@ -101,6 +104,7 @@ export function getSettings(scope?: UserScope): AppSettings {
       builtinMcpDisabledIds: [],
       agentRuntime: DEFAULT_AGENT_RUNTIME,
       agentThinking: { type: 'adaptive' },
+      visionRelay: { enabled: false },
     }
   }
 }

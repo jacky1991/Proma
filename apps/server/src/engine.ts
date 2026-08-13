@@ -15,6 +15,7 @@ import { AgentOrchestrator } from '@proma/server-core/agent-orchestrator'
 import { PiAgentAdapter } from '@proma/server-core/adapters/pi-agent-adapter'
 import type { PiBuiltinToolDeps } from '@proma/server-core/adapters/pi-builtin-tools'
 import { buildWebTools } from '@proma/server-core/adapters/pi-web-tools'
+import { buildVisionTools } from '@proma/server-core/adapters/pi-vision-tools'
 import { isWebSearchEnabledForAgent } from '@proma/server-core/web-search-service'
 import { NodeAesGcmCryptoProvider, createNodeEnvProbe } from '@proma/server-core/node'
 import { wsStreamSink } from './ws'
@@ -53,8 +54,10 @@ const piBuiltinToolDeps: PiBuiltinToolDeps = {
   // web-search：注入 Tavily 实现的 WebSearch/WebFetch（开关 + 凭据齐全时由 buildPiBuiltinTools 注册）
   buildWebTools,
   isWebSearchEnabled: isWebSearchEnabledForAgent,
+  // 视觉助手：为 text-only 的 DeepSeek V4 注入 VisionRelay（已配置且模型匹配时由 buildPiBuiltinTools 注册）
+  buildVisionTools,
 }
-logger.info('内置工具依赖: web-search 已注入；automation / collaboration 未注入（Agent 执行时不可用）')
+logger.info('内置工具依赖: web-search / vision-relay 已注入；automation / collaboration 未注入（Agent 执行时不可用）')
 
 const orchestrator = new AgentOrchestrator(adapter, eventBus, { piBuiltinToolDeps })
 

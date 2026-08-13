@@ -24,6 +24,8 @@ export interface PiBuiltinToolsContext {
   agentRuntime?: AgentRuntime
   workspaceId?: string
   workspaceSlug?: string
+  /** 图片外发前必须校验在这些已授权目录内。 */
+  allowedRoots?: string[]
   permissionMode?: PromaPermissionMode
   triggeredBy?: 'user' | 'automation' | 'delegation'
 }
@@ -42,6 +44,8 @@ export interface PiBuiltinToolDeps {
   buildAutomationTools?: (sdk: PiSdk, ctx: PiBuiltinToolsContext) => ToolDefinition[]
   /** 构建 collaboration 协作子会话工具 */
   buildCollaborationTools?: (sdk: PiSdk, ctx: PiBuiltinToolsContext) => ToolDefinition[]
+  /** 构建视觉助手工具（VisionRelay，为 text-only 模型提供图片理解） */
+  buildVisionTools?: (sdk: PiSdk, ctx: PiBuiltinToolsContext) => ToolDefinition[]
 }
 
 // ===== 统一入口 =====
@@ -88,6 +92,15 @@ export async function buildPiBuiltinTools(
       tools.push(...deps.buildCollaborationTools(sdk, ctx))
     } catch (error) {
       console.error('[Pi 桥接] 注入 collaboration 工具失败:', error)
+    }
+  }
+
+  // 视觉助手仅在明确不支持视觉的 DeepSeek V4 用户会话中按需出现。
+  if (deps.buildVisionTools) {
+    try {
+      tools.push(...deps.buildVisionTools(sdk, ctx))
+    } catch (error) {
+      console.error('[Pi 桥接] 注入视觉助手失败:', error)
     }
   }
 

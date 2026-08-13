@@ -12,7 +12,7 @@
 
 import { atom } from 'jotai'
 
-export type SettingsTab = 'general' | 'account' | 'users' | 'channels' | 'proxy' | 'branding' | 'appearance' | 'about' | 'prompts' | 'tools' | 'storage'
+export type SettingsTab = 'general' | 'account' | 'users' | 'channels' | 'vision-relay' | 'proxy' | 'branding' | 'appearance' | 'about' | 'prompts' | 'tools' | 'storage'
 export type ToolSettingsFocus = 'memory' | 'web-search' | 'custom-tools'
 
 /** 当前设置标签页（不持久化，每次打开设置默认显示渠道） */

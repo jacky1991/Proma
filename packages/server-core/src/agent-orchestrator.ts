@@ -1224,6 +1224,12 @@ export class AgentOrchestrator {
       }
       let piBuiltinTools: unknown[] = []
       let piMcpTools: unknown[] = []
+      // 必须与 runtime 接收的附加目录保持一致；视觉助手据此限制允许外发的图片路径。
+      const allAdditionalDirectories = collectAttachedDirectories({
+        extraDirs: additionalDirectories,
+        sessionMeta,
+        workspaceSlug,
+      })
       const builtinMcpResult = await (async () => {
           const piSdk = await import('@earendil-works/pi-coding-agent')
           const result = await buildPiBuiltinTools(piSdk, {
@@ -1233,6 +1239,7 @@ export class AgentOrchestrator {
             agentRuntime,
             workspaceId,
             workspaceSlug,
+            allowedRoots: allAdditionalDirectories,
             permissionMode: permissionModeOverride ?? sessionMeta?.permissionMode ?? PROMA_DEFAULT_PERMISSION_MODE,
             triggeredBy: input.triggeredBy,
           }, this.deps.piBuiltinToolDeps)
@@ -1475,6 +1482,15 @@ export class AgentOrchestrator {
           )
         }
 
+        // 视觉助手由用户在全局设置中显式启用并选择外发渠道；在正常会话中直接放行，
+        // 仍由工具服务限制为当前会话/附加目录内的图片。计划模式不执行任何外发操作。
+        if (toolName === 'VisionRelay') {
+          if (currentMode === 'plan') {
+            return { behavior: 'deny' as const, message: '计划模式下不能将本地图片发送给视觉模型，请在计划获批后执行。' }
+          }
+          return { behavior: 'allow' as const }
+        }
+
         // ── 普通工具的权限分派 ──
 
         switch (currentMode) {
@@ -1534,11 +1550,6 @@ export class AgentOrchestrator {
       const piThinkingLevel = agentRuntime === 'pi'
         ? resolvePiThinkingLevel(appSettings, sessionMeta, channel.provider, selectedModelId, piReasoningCapability)
         : undefined
-      const allAdditionalDirectories = collectAttachedDirectories({
-        extraDirs: additionalDirectories,
-        sessionMeta,
-        workspaceSlug,
-      })
       const systemPromptAppend = buildSystemPrompt({
         agentRuntime,
         workspaceName: workspace?.name,

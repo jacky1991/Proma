@@ -81,6 +81,21 @@ export type MarkdownFontSize = 'small' | 'medium' | 'large'
 /** 默认 Markdown 字号档位 */
 export const DEFAULT_MARKDOWN_FONT_SIZE: MarkdownFontSize = 'medium'
 
+/**
+ * 视觉助手（Vision Relay）设置。
+ *
+ * 为不支持原生视觉的 Agent（当前为 DeepSeek V4）配置独立的视觉模型路由；
+ * Agent 在需要理解图片时，将已授权目录中的图片发送给该模型，结果只以受限 JSON 文本返回。
+ */
+export interface VisionRelaySettings {
+  /** 是否启用视觉助手 */
+  enabled: boolean
+  /** 视觉模型所属渠道 ID */
+  channelId?: string
+  /** 视觉模型 ID */
+  modelId?: string
+}
+
 /** 应用设置 */
 export interface AppSettings {
   /** 主题模式 */
@@ -145,6 +160,8 @@ export interface AppSettings {
   appIconVariant?: string
   /** 飞书 Session 镜像设置：每个 Proma Session 可创建一个仅包含用户与指定 Bot 的飞书群 */
   feishuSessionMirror?: FeishuSessionMirrorSettings
+  /** 视觉助手设置：为不支持原生视觉的 Agent 接入独立视觉模型 */
+  visionRelay?: VisionRelaySettings
   /** 用户手动关闭的 Proma 内置 MCP ID 列表（针对默认开启的内置 MCP） */
   builtinMcpDisabledIds?: string[]
   /** 用户手动开启的 Proma 内置 MCP ID 列表（针对默认关闭的内置 MCP，如 nano-banana、mem） */
