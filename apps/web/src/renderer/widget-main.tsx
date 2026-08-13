@@ -5,7 +5,7 @@
  * 也可直接访问 /widget.html 使用。
  *
  * 独立 React root：jotai store 是页面级单例，主应用的初始化器覆盖不到这里，
- * 因此挂载最小必需集合——主题 / 登录用户 / 渠道 / Chat 全局流式监听 / 用户档案。
+ * 因此挂载最小必需集合——主题 / 登录用户 / 渠道 / Chat 全局流式监听 / Chat 工具 / 用户档案。
  * 未登录守卫由 ChatWidget 自渲染紧凑引导（shim-entry 已跳过全屏 LoginPage）。
  */
 
@@ -22,6 +22,7 @@ import {
   AuthInitializer,
   ChannelsInitializer,
   ChatListenersInitializer,
+  ChatToolInitializer,
 } from './initializers'
 import { userProfileAtom } from './atoms/user-profile'
 import './styles/globals.css'
@@ -53,6 +54,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <AuthInitializer />
     <ChannelsInitializer />
     <ChatListenersInitializer />
+    <ChatToolInitializer />
     <UserProfileInitializer />
     <TooltipProvider delayDuration={200}>
       <ChatWidget />

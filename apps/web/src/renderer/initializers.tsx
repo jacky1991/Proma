@@ -19,8 +19,10 @@ import {
 } from './atoms/theme'
 import { authUserAtom } from './atoms/auth'
 import { selectedModelAtom } from './atoms/chat-atoms'
+import { chatToolsAtom } from './atoms/chat-tool-atoms'
 import { channelsAtom, channelsLoadedAtom } from './atoms/channels-atoms'
 import { useGlobalChatListeners } from './hooks/useGlobalChatListeners'
+import { toast } from 'sonner'
 
 /**
  * 主题初始化组件
@@ -146,5 +148,38 @@ export function ChannelsInitializer(): null {
  */
 export function ChatListenersInitializer(): null {
   useGlobalChatListeners()
+  return null
+}
+
+/**
+ * Chat 工具初始化组件（共享，主入口 + widget 入口均需挂载）
+ *
+ * 启动时从主进程加载所有工具信息到 chatToolsAtom（ToolSelectorPopover 据此渲染，
+ * 未加载则永远停留在「加载中」）。同时订阅 chat-tools.json 变更，自动刷新列表。
+ *
+ * widget 入口是独立 React root，主应用的初始化器覆盖不到，必须自行挂载。
+ */
+export function ChatToolInitializer(): null {
+  const setChatTools = useSetAtom(chatToolsAtom)
+
+  useEffect(() => {
+    window.electronAPI.getChatTools()
+      .then(setChatTools)
+      .catch((err: unknown) => console.error('[ChatToolInitializer] 加载工具列表失败:', err))
+  }, [setChatTools])
+
+  // 订阅自定义工具配置变更
+  useEffect(() => {
+    const cleanup = window.electronAPI.onCustomToolChanged(() => {
+      window.electronAPI.getChatTools()
+        .then((tools) => {
+          setChatTools(tools)
+          toast.success('Chat 工具已更新')
+        })
+        .catch((err: unknown) => console.error('[ChatToolInitializer] 刷新工具列表失败:', err))
+    })
+    return cleanup
+  }, [setChatTools])
+
   return null
 }

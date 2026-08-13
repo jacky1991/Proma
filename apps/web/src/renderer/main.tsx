@@ -18,6 +18,7 @@ import {
   AuthInitializer,
   ChannelsInitializer,
   ChatListenersInitializer,
+  ChatToolInitializer,
 } from './initializers'
 import {
   agentChannelIdAtom,
@@ -60,11 +61,9 @@ import {
 import { useGlobalAgentListeners } from './hooks/useGlobalAgentListeners'
 import { tabsAtom, activeTabIdAtom, ensureScratchPadTab, getPersistableTabState, scratchPadContentAtom, scratchPadLoadedAtom, SCRATCH_PAD_ID } from './atoms/tab-atoms'
 import type { TabItem } from './atoms/tab-atoms'
-import { chatToolsAtom } from './atoms/chat-tool-atoms'
 import { channelsAtom, channelsLoadedAtom } from './atoms/channels-atoms'
 import { appModeAtom } from './atoms/app-mode'
 import { Toaster } from './components/ui/sonner'
-import { toast } from 'sonner'
 import { diffCapabilities } from '@proma/shared'
 import type { WorkspaceCapabilities } from '@proma/shared'
 import { showCapabilityChangeToasts } from './lib/capabilities-toast'
@@ -362,37 +361,6 @@ function MarkdownFontSizeInitializer(): null {
  */
 function AgentListenersInitializer(): null {
   useGlobalAgentListeners()
-  return null
-}
-
-/**
- * Chat 工具初始化组件
- *
- * 启动时从主进程加载所有工具信息到 atom。
- * 订阅 chat-tools.json 文件变更通知，自动刷新工具列表。
- */
-function ChatToolInitializer(): null {
-  const setChatTools = useSetAtom(chatToolsAtom)
-
-  useEffect(() => {
-    window.electronAPI.getChatTools()
-      .then(setChatTools)
-      .catch((err: unknown) => console.error('[ChatToolInitializer] 加载工具列表失败:', err))
-  }, [setChatTools])
-
-  // 订阅自定义工具配置变更
-  useEffect(() => {
-    const cleanup = window.electronAPI.onCustomToolChanged(() => {
-      window.electronAPI.getChatTools()
-        .then((tools) => {
-          setChatTools(tools)
-          toast.success('Chat 工具已更新')
-        })
-        .catch((err: unknown) => console.error('[ChatToolInitializer] 刷新工具列表失败:', err))
-    })
-    return cleanup
-  }, [setChatTools])
-
   return null
 }
 
