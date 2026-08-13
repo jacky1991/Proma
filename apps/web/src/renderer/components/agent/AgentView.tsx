@@ -2555,7 +2555,6 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
     (allExitPlanRequests.get(sessionId)?.length ?? 0) > 0
   const hasBlockingRequests = hasBannerOverlay || (allPermissionRequests.get(sessionId)?.length ?? 0) > 0
   const canSendQueuedNow = messagesLoaded && (streaming || !messagesRefreshing) && !!agentChannelId && hasAvailableModel && !hasBlockingRequests && !isStopping
-  const autoSendingQueuedRef = React.useRef(false)
   const queuedSendInFlightRef = React.useRef(false)
   const sendingQueuedMessageIdsRef = React.useRef<Set<string>>(new Set())
 
@@ -2625,34 +2624,6 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
   ): void => {
     setQueuedMessages((prev) => moveQueuedMessage(prev, sourceId, targetId, placement))
   }, [setQueuedMessages])
-
-  React.useEffect(() => {
-    if (autoSendingQueuedRef.current) return
-    if (queuedSendInFlightRef.current) return
-    if (queuedMessages.length === 0) return
-    if (messagesRefreshingRef.current) return
-    if (!canSendQueuedNow || streaming || stoppedByUser) return
-
-    const message = queuedMessages[0]
-    if (!message) return
-    if (sendingQueuedMessageIdsRef.current.has(message.id)) return
-
-    autoSendingQueuedRef.current = true
-    queuedSendInFlightRef.current = true
-    sendingQueuedMessageIdsRef.current.add(message.id)
-    setQueuedMessages((prev) => removeQueuedMessage(prev, message.id))
-    sendPlainTextAgentMessage(message)
-      .catch((error) => {
-        console.error('[AgentView] 自动发送队列消息失败:', error)
-        toast.error('自动发送队列消息失败', { description: String(error) })
-        setQueuedMessages((prev) => restoreQueuedMessageToFront(prev, message))
-      })
-      .finally(() => {
-        sendingQueuedMessageIdsRef.current.delete(message.id)
-        queuedSendInFlightRef.current = false
-        autoSendingQueuedRef.current = false
-      })
-  }, [canSendQueuedNow, queuedMessages, sendPlainTextAgentMessage, setQueuedMessages, stoppedByUser, streaming])
 
   // ===== 预览面板状态（toggle 快捷键，分屏布局在 MainArea） =====
   const setPreviewOpenMap = useSetAtom(previewPanelOpenMapAtom)

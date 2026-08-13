@@ -13,6 +13,7 @@ import { useStore } from 'jotai'
 import {
   agentStreamingStatesAtom,
   agentStreamErrorsAtom,
+  agentSessionMessageQueueAtom,
   agentSessionsAtom,
   agentMessageRefreshAtom,
   allPendingPermissionRequestsAtom,
@@ -31,6 +32,9 @@ import {
   agentModelIdAtom,
   agentChannelIdAtom,
   agentPermissionModeMapAtom,
+  agentDefaultPermissionModeAtom,
+  agentRuntimeAtom,
+  agentChannelIdsAtom,
   stoppedByUserSessionsAtom,
   agentPlanModeSessionsAtom,
   finalizeStreamingActivities,
@@ -60,12 +64,14 @@ import { channelsAtom } from '@/atoms/channels-atoms'
 import { previewFileMapAtom } from '@/atoms/preview-atoms'
 import type { NotificationSoundType } from '@/types/settings'
 import { toast } from 'sonner'
-import type { AgentStreamEvent, AgentStreamCompletePayload, AgentEvent, AgentStreamPayload, SDKAssistantMessage, SDKUserMessage, SDKSystemMessage, SDKContentBlock, SDKUserContentBlock, PromaEvent, AgentSessionMeta, ProviderType } from '@proma/shared'
+import type { AgentStreamEvent, AgentStreamCompletePayload, AgentEvent, AgentStreamPayload, SDKAssistantMessage, SDKMessage, SDKUserMessage, SDKSystemMessage, SDKContentBlock, SDKUserContentBlock, PromaEvent, AgentSessionMeta, ProviderType } from '@proma/shared'
 import { inferAgentSdkContextWindow, inferContextWindow } from '@proma/shared'
 import { buildExternalAgentRunActivation } from '@/lib/external-agent-run'
 import { upsertAgentSession, mergeFetchedAgentSessions } from '@/lib/agent-session-list'
 import { getAgentCompletionMarkers } from '@/lib/agent-completion-presence'
 import { getPlanModeChangeFromToolName, updatePlanModeSessionSet } from '@/lib/agent-plan-mode'
+import { buildQueuedMessageSendPayload, removeQueuedMessage, restoreQueuedMessageToFront, shouldAutoDispatchQueuedMessage } from '@/lib/agent-message-queue'
+import { buildQuotedSelectionBlock } from '@/lib/quoted-selection'
 
 /** 触发右侧文件浏览器自动定位的写入类工具集合 */
 const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Update'])
@@ -570,6 +576,240 @@ export function useGlobalAgentListeners(): void {
       const session = store.get(agentSessionsAtom).find((s) => s.id === sid)
       return session?.workspaceId ?? store.get(currentAgentWorkspaceIdAtom)
     }
+
+    // ===== 队列消息后台派发 =====
+    // 自动消费队列必须由常驻监听器执行，不能依赖某个 AgentView 是否仍挂载。
+    // 切会话/进设置页时，这里仍能把队首消息送出去。
+    const queuedDispatchInFlight = new Set<string>()
+    const queuedDispatchScheduled = new Set<string>()
+    // IPC 拒绝后保留失败的队首，直到用户调整队列，避免订阅回调触发自动重试风暴。
+    const queuedDispatchSuppressedMessageIds = new Map<string, string>()
+
+    /** 派生会话级渠道/模型（优先 session meta，回退 per-session map，再回退全局默认） */
+    const resolveSessionChannelAndModel = (sid: string): { channelId: string | null; modelId: string | null } => {
+      const session = store.get(agentSessionsAtom).find((item) => item.id === sid)
+      const channelId = session?.channelId
+        ?? store.get(agentSessionChannelMapAtom).get(sid)
+        ?? store.get(agentChannelIdAtom)
+        ?? null
+      const modelId = session?.modelId
+        ?? store.get(agentSessionModelMapAtom).get(sid)
+        ?? store.get(agentModelIdAtom)
+      return { channelId, modelId }
+    }
+
+    /** 重建 hasAvailableModel 判定（对齐 AgentView 的派生逻辑） */
+    const resolveHasAvailableModel = (sid: string): boolean => {
+      const channels = store.get(channelsAtom)
+      const session = store.get(agentSessionsAtom).find((item) => item.id === sid)
+      const runtime = session?.agentRuntime ?? store.get(agentRuntimeAtom)
+      const promaOfficial = channels.find((c) => c.id === 'proma-official')
+      if (promaOfficial?.enabled && promaOfficial.models.some((m) => m.enabled)) return true
+      if (runtime === 'pi') {
+        return channels.some((c) => c.enabled && c.models.some((m) => m.enabled))
+      }
+      const channelIds = store.get(agentChannelIdsAtom)
+      if (!channelIds || channelIds.length === 0) return false
+      return channels.some(
+        (c) => c.enabled && channelIds.includes(c.id) && c.models.some((m) => m.enabled),
+      )
+    }
+
+    /** 重建 additionalDirectories（对齐 AgentView.createBaseAdditionalDirectories） */
+    const resolveAdditionalDirectories = (sid: string, queuedAdditionalDirectories: string[] = []): string[] => {
+      const sessionAttachedDirs = store.get(agentAttachedDirectoriesMapAtom).get(sid) ?? []
+      const sessionAttachedFiles = store.get(agentAttachedFilesMapAtom).get(sid) ?? []
+      const workspaceId = getWorkspaceIdForSession(sid) ?? undefined
+      const workspaceAttachedFiles = workspaceId
+        ? (store.get(workspaceAttachedFilesMapAtom).get(workspaceId) ?? [])
+        : []
+      return Array.from(new Set([
+        ...sessionAttachedDirs,
+        ...[...sessionAttachedFiles, ...workspaceAttachedFiles].map(getParentDir).filter(Boolean),
+        ...queuedAdditionalDirectories,
+      ]))
+    }
+
+    const dispatchQueuedMessage = (sessionId: string): void => {
+      if (queuedDispatchInFlight.has(sessionId)) return
+
+      const queuedMessages = store.get(agentSessionMessageQueueAtom).get(sessionId) ?? []
+      if (queuedDispatchSuppressedMessageIds.get(sessionId) === queuedMessages[0]?.id) return
+      queuedDispatchSuppressedMessageIds.delete(sessionId)
+      const streamState = store.get(agentStreamingStatesAtom).get(sessionId)
+      const session = store.get(agentSessionsAtom).find((item) => item.id === sessionId)
+
+      const { channelId, modelId } = resolveSessionChannelAndModel(sessionId)
+      const hasAvailableModel = resolveHasAvailableModel(sessionId)
+      const hasBlockingRequests =
+        (store.get(allPendingPermissionRequestsAtom).get(sessionId)?.length ?? 0) > 0 ||
+        (store.get(allPendingAskUserRequestsAtom).get(sessionId)?.length ?? 0) > 0 ||
+        (store.get(allPendingExitPlanRequestsAtom).get(sessionId)?.length ?? 0) > 0
+
+      if (!shouldAutoDispatchQueuedMessage({
+        queueLength: queuedMessages.length,
+        running: streamState?.running ?? false,
+        backgroundWaiting: streamState?.backgroundWaiting ?? false,
+        stoppedByUser: store.get(stoppedByUserSessionsAtom).has(sessionId),
+        hasBlockingRequests,
+        hasChannel: Boolean(channelId),
+        hasAvailableModel,
+      })) {
+        return
+      }
+
+      const message = queuedMessages[0]
+      if (!message || !channelId) return
+
+      const streamStartedAt = Date.now()
+      const quotedSelectionBlock = message.quotedSelection
+        ? buildQuotedSelectionBlock(message.quotedSelection)
+        : ''
+      const payload = buildQueuedMessageSendPayload(message, quotedSelectionBlock)
+      let dequeued = false
+      queuedDispatchInFlight.add(sessionId)
+      store.set(agentSessionMessageQueueAtom, (prev) => {
+        const current = prev.get(sessionId) ?? []
+        if (current[0]?.id !== message.id) return prev
+        const map = new Map(prev)
+        const next = removeQueuedMessage(current, message.id)
+        if (next.length === 0) map.delete(sessionId)
+        else map.set(sessionId, next)
+        dequeued = true
+        return map
+      })
+      if (!dequeued) {
+        queuedDispatchInFlight.delete(sessionId)
+        return
+      }
+
+      // 乐观注入用户消息到 live 流，让气泡立即出现；持久化由 IPC 流的正常路径补齐。
+      const optimisticMessageUuid = `queued-${message.id}`
+      const optimisticMessage: SDKMessage = {
+        type: 'user',
+        uuid: optimisticMessageUuid,
+        message: { content: [{ type: 'text', text: payload.rawText }] },
+        parent_tool_use_id: null,
+        _createdAt: streamStartedAt,
+      } as unknown as SDKMessage
+      store.set(liveMessagesMapAtom, (prev) => {
+        const map = new Map(prev)
+        map.set(sessionId, [...(map.get(sessionId) ?? []), optimisticMessage])
+        return map
+      })
+      // 发起新一轮时清除上一轮遗留的流式错误，避免正常输出后底部仍残留旧报错。
+      store.set(agentStreamErrorsAtom, (prev) => {
+        if (!prev.has(sessionId)) return prev
+        const map = new Map(prev)
+        map.delete(sessionId)
+        return map
+      })
+
+      // 仅新建 run 路径需要置 running:true；注入路径（queueAgentMessage）由活跃 turn 承载。
+      // 但 shouldAutoDispatchQueuedMessage 已保证 !running && !backgroundWaiting，
+      // 所以这里只会走新建 run 路径，置 running 是安全的。
+      store.set(agentStreamingStatesAtom, (prev) => {
+        const map = new Map(prev)
+        map.set(sessionId, {
+          running: true,
+          content: '',
+          toolActivities: [],
+          model: modelId || undefined,
+          startedAt: streamStartedAt,
+          inputTokens: prev.get(sessionId)?.inputTokens,
+          contextWindow: prev.get(sessionId)?.contextWindow,
+        })
+        return map
+      })
+
+      const rollbackFailedDispatch = (): void => {
+        queuedDispatchSuppressedMessageIds.set(sessionId, message.id)
+        store.set(agentSessionMessageQueueAtom, (prev) => {
+          const map = new Map(prev)
+          map.set(sessionId, restoreQueuedMessageToFront(map.get(sessionId) ?? [], message))
+          return map
+        })
+        store.set(liveMessagesMapAtom, (prev) => {
+          const current = prev.get(sessionId) ?? []
+          const next = current.filter((item) => (item as unknown as { uuid?: string }).uuid !== optimisticMessageUuid)
+          if (next.length === current.length) return prev
+          const map = new Map(prev)
+          if (next.length === 0) map.delete(sessionId)
+          else map.set(sessionId, next)
+          return map
+        })
+        store.set(agentStreamingStatesAtom, (prev) => {
+          const current = prev.get(sessionId)
+          if (!current || current.startedAt !== streamStartedAt) return prev
+          const map = new Map(prev)
+          map.set(sessionId, { ...current, running: false })
+          return map
+        })
+      }
+
+      const workspaceId = session?.workspaceId ?? getWorkspaceIdForSession(sessionId) ?? undefined
+      const runtime = session?.agentRuntime ?? store.get(agentRuntimeAtom)
+      const permissionMode = store.get(agentPermissionModeMapAtom).get(sessionId)
+        ?? session?.permissionMode
+        ?? store.get(agentDefaultPermissionModeAtom)
+      const additionalDirectories = resolveAdditionalDirectories(sessionId, message.additionalDirectories)
+
+      try {
+        const sendPromise = window.electronAPI.sendAgentMessage({
+          sessionId,
+          userMessage: payload.sdkText,
+          rawUserMessage: payload.rawText,
+          channelId,
+          modelId: modelId || undefined,
+          agentRuntime: runtime,
+          workspaceId,
+          startedAt: streamStartedAt,
+          permissionModeOverride: permissionMode,
+          ...(additionalDirectories.length > 0 && { additionalDirectories }),
+          ...(payload.mentions.mentionedSkills.length > 0 && { mentionedSkills: payload.mentions.mentionedSkills }),
+          ...(payload.mentions.mentionedMcpServers.length > 0 && { mentionedMcpServers: payload.mentions.mentionedMcpServers }),
+          ...(payload.mentions.mentionedSessionIds.length > 0 && { mentionedSessionIds: payload.mentions.mentionedSessionIds }),
+        })
+        queuedDispatchInFlight.delete(sessionId)
+        void sendPromise.catch((error) => {
+          console.error('[GlobalAgentListeners] 自动发送队列消息失败:', error)
+          rollbackFailedDispatch()
+          toast.error('自动发送队列消息失败', { description: String(error) })
+        })
+      } catch (error) {
+        queuedDispatchInFlight.delete(sessionId)
+        console.error('[GlobalAgentListeners] 自动发送队列消息初始化失败:', error)
+        rollbackFailedDispatch()
+        toast.error('自动发送队列消息失败', { description: String(error) })
+      }
+    }
+
+    const scheduleQueuedMessageDispatch = (sessionId: string): void => {
+      if (queuedDispatchScheduled.has(sessionId)) return
+      queuedDispatchScheduled.add(sessionId)
+      queueMicrotask(() => {
+        queuedDispatchScheduled.delete(sessionId)
+        dispatchQueuedMessage(sessionId)
+      })
+    }
+
+    const scheduleAllQueuedMessageDispatches = (): void => {
+      for (const sessionId of store.get(agentSessionMessageQueueAtom).keys()) {
+        scheduleQueuedMessageDispatch(sessionId)
+      }
+    }
+
+    const queuedDispatchUnsubscribers = [
+      store.sub(agentSessionMessageQueueAtom, scheduleAllQueuedMessageDispatches),
+      store.sub(agentStreamingStatesAtom, scheduleAllQueuedMessageDispatches),
+      store.sub(agentSessionsAtom, scheduleAllQueuedMessageDispatches),
+      store.sub(agentSessionChannelMapAtom, scheduleAllQueuedMessageDispatches),
+      store.sub(agentChannelIdAtom, scheduleAllQueuedMessageDispatches),
+      store.sub(allPendingPermissionRequestsAtom, scheduleAllQueuedMessageDispatches),
+      store.sub(allPendingAskUserRequestsAtom, scheduleAllQueuedMessageDispatches),
+      store.sub(allPendingExitPlanRequestsAtom, scheduleAllQueuedMessageDispatches),
+      store.sub(channelsAtom, scheduleAllQueuedMessageDispatches),
+    ]
 
     const getWorkspaceSlugForSession = (sid: string): string | null => {
       const workspaceId = getWorkspaceIdForSession(sid)
@@ -1232,6 +1472,12 @@ export function useGlobalAgentListeners(): void {
           bumpRefresh()
         }
         finalize()
+
+        // 后台任务尚未结束时不要派发队列（通道仍开着，handleSend 走注入路径）；
+        // 真正完成后尝试自动发送下一条队列消息。
+        if (!backgroundTasksPending) {
+          scheduleQueuedMessageDispatch(data.sessionId)
+        }
         }) // unstable_batchedUpdates
       }
     )
@@ -1374,6 +1620,7 @@ export function useGlobalAgentListeners(): void {
       cleanupComplete()
       cleanupError()
       cleanupTitleUpdated()
+      queuedDispatchUnsubscribers.forEach((unsubscribe) => unsubscribe())
       clearInterval(pruneTimer)
       window.removeEventListener('focus', onWindowFocus)
     }
