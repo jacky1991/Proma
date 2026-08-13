@@ -38,9 +38,12 @@ import { ContentBlock } from './ContentBlock'
 import { parseThinkTagsFromText } from './thinking-tag-parser'
 import { AgentHistorySelectionLayer } from './AgentHistorySelectionLayer'
 import { TaskProgressOverlay, type ContextCompactionProgress } from './TaskProgressOverlay'
+import { createMessageGroupRenderCache, groupMessagesForRendering } from './message-group-rendering'
 import type { AgentEventUsage, RetryAttempt, SDKMessage, SDKSystemMessage } from '@proma/shared'
 import { getSDKCompactStatus } from '@proma/shared'
-import type { AgentStreamState } from '@/atoms/agent-atoms'
+import { agentLiveMessagesAtomFamily, agentSessionStreamingStateAtomFamily, type AgentStreamState } from '@/atoms/agent-atoms'
+
+const EMPTY_SDK_MESSAGES: SDKMessage[] = []
 
 function stableStringify(value: unknown): string {
   if (value == null || typeof value !== 'object') return JSON.stringify(value) ?? String(value)
@@ -185,10 +188,6 @@ interface AgentMessagesProps {
   messagesLoaded?: boolean
   /** Phase 4: 持久化的 SDKMessage（新格式） */
   persistedSDKMessages?: SDKMessage[]
-  streaming: boolean
-  streamState?: AgentStreamState
-  /** Phase 2: 实时 SDKMessage 列表（流式期间累积） */
-  liveMessages?: SDKMessage[]
   /** 当前会话工作目录，用于解析相对文件路径 */
   sessionPath?: string | null
   /** 附加目录列表（与 sessionPath 一并用作相对路径解析候选） */
@@ -493,7 +492,11 @@ function AgentRunningIndicator({ startedAt }: { startedAt?: number }): React.Rea
   )
 }
 
-export const AgentMessages = React.memo(function AgentMessages({ sessionId, sessionModelId, messagesLoaded, persistedSDKMessages, streaming, streamState, liveMessages, sessionPath, attachedDirs, stoppedByUser, onRetry, onRetryInNewSession, onFork, onRewind, onCompact }: AgentMessagesProps): React.ReactElement {
+export const AgentMessages = React.memo(function AgentMessages({ sessionId, sessionModelId, messagesLoaded, persistedSDKMessages, sessionPath, attachedDirs, stoppedByUser, onRetry, onRetryInNewSession, onFork, onRewind, onCompact }: AgentMessagesProps): React.ReactElement {
+  // 高频 token/live message 状态在历史区内闭环，避免唤醒 AgentView 输入框和工具栏。
+  const streamState = useAtomValue(agentSessionStreamingStateAtomFamily(sessionId))
+  const liveMessages = useAtomValue(agentLiveMessagesAtomFamily(sessionId))
+  const streaming = streamState?.running ?? false
   const userProfile = useAtomValue(userProfileAtom)
   const setMinimapCache = useSetAtom(tabMinimapCacheAtom)
   const channels = useAtomValue(channelsAtom)
@@ -632,6 +635,14 @@ export const AgentMessages = React.memo(function AgentMessages({ sessionId, sess
     ]
   }, [persistedSDKMessages, liveMessages, streaming])
   const hasContent = allSDKMessages.length > 0
+  // 跨 turn task_notification 是历史 Task 卡片唯一需要追踪的外部元数据。
+  // 普通 token/live snapshot 不改变此签名，MessageGroupRenderer comparator 因而可忽略全消息数组新引用。
+  const taskNotificationSignature = React.useMemo(() => (
+    allSDKMessages
+      .filter((message) => message.type === 'system' && message.subtype === 'task_notification')
+      .map((message) => getSDKMessageStableKey(message))
+      .join('\u0000')
+  ), [allSDKMessages])
 
   // 仅扫描当前 live turn；不从持久化历史恢复任务，避免跨 turn 显示旧进度。
   const liveTaskActivities = React.useMemo(() => {
@@ -651,10 +662,19 @@ export const AgentMessages = React.memo(function AgentMessages({ sessionId, sess
   const suppressAgentRunning = streamState?.isCompacting
     || (streamState?.compactInFlight && contextCompaction != null)
 
-  // 统一分组：将持久化 + 实时消息合并后再分组，确保 system 消息（如压缩分割线）出现在正确位置
+  // 流式更新只重新分组当前 turn；已完成历史复用 group 引用，使 memoized renderer
+  // 跳过历史 Markdown/代码高亮/工具结果树。非流式刷新仍保持完整 groupIntoTurns 语义。
+  const messageGroupCacheRef = React.useRef(createMessageGroupRenderCache())
   const allGroups = React.useMemo(() => {
-    return groupIntoTurns(allSDKMessages, sessionModelId)
-  }, [allSDKMessages, sessionModelId])
+    const result = groupMessagesForRendering(
+      allSDKMessages,
+      sessionModelId,
+      streaming,
+      messageGroupCacheRef.current,
+    )
+    messageGroupCacheRef.current = result.cache
+    return result.groups
+  }, [allSDKMessages, sessionModelId, streaming])
   // 压缩过程由底部 Progress Overlay 独立承载，不占用对话历史、迷你地图或用户锚点。
   const visibleGroups = React.useMemo(
     () => allGroups.filter((group) => !isCompactionControlHistoryGroup(group)),
@@ -742,7 +762,8 @@ export const AgentMessages = React.memo(function AgentMessages({ sessionId, sess
                   <MessageGroupRenderer
                     key={getGroupId(group)}
                     group={group}
-                    allMessages={allSDKMessages}
+                    allMessages={group.type === 'assistant-turn' ? allSDKMessages : EMPTY_SDK_MESSAGES}
+                    externalMetadataSignature={group.type === 'assistant-turn' ? taskNotificationSignature : ''}
                     basePath={sessionPath || undefined}
                     onFork={shouldDisableActions ? undefined : onFork}
                     onRewind={shouldDisableActions ? undefined : onRewind}

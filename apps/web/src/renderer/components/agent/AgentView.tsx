@@ -2882,9 +2882,6 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
           sessionModelId={agentModelId || undefined}
           messagesLoaded={messagesLoaded}
           persistedSDKMessages={persistedSDKMessages}
-          streaming={streaming}
-          streamState={streamState}
-          liveMessages={liveMessages}
           sessionPath={sessionPath}
           attachedDirs={allAttachedDirs}
           stoppedByUser={stoppedByUser}
