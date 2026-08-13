@@ -406,7 +406,8 @@ export async function generateChatTitle(input: GenerateTitleInput): Promise<stri
   try {
     apiKey = await resolveChannelRuntimeApiKey(channelId)
   } catch {
-    return null
+    // OpenCode Go 无法解密也仍要完成重命名，避免对话长期停在默认标题。
+    return channel.provider === 'opencode-go-openai' ? createFallbackTitle(userMessage) : null
   }
 
   try {
@@ -421,10 +422,14 @@ export async function generateChatTitle(input: GenerateTitleInput): Promise<stri
     const proxyUrl = await getEffectiveProxyUrl()
     const fetchFn = getFetchFn(proxyUrl)
     const title = await fetchTitle(request, adapter, fetchFn)
-    if (!title) return null
+    if (!title) {
+      // OpenCode Go 的推理模型可能返回空正文，回退到首行兜底以保证对话被重命名。
+      return channel.provider === 'opencode-go-openai' ? createFallbackTitle(userMessage) : null
+    }
 
     return sanitizeGeneratedTitle(title)
   } catch {
-    return null
+    // OpenCode Go 的服务端偶发返回空标题/异常响应/超时，异常路径同样要完成重命名。
+    return channel.provider === 'opencode-go-openai' ? createFallbackTitle(userMessage) : null
   }
 }

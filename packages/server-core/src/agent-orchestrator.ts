@@ -640,20 +640,27 @@ export class AgentOrchestrator {
     const { userMessage, channelId, modelId } = input
     console.log('[Agent 标题生成] 开始生成标题:', { channelId, modelId, userMessage: userMessage.slice(0, 50) })
 
+    // 渠道信息在异常路径也要用于判断是否应用 OpenCode Go 本地兜底，因此提前解析；
+    // 同时保留 listChannels 自身的错误边界：解析失败时按"无渠道"处理并返回 null。
+    let channel: import('@proma/shared').Channel | undefined
     try {
-      const channels = listChannels()
-      const channel = channels.find((c) => c.id === channelId)
-      if (!channel) {
-        console.warn('[Agent 标题生成] 渠道不存在:', channelId)
-        return null
-      }
+      channel = listChannels().find((c) => c.id === channelId)
+    } catch (error) {
+      console.warn('[Agent 标题生成] 渠道解析失败:', error)
+      return null
+    }
+    if (!channel) {
+      console.warn('[Agent 标题生成] 渠道不存在:', channelId)
+      return null
+    }
 
-      if (channel.provider === 'openai-codex') {
-        const fallbackTitle = createFallbackTitle(userMessage)
-        console.log('[Agent 标题生成] ChatGPT OAuth 渠道使用本地标题:', fallbackTitle)
-        return fallbackTitle
-      }
+    if (channel.provider === 'openai-codex') {
+      const fallbackTitle = createFallbackTitle(userMessage)
+      console.log('[Agent 标题生成] ChatGPT OAuth 渠道使用本地标题:', fallbackTitle)
+      return fallbackTitle
+    }
 
+    try {
       const apiKey = await resolveChannelRuntimeApiKey(channelId)
       const providerAdapter = getAdapter(channel.provider)
       const request = providerAdapter.buildTitleRequest({
@@ -668,7 +675,9 @@ export class AgentOrchestrator {
       const title = await fetchTitle(request, providerAdapter, fetchFn)
       if (!title) {
         console.warn('[Agent 标题生成] API 返回空标题')
-        return null
+        // OpenCode Go 的推理模型可能把输出预算全花在推理上返回空正文，或
+        // 内容块为数组；任何取不到可用标题的情况都回退到首行兜底，保证会话一定被重命名。
+        return channel.provider === 'opencode-go-openai' ? createFallbackTitle(userMessage) : null
       }
 
       const result = sanitizeGeneratedTitle(title)
@@ -677,7 +686,8 @@ export class AgentOrchestrator {
       return result
     } catch (error) {
       console.warn('[Agent 标题生成] 生成失败:', error)
-      return null
+      // OpenCode Go 的服务端偶发返回空标题/异常响应/超时，异常路径同样要完成重命名。
+      return channel.provider === 'opencode-go-openai' ? createFallbackTitle(userMessage) : null
     }
   }
 
