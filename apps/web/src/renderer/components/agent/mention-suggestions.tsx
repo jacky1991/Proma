@@ -11,7 +11,7 @@ import type { SuggestionOptions } from '@tiptap/suggestion'
 import { MessageSquareText, Sparkles, Server } from 'lucide-react'
 import { MentionList } from './MentionList'
 import type { MentionListRef } from './MentionList'
-import { createLatestSuggestionRequestGuard, createMentionPopup, positionPopup, isSuggestionTriggerPresent, shouldSuppressEscTrigger, shouldClearEscSuppressionOnExit, type EscSuppressedTrigger } from './mention-popup-utils'
+import { createDebouncedSuggestionLoader, createLatestSuggestionRequestGuard, createMentionPopup, positionPopup, isSuggestionTriggerPresent, shouldSuppressEscTrigger, shouldClearEscSuppressionOnExit, type EscSuppressedTrigger } from './mention-popup-utils'
 import type { AgentSessionReferenceSearchResult } from '@proma/shared'
 
 // ===== 泛型工厂 =====
@@ -46,6 +46,7 @@ function createMentionSuggestion<T>(
   // 用文本而非位置判断：删除触发符前的字符导致位置移动时，片段仍延续，继续抑制。
   let suppressedTrigger: EscSuppressedTrigger | null = null
   const requestGuard = createLatestSuggestionRequestGuard<T>()
+  const queryLoader = createDebouncedSuggestionLoader<T>(requestGuard)
 
   return {
     char: config.char,
@@ -55,19 +56,11 @@ function createMentionSuggestion<T>(
     // 始终通过校验；却会让中文/单词后紧跟触发符无法触发，属回归。
     allowedPrefixes: null,
 
-    items: async ({ query }): Promise<T[]> => {
-      const requestId = requestGuard.startRequest()
+    items: ({ query }): Promise<T[]> => queryLoader.load(async () => {
       const slug = workspaceSlugRef.current
-      if (!slug) return requestGuard.attachResult(requestId, [])
-      try {
-        return requestGuard.attachResult(
-          requestId,
-          await config.fetchItems(slug, (query ?? '').toLowerCase()),
-        )
-      } catch {
-        return requestGuard.attachResult(requestId, [])
-      }
-    },
+      if (!slug) return []
+      return config.fetchItems(slug, (query ?? '').toLowerCase())
+    }),
 
     render: () => {
       let renderer: ReactRenderer<MentionListRef> | null = null
@@ -76,6 +69,7 @@ function createMentionSuggestion<T>(
       let editorDom: HTMLElement | null = null
 
       function cleanup() {
+        queryLoader.cancel()
         if (blurHandler && editorDom) {
           editorDom.removeEventListener('blur', blurHandler, true)
           blurHandler = null

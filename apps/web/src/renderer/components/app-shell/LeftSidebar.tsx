@@ -44,6 +44,8 @@ import {
   liveMessagesMapAtom,
   agentSessionPendingFilesAtom,
   agentSessionStreamingStateAtomFamily,
+  agentSessionViewStreamStateAtomFamily,
+  agentLiveMessagesAtomFamily,
   agentSessionDraftAtomFamily,
   agentSessionDraftHtmlAtomFamily,
   agentPendingFilesAtomFamily,
@@ -706,6 +708,8 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
     // atomFamily 内部缓存（Jotai 对 string key 强引用 Map，不显式 remove 永不释放）。
     // 删除/归档是会话的终态，连同草稿一起清理，无需像关闭 Tab 那样保留可恢复输入。
     agentSessionStreamingStateAtomFamily.remove(id)
+    agentSessionViewStreamStateAtomFamily.remove(id)
+    agentLiveMessagesAtomFamily.remove(id)
     agentSessionDraftAtomFamily.remove(id)
     agentSessionDraftHtmlAtomFamily.remove(id)
     agentPendingFilesAtomFamily.remove(id)
@@ -2698,6 +2702,10 @@ const AgentSessionItem = React.memo(function AgentSessionItem({
           data-session-switch-title={session.title}
           data-session-switch-type="agent"
           onClick={() => onSelect(session.id, session.title)}
+          style={active ? undefined : {
+            contentVisibility: 'auto',
+            containIntrinsicSize: 'auto 30px',
+          }}
           onMouseEnter={preview.handleMouseEnter}
           onMouseLeave={preview.handleMouseLeave}
           className={cn(
