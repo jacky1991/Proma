@@ -77,6 +77,8 @@ import {
   agentWorkspacesAtom,
   agentStreamErrorsAtom,
   agentSessionDraftsAtom,
+  agentSessionDraftSyncVersionsAtom,
+  agentSessionDraftSyncVersionAtomFamily,
   agentSessionDraftAtomFamily,
   agentSessionDraftHtmlAtom,
   agentSessionDraftHtmlAtomFamily,
@@ -130,6 +132,8 @@ import type { AgentQueuedAttachment, AgentQueuedMessage, QueueDropPlacement } fr
 
 /** 稳定的空 SDKMessage 数组引用，避免 ?? [] 每次创建新引用 */
 const EMPTY_SDK_MESSAGES: SDKMessage[] = []
+/** 稳定的空 string 数组引用，避免无附件会话的 memo 链每次渲染失效。 */
+const EMPTY_STRING_ARRAY: string[] = []
 const LONG_TEXT_ATTACHMENT_THRESHOLD = 2000
 
 interface OptimisticSDKUserMessage extends SDKUserMessage {
@@ -564,21 +568,27 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
   const openSession = useOpenSession()
   const setAttachedDirsMap = useSetAtom(agentAttachedDirectoriesMapAtom)
   const attachedDirsMap = useAtomValue(agentAttachedDirectoriesMapAtom)
-  const attachedDirs = attachedDirsMap.get(sessionId) ?? []
+  const attachedDirs = attachedDirsMap.get(sessionId) ?? EMPTY_STRING_ARRAY
   const setAttachedFilesMap = useSetAtom(agentAttachedFilesMapAtom)
   const attachedFilesMap = useAtomValue(agentAttachedFilesMapAtom)
-  const attachedFiles = attachedFilesMap.get(sessionId) ?? []
+  const attachedFiles = attachedFilesMap.get(sessionId) ?? EMPTY_STRING_ARRAY
   const wsAttachedDirsMap = useAtomValue(workspaceAttachedDirectoriesMapAtom)
-  const wsAttachedDirs = currentWorkspaceId ? (wsAttachedDirsMap.get(currentWorkspaceId) ?? []) : []
+  const wsAttachedDirs = currentWorkspaceId
+    ? (wsAttachedDirsMap.get(currentWorkspaceId) ?? EMPTY_STRING_ARRAY)
+    : EMPTY_STRING_ARRAY
   const setWsAttachedFilesMap = useSetAtom(workspaceAttachedFilesMapAtom)
   const wsAttachedFilesMap = useAtomValue(workspaceAttachedFilesMapAtom)
-  const wsAttachedFiles = currentWorkspaceId ? (wsAttachedFilesMap.get(currentWorkspaceId) ?? []) : []
+  const wsAttachedFiles = currentWorkspaceId
+    ? (wsAttachedFilesMap.get(currentWorkspaceId) ?? EMPTY_STRING_ARRAY)
+    : EMPTY_STRING_ARRAY
 
   // 按 sessionId 切片订阅 drafts/draftHtml：仅本 session 草稿变化才让 AgentView 重渲染。
   // 输入框每次按键都会写整 Map atom，若直接订阅整 Map，AgentView 跟着每键重渲染。
   const inputContent = useAtomValue(agentSessionDraftAtomFamily(sessionId))
+  const draftSyncVersion = useAtomValue(agentSessionDraftSyncVersionAtomFamily(sessionId))
   const setDraftsMap = useSetAtom(agentSessionDraftsAtom)
-  const setInputContent = React.useCallback((value: string) => {
+  const setDraftSyncVersions = useSetAtom(agentSessionDraftSyncVersionsAtom)
+  const setInputContentFromEditor = React.useCallback((value: string) => {
     setDraftsMap((prev) => {
       const map = new Map(prev)
       if (value.trim() === '') {
@@ -589,6 +599,15 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
       return map
     })
   }, [sessionId, setDraftsMap])
+  // 仅非编辑器自身的写入才要求 RichTextInput 用受控内容覆盖文档。
+  const setInputContent = React.useCallback((value: string) => {
+    setDraftSyncVersions((prev) => {
+      const map = new Map(prev)
+      map.set(sessionId, (map.get(sessionId) ?? 0) + 1)
+      return map
+    })
+    setInputContentFromEditor(value)
+  }, [sessionId, setDraftSyncVersions, setInputContentFromEditor])
   const inputHtmlContent = useAtomValue(agentSessionDraftHtmlAtomFamily(sessionId))
   const setDraftHtmlMap = useSetAtom(agentSessionDraftHtmlAtom)
   const setInputHtmlContent = React.useCallback((html: string) => {
@@ -1981,7 +2000,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
   const externalSelectedModel = computedSelectedModel ?? stableSelectedModelRef.current
 
   /** 发送消息 */
-  const handleSend = React.useCallback(async (overrideText?: string): Promise<void> => {
+  const handleSend = React.useCallback(async (overrideText?: string, _fromEditor?: boolean): Promise<void> => {
     const text = (overrideText ?? inputContent).trim()
     // 如果输入为空但有建议，使用建议内容
     const effectiveText = text || suggestion || ''
@@ -2651,7 +2670,15 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
     return registerShortcut('toggle-preview-panel', togglePreviewPanel)
   }, [togglePreviewPanel])
 
-  const hasTextInput = inputContent.trim().length > 0
+  const [inputHasContent, setInputHasContent] = React.useState(false)
+  const inputHasContentRef = React.useRef(inputHasContent)
+  inputHasContentRef.current = inputHasContent
+  const handleInputActivity = React.useCallback((hasContent: boolean): void => {
+    if (inputHasContentRef.current === hasContent) return
+    inputHasContentRef.current = hasContent
+    setInputHasContent(hasContent)
+  }, [])
+  const hasTextInput = inputHasContent
   const canSend = !isStopping && messagesLoaded && (streaming || !messagesRefreshing) && (hasTextInput || pendingFiles.length > 0 || !!suggestion) && agentChannelId !== null && hasAvailableModel && (!streaming || hasTextInput)
 
   const inputToolbarItems = React.useMemo<ToolbarItem[]>(() => [
@@ -2840,7 +2867,10 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
       className={cn(
         canSend ? inputToolbarSendButtonClass : inputToolbarDisabledButtonClass
       )}
-      onClick={() => handleSend()}
+      onClick={() => {
+        const latestContent = richTextInputRef.current?.getMarkdown()
+        void handleSend(latestContent, true)
+      }}
       disabled={!canSend}
     >
       <CornerDownLeft className="size-[22px]" />
@@ -2999,7 +3029,9 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
             <RichTextInput
               ref={richTextInputRef}
               value={inputContent}
-              onChange={setInputContent}
+              onChange={setInputContentFromEditor}
+              onInputActivity={handleInputActivity}
+              draftSyncDelayMs={120}
               onSubmit={handleSend}
               onPasteFiles={handlePasteFiles}
               onPasteLongText={handlePasteLongText}
@@ -3021,6 +3053,8 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
               workspaceId={currentWorkspaceId}
               workspaceSlug={workspaceSlug}
               sessionId={sessionId}
+              draftScopeKey={sessionId}
+              draftSyncVersion={draftSyncVersion}
               attachedDirs={workspaceMentionPaths}
               sessionAttachedDirs={sessionMentionPaths}
               htmlValue={inputHtmlContent}

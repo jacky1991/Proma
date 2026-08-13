@@ -6,7 +6,7 @@
  */
 
 import { atom } from 'jotai'
-import { atomWithStorage } from 'jotai/utils'
+import { atomFamily, atomWithStorage } from 'jotai/utils'
 import type { ConversationMeta, ChatMessage, FileAttachment, ChatToolActivity } from '@proma/shared'
 
 // channelsAtom / channelsLoadedAtom 已上提至 @/atoms/channels-atoms（Chat 与 Agent 共享，避免 Agent chunk 传递性引入 chat-atoms）
@@ -188,6 +188,14 @@ export const currentChatErrorAtom = atom<string | null>((get) => {
  * 用于在切换对话时保留输入框内容
  */
 export const conversationDraftsAtom = atom<Map<string, string>>(new Map())
+
+/** 明确外部草稿写入的版本号；RichTextInput 用它区分本地回写与强制覆盖。 */
+export const conversationDraftSyncVersionsAtom = atom<Map<string, number>>(new Map())
+
+/** 单个对话的外部草稿同步版本派生 atom。 */
+export const conversationDraftSyncVersionAtomFamily = atomFamily((conversationId: string) =>
+  atom((get) => get(conversationDraftSyncVersionsAtom).get(conversationId) ?? 0),
+)
 
 /** 当前对话的草稿内容（派生读写原子） */
 export const currentConversationDraftAtom = atom(
