@@ -74,6 +74,7 @@ import type { UserScope } from '@proma/server-core/config-paths'
 import { getUserScope } from '../utils/user-scope'
 import { adminOnly } from '../middleware/role.ts'
 import { validateMcpServer } from '@proma/server-core/mcp-validator'
+import { listShallowDirectory } from '@proma/server-core/directory-listing'
 import { permissionService } from '@proma/server-core/agent-permission-service'
 import { askUserService } from '@proma/server-core/agent-ask-user-service'
 import { exitPlanService } from '@proma/server-core/agent-exit-plan-service'
@@ -555,8 +556,6 @@ agent.post(`/${AGENT_IPC_CHANNELS.WRITE_WORKSPACE_AUTO_MEMORY_FILE}`, async (c) 
 
 // ===== 文件系统操作 =====
 
-const HIDDEN_FS_ENTRIES = new Set(['.DS_Store', 'Thumbs.db'])
-
 /** 安全校验：路径必须在全局工作区或用户级会话工作区目录下 */
 function assertWorkspacePath(safePath: string, scope?: UserScope): void {
   const globalRoot = resolve(getAgentWorkspacesDir())
@@ -583,28 +582,10 @@ agent.post(`/${AGENT_IPC_CHANNELS.LIST_DIRECTORY}`, async (c) => {
   const safePath = resolve(dirPath)
   assertWorkspacePath(safePath, getUserScope(c))
 
+  // 目录可能已被删除（如删除 Agent 会话后面板仍持有旧路径），优雅返回空列表。
   if (!existsSync(safePath)) return c.json([])
 
-  const entries: FileEntry[] = []
-  const items = readdirSync(safePath, { withFileTypes: true })
-  for (const item of items) {
-    if (HIDDEN_FS_ENTRIES.has(item.name)) continue
-    const fullPath = resolve(safePath, item.name)
-    const isDirectory = item.isDirectory()
-    const size = isDirectory ? undefined : statSync(fullPath).size
-    entries.push({ name: item.name, path: fullPath, isDirectory, size })
-  }
-
-  // 目录在前，文件在后；隐藏文件排在同类末尾
-  entries.sort((a, b) => {
-    if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1
-    const aHidden = a.name.startsWith('.')
-    const bHidden = b.name.startsWith('.')
-    if (aHidden !== bHidden) return aHidden ? 1 : -1
-    return a.name.localeCompare(b.name)
-  })
-
-  return c.json(entries)
+  return c.json(listShallowDirectory(safePath))
 })
 
 /** POST /api/agent:delete-file → { ok: true } */
@@ -1102,27 +1083,10 @@ agent.post(`/${AGENT_IPC_CHANNELS.LIST_ATTACHED_DIRECTORY}`, async (c) => {
   const safePath = resolve(dirPath)
   assertAttachedPathAllowed(safePath, access, scope)
 
+  // 已解绑或被删除的附加目录不应让文件面板持续报错。
   if (!existsSync(safePath)) return c.json([])
 
-  const entries: FileEntry[] = []
-  const items = readdirSync(safePath, { withFileTypes: true })
-  for (const item of items) {
-    if (HIDDEN_FS_ENTRIES.has(item.name)) continue
-    const fullPath = resolve(safePath, item.name)
-    const isDirectory = item.isDirectory()
-    const size = isDirectory ? undefined : statSync(fullPath).size
-    entries.push({ name: item.name, path: fullPath, isDirectory, size })
-  }
-
-  entries.sort((a, b) => {
-    if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1
-    const aHidden = a.name.startsWith('.')
-    const bHidden = b.name.startsWith('.')
-    if (aHidden !== bHidden) return aHidden ? 1 : -1
-    return a.name.localeCompare(b.name)
-  })
-
-  return c.json(entries)
+  return c.json(listShallowDirectory(safePath))
 })
 
 /** POST /api/agent:read-attached-file → string（base64） */
