@@ -637,7 +637,9 @@ export const RichTextInput = forwardRef<RichTextInputHandle, RichTextInputProps>
 
           if (isSend) {
             event.preventDefault()
-            onSubmitRef.current()
+            // Enter 可能紧跟最后一次输入；先同步当前编辑器，再把最新 Markdown
+            // 直接交给发送方，避免 rAF 批处理导致发送旧草稿。
+            onSubmitRef.current(editor ? flushPendingDraftSync(editor) : undefined, true)
             return true
           }
 
