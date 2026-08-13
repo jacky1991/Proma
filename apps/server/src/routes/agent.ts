@@ -178,7 +178,13 @@ agent.post(`/${AGENT_IPC_CHANNELS.SEND_MESSAGE}`, async (c) => {
       streamSink.emit(sessionId, { type: 'stream-error', error }, undefined, scope.userId)
     },
     onComplete: (messages?: AgentMessage[], opts?: { stoppedByUser?: boolean }) => {
-      streamSink.emit(sessionId, { type: 'stream-complete', messages, ...opts }, undefined, scope.userId)
+      // 完成事件携带刚落盘的单条轻量 meta（剥离 piEntryBindings 避免无谓序列化），
+      // renderer 据此增量更新列表，无需重新拉取整个会话索引。
+      const fullMeta = getAgentSessionMeta(sessionId, scope)
+      const session = fullMeta
+        ? (() => { const { piEntryBindings: _piEntryBindings, ...meta } = fullMeta; return meta })()
+        : undefined
+      streamSink.emit(sessionId, { type: 'stream-complete', messages, ...opts, session }, undefined, scope.userId)
     },
     onTitleUpdated: (title: string) => {
       streamSink.emit(sessionId, { type: 'title-updated', title }, undefined, scope.userId)
