@@ -1,6 +1,6 @@
 {
   "name": "@proma/web",
-  "version": "0.0.43",
+  "version": "0.0.44",
   "description": "Proma Web 端 —— 复用 electron renderer 源码（零改动），注入 electronAPI shim 接入服务端",
   "private": true,
   "type": "module",

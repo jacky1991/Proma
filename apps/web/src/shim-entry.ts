@@ -27,7 +27,10 @@ if (import.meta.env.DEV) {
 }
 
 // ===== 路由守卫：未登录时渲染 LoginPage 遮罩 =====
-const needLogin = window.location.pathname === '/login' || !isAuthenticated()
+// widget 页面（widget.html 经 window.__PROMA_WIDGET__ 标记）跳过全屏守卫：
+// 悬浮 Chatbox 的未登录态由 ChatWidget 自渲染紧凑引导，不做整页遮罩与跳转。
+const isWidgetPage = (window as Window & { __PROMA_WIDGET__?: boolean }).__PROMA_WIDGET__ === true
+const needLogin = !isWidgetPage && (window.location.pathname === '/login' || !isAuthenticated())
 
 if (needLogin) {
   // 同步创建全屏遮罩（防止主应用闪现），背景色与 LoginPage 一致

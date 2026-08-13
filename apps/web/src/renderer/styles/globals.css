@@ -525,11 +525,26 @@
     overscroll-behavior: none;
   }
 
+  /* 悬浮 Chatbox 独立窗口（widget.html）：外层透明（嵌入时透出宿主页面，
+     面板与按钮自带背景），且不成为滚动容器。 */
+  html.proma-widget-window,
+  html.proma-widget-window body,
+  html.proma-widget-window #root {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+    background: transparent;
+  }
+
   * {
     @apply border-border;
   }
   body {
     @apply bg-background text-foreground;
+  }
+  html.proma-widget-window body {
+    background: transparent;
   }
 }
 

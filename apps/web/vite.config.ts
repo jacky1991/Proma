@@ -38,32 +38,26 @@ export default defineConfig({
     react(),
     {
       name: 'proma-web-shim-inject',
-      // dev 注入路径：源 HTML 中 marker 仍是原始 /main.tsx 形式
+      // dev 注入路径：源 HTML 中 marker 仍是原始 /<name>.tsx 形式
+      // （index.html 的 /main.tsx、widget.html 的 /widget-main.tsx 等，逐入口注入）
       transformIndexHtml(html) {
-        const marker = '<script type="module" src="/main.tsx"></script>'
-        if (!html.includes(marker)) return html
+        const entryScriptRe = /<script type="module" src="\/[^"]+\.tsx"><\/script>/
+        const match = html.match(entryScriptRe)
+        if (!match) return html
         return html.replace(
-          marker,
-          `<script type="module" src="${SHIM_VIRTUAL_ID}"></script>\n    ${marker}`,
+          match[0],
+          `<script type="module" src="${SHIM_VIRTUAL_ID}"></script>\n    ${match[0]}`,
         )
       },
       resolveId(id) {
         if (id === SHIM_VIRTUAL_ID) return SHIM_ENTRY_FILE
         return null
       },
-      // build 注入路径：在打包产物 index.html 的 main 入口 script 前插入 shim chunk 引用。
+      // build 注入路径：在打包产物各 HTML 的入口 script 前插入 shim chunk 引用。
       //   用 writeBundle（而非 generateBundle）——vite:build-html 在其 generateBundle 中才
       //   发射最终 HTML asset，本插件默认顺序的 generateBundle 早于它，拿不到 HTML asset。
       //   writeBundle 在所有 generateBundle 之后执行，此时 HTML 已写入磁盘，直接改写文件。
       writeBundle(_opts, bundle) {
-        const htmlAsset = Object.values(bundle).find(
-          (v): v is OutputAsset => v.type === 'asset' && v.fileName.endsWith('.html'),
-        )
-        if (!htmlAsset || typeof htmlAsset.source !== 'string') {
-          console.warn('[proma-web] 未在产物中找到 index.html，跳过 shim 注入')
-          return
-        }
-
         const shimChunk = Object.values(bundle).find(
           (v): v is OutputChunk =>
             v.type === 'chunk' && !!v.facadeModuleId?.endsWith('shim-entry.ts'),
@@ -73,25 +67,38 @@ export default defineConfig({
           return
         }
 
-        // main 入口 script 形如 <script type="module" crossorigin src="/assets/index-HASH.js"></script>
-        const mainScriptRe = /<script type="module" crossorigin src="[^"]+"><\/script>/
-        const match = htmlAsset.source.match(mainScriptRe)
-        if (!match) {
-          console.warn('[proma-web] 未匹配到 main 入口 script，跳过 shim 注入')
+        const htmlAssets = Object.values(bundle).filter(
+          (v): v is OutputAsset =>
+            v.type === 'asset' && v.fileName.endsWith('.html') && typeof v.source === 'string',
+        )
+        if (htmlAssets.length === 0) {
+          console.warn('[proma-web] 未在产物中找到 HTML，跳过 shim 注入')
           return
         }
 
+        // 入口 script 形如 <script type="module" crossorigin src="/assets/index-HASH.js"></script>
+        const entryScriptRe = /<script type="module" crossorigin src="[^"]+"><\/script>/
         const shimTag = `<script type="module" crossorigin src="/${shimChunk.fileName}"></script>`
-        const nextSource = htmlAsset.source.replace(match[0], `${shimTag}\n    ${match[0]}`)
 
-        // bundle.source 已被 Vite 写入磁盘，此处同步更新内存与磁盘
-        htmlAsset.source = nextSource
-        const htmlPath = resolve(rendererRoot, 'dist', htmlAsset.fileName)
-        try {
-          writeFileSync(htmlPath, nextSource, 'utf-8')
-          console.info(`[proma-web] 已在 index.html 注入 shim 入口：/${shimChunk.fileName}`)
-        } catch (error) {
-          console.error('[proma-web] 写回 index.html 失败:', error)
+        for (const htmlAsset of htmlAssets) {
+          const source = htmlAsset.source as string
+          const match = source.match(entryScriptRe)
+          if (!match) {
+            console.warn(`[proma-web] ${htmlAsset.fileName} 未匹配到入口 script，跳过 shim 注入`)
+            continue
+          }
+
+          const nextSource = source.replace(match[0], `${shimTag}\n    ${match[0]}`)
+
+          // bundle.source 已被 Vite 写入磁盘，此处同步更新内存与磁盘
+          htmlAsset.source = nextSource
+          const htmlPath = resolve(rendererRoot, 'dist', htmlAsset.fileName)
+          try {
+            writeFileSync(htmlPath, nextSource, 'utf-8')
+            console.info(`[proma-web] 已在 ${htmlAsset.fileName} 注入 shim 入口：/${shimChunk.fileName}`)
+          } catch (error) {
+            console.error(`[proma-web] 写回 ${htmlAsset.fileName} 失败:`, error)
+          }
         }
       },
     },
@@ -110,8 +117,10 @@ export default defineConfig({
   build: {
     rollupOptions: {
       // shim-entry 作为显式入口：否则 build 产物中无人引用会被 Rollup 剔除
+      // widget：悬浮 Chatbox 独立入口（第三方 iframe 嵌入，见 docs/plans/2026-08-13-chat-floating-widget.md）
       input: {
         main: resolve(rendererRoot, 'index.html'),
+        widget: resolve(rendererRoot, 'widget.html'),
         'proma-shim': SHIM_ENTRY_FILE,
       },
       output: {

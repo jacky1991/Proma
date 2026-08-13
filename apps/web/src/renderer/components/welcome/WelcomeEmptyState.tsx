@@ -4,7 +4,7 @@
  * 在没有会话时展示：
  * 1. 个性化时段问候
  * 2. 平台感知的小 Tips
- * 3. Chat/Agent 模式切换 Tab
+ * 3. Chat/Agent 模式切换 Tab（compact 模式下隐藏）
  */
 
 import * as React from 'react'
@@ -15,6 +15,11 @@ import { userProfileAtom } from '@/atoms/user-profile'
 import { appModeAtom, type AppMode } from '@/atoms/app-mode'
 import { themeStyleAtom } from '@/atoms/theme'
 import { getRandomTip, getPlatform, type Tip } from '@/lib/tips'
+
+interface WelcomeEmptyStateProps {
+  /** 紧凑模式（悬浮 Chatbox 等窄容器场景）：隐藏模式切换 Tab */
+  compact?: boolean
+}
 
 /** 根据小时返回时段问候 */
 function getGreeting(hour: number): string {
@@ -31,7 +36,7 @@ const MODE_CONFIG: Record<AppMode, { icon: React.ReactNode; label: string }> = {
   scratch: { icon: <StickyNote size={15} />, label: 'Scratch Pad' },
 }
 
-export function WelcomeEmptyState(): React.ReactElement {
+export function WelcomeEmptyState({ compact = false }: WelcomeEmptyStateProps): React.ReactElement {
   const userProfile = useAtomValue(userProfileAtom)
   const [mode, setMode] = useAtom(appModeAtom)
   const themeStyle = useAtomValue(themeStyleAtom)
@@ -55,7 +60,10 @@ export function WelcomeEmptyState(): React.ReactElement {
   return (
     <div className="welcome-empty-state flex h-full flex-col items-center justify-center gap-6 px-4">
       {/* 问候语 */}
-      <h1 className="text-[26px] font-semibold tracking-tight text-foreground">
+      <h1 className={cn(
+        'font-semibold tracking-tight text-foreground',
+        compact ? 'text-[20px]' : 'text-[26px]',
+      )}>
         {displayName}，{greeting}
       </h1>
 
@@ -65,7 +73,8 @@ export function WelcomeEmptyState(): React.ReactElement {
         <span>{tip.text}</span>
       </div>
 
-      {/* 模式切换 Tab */}
+      {/* 模式切换 Tab（紧凑模式隐藏） */}
+      {!compact && (
       <div className="relative flex rounded-xl bg-muted/60 p-1">
         {/* 滑动背景指示器 */}
         <div
@@ -95,6 +104,7 @@ export function WelcomeEmptyState(): React.ReactElement {
           )
         })}
       </div>
+      )}
     </div>
   )
 }

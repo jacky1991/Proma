@@ -157,11 +157,13 @@ interface ChatMessagesProps {
   onLoadMore?: () => Promise<void>
   /** 图片编辑完成回调 */
   onImageEditComplete?: (editedDataUrl: string) => void
+  /** 紧凑空状态（悬浮 Chatbox 等场景）：隐藏空状态中的模式切换 Tab */
+  compactEmptyState?: boolean
 }
 
 /** 空状态引导 — 使用 WelcomeEmptyState */
-function EmptyState(): React.ReactElement {
-  return <WelcomeEmptyState />
+function EmptyState({ compact = false }: { compact?: boolean }): React.ReactElement {
+  return <WelcomeEmptyState compact={compact} />
 }
 
 export function ChatMessages({
@@ -185,6 +187,7 @@ export function ChatMessages({
   onDeleteDivider,
   onLoadMore,
   onImageEditComplete,
+  compactEmptyState = false,
 }: ChatMessagesProps): React.ReactElement {
   const userProfile = useAtomValue(userProfileAtom)
   const channels = useAtomValue(channelsAtom)
@@ -371,7 +374,7 @@ export function ChatMessages({
       />
       <ConversationContent>
         {messages.length === 0 && !streaming ? (
-          <EmptyState />
+          <EmptyState compact={compactEmptyState} />
         ) : (
           <>
             {/* 已有消息 + 分隔线 */}

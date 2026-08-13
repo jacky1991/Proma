@@ -57,6 +57,12 @@ import type {
 
 interface ChatViewProps {
   conversationId: string
+  /** 隐藏 ChatHeader（悬浮 Chatbox 等自绘紧凑头部的场景） */
+  hideHeader?: boolean
+  /** 隐藏提示词编辑侧栏（窄容器场景，侧栏收起仍占 40px） */
+  hidePromptSidebar?: boolean
+  /** 紧凑空状态：隐藏空状态中的模式切换 Tab */
+  compactEmptyState?: boolean
 }
 
 function cleanupPendingAttachments(attachments: PendingAttachment[]): void {
@@ -68,15 +74,20 @@ function cleanupPendingAttachments(attachments: PendingAttachment[]): void {
   }
 }
 
-export function ChatView({ conversationId }: ChatViewProps): React.ReactElement {
+export function ChatView({ conversationId, hideHeader, hidePromptSidebar, compactEmptyState }: ChatViewProps): React.ReactElement {
   return (
     <ConversationProvider conversationId={conversationId}>
-      <ChatViewInner conversationId={conversationId} />
+      <ChatViewInner
+        conversationId={conversationId}
+        hideHeader={hideHeader}
+        hidePromptSidebar={hidePromptSidebar}
+        compactEmptyState={compactEmptyState}
+      />
     </ConversationProvider>
   )
 }
 
-function ChatViewInner({ conversationId }: ChatViewProps): React.ReactElement {
+function ChatViewInner({ conversationId, hideHeader = false, hidePromptSidebar = false, compactEmptyState = false }: ChatViewProps): React.ReactElement {
   // ===== 本地状态（每个实例独立） =====
   const [messages, setMessages] = React.useState<ChatMessage[]>([])
   const [contextDividers, setContextDividers] = React.useState<string[]>([])
@@ -630,7 +641,7 @@ function ChatViewInner({ conversationId }: ChatViewProps): React.ReactElement {
       {/* 主内容区域 */}
       <div className="flex flex-col h-full flex-1 min-w-0">
         {/* Header 在 max-w 外，按钮可到达最右侧 */}
-        <ChatHeader conversation={conversation} />
+        {!hideHeader && <ChatHeader conversation={conversation} />}
         <div className="flex flex-col flex-1 w-full max-w-[min(72rem,100%)] mx-auto overflow-hidden min-h-0">
           {/* 中间：消息区域 */}
           <ChatMessages
@@ -654,6 +665,7 @@ function ChatViewInner({ conversationId }: ChatViewProps): React.ReactElement {
             onDeleteDivider={handleDeleteDivider}
             onLoadMore={handleLoadMore}
             onImageEditComplete={handleImageEditComplete}
+            compactEmptyState={compactEmptyState}
           />
 
           {/* 错误提示 */}
@@ -693,18 +705,20 @@ function ChatViewInner({ conversationId }: ChatViewProps): React.ReactElement {
         </div>
       </div>
 
-      {/* 提示词编辑侧栏 */}
-      <div className={cn(
-        'relative flex-shrink-0 transition-[width] duration-300 ease-in-out overflow-hidden titlebar-drag-region',
-        promptSidebarOpen ? 'w-[300px] border-l' : 'w-10'
-      )}>
+      {/* 提示词编辑侧栏（悬浮 Chatbox 等窄容器场景隐藏） */}
+      {!hidePromptSidebar && (
         <div className={cn(
-          'w-[300px] h-full transition-opacity duration-200 titlebar-no-drag',
-          promptSidebarOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
+          'relative flex-shrink-0 transition-[width] duration-300 ease-in-out overflow-hidden titlebar-drag-region',
+          promptSidebarOpen ? 'w-[300px] border-l' : 'w-10'
         )}>
-          <PromptEditorSidebar />
+          <div className={cn(
+            'w-[300px] h-full transition-opacity duration-200 titlebar-no-drag',
+            promptSidebarOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
+          )}>
+            <PromptEditorSidebar />
+          </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }

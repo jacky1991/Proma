@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Proma Widget 嵌入测试</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #f4f4f5;
+      color: #18181b;
+      padding: 40px 20px;
+    }
+    .container { max-width: 680px; margin: 0 auto; }
+    h1 { font-size: 28px; margin-bottom: 12px; }
+    p { line-height: 1.7; color: #52525b; margin-bottom: 16px; }
+    .note {
+      background: #fef3c7;
+      border-radius: 12px;
+      padding: 16px 20px;
+      margin: 24px 0;
+      font-size: 14px;
+      color: #92400e;
+    }
+    .note code {
+      background: rgba(0,0,0,0.08);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+    .placeholder { height: 120vh; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>模拟第三方网站</h1>
+    <p>本页面用于测试 <code>embed.js</code> 嵌入 Proma 悬浮 Chatbox 的效果。dev 下直接访问：</p>
+    <div class="note">
+      测试前提：<br/>
+      1. Proma dev server 已启动（端口 5174 + 3000）<br/>
+      2. 你已先在 <code>http://127.0.0.1:5174</code> 登录过（iframe 内同 origin 共享 localStorage 认证）<br/>
+      <br/>
+      右下角应出现悬浮按钮，点击展开 Chatbox。
+    </div>
+    <div class="placeholder">
+      <p>↓ 滚动测试浮窗 fixed 定位是否始终固定在右下角 ↓</p>
+    </div>
+  </div>
+
+  <!-- 第三方网站只需引入这一行脚本即可嵌入 Proma Chatbox -->
+  <script src="/embed.js" defer></script>
+</body>
+</html>
