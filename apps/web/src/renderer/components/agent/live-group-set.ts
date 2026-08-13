@@ -1,4 +1,4 @@
-import type { SDKMessage } from '@proma/shared'
+import { getSDKCompactStatus, type SDKMessage, type SDKSystemMessage } from '@proma/shared'
 import type { MessageGroup } from './SDKMessageRenderer'
 
 interface BuildLiveGroupSetOptions {
@@ -20,7 +20,18 @@ export function buildLiveGroupSet({
 }: BuildLiveGroupSetOptions): ReadonlySet<MessageGroup> {
   if (!streaming || !liveMessages || liveMessages.length === 0) return EMPTY_LIVE_GROUPS
 
-  const liveSet = new Set<SDKMessage>(liveMessages)
+  // 自主压缩会在同一 stream 内插入 system 压缩状态，并在完成后继续输出。
+  // 这时压缩前的 assistant 消息仍属于当前运行的 liveMessages；若仍标为 live，
+  // 它的 ProcessBlockGroup 会一直保持展开。以最近压缩状态为边界，仅让
+  // 压缩后新产生的消息驱动 live UI，前一段随即进入完成态并自动折叠。
+  const latestCompactionIndex = liveMessages.findLastIndex((message) => (
+    message.type === 'system'
+      && getSDKCompactStatus(message as SDKSystemMessage) != null
+  ))
+  const currentSegmentMessages = latestCompactionIndex >= 0
+    ? liveMessages.slice(latestCompactionIndex + 1)
+    : liveMessages
+  const liveSet = new Set<SDKMessage>(currentSegmentMessages)
   const result = new Set<MessageGroup>()
 
   for (const group of allGroups) {
