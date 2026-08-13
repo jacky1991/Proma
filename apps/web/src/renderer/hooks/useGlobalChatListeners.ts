@@ -14,7 +14,6 @@ import {
   chatStreamErrorsAtom,
   conversationsAtom,
   chatMessageRefreshAtom,
-  pendingAgentRecommendationAtom,
 } from '@/atoms/chat-atoms'
 import { tabsAtom, updateTabTitle } from '@/atoms/tab-atoms'
 import type { ConversationStreamState } from '@/atoms/chat-atoms'
@@ -171,31 +170,6 @@ export function useGlobalChatListeners(): void {
           ...s,
           toolActivities: [...s.toolActivities, event.activity],
         }))
-
-        // 检测 Agent 推荐工具结果，写入推荐 atom
-        if (
-          event.activity.type === 'result'
-          && event.activity.toolName === 'suggest_agent_mode'
-          && event.activity.result
-          && !event.activity.isError
-        ) {
-          try {
-            const parsed = JSON.parse(event.activity.result) as {
-              type?: string
-              reason?: string
-              suggestedPrompt?: string
-            }
-            if (parsed.type === 'agent_recommendation' && parsed.reason && parsed.suggestedPrompt) {
-              store.set(pendingAgentRecommendationAtom, {
-                reason: parsed.reason,
-                suggestedPrompt: parsed.suggestedPrompt,
-                conversationId: event.conversationId,
-              })
-            }
-          } catch {
-            // JSON 解析失败，忽略
-          }
-        }
       }
     )
 

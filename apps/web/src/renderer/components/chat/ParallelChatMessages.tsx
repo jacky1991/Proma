@@ -191,7 +191,6 @@ function MessageColumn({
           <ChatMessageItem
             key={message.id}
             message={message}
-            conversationId={conversationId}
             allMessages={allMessages}
             onDeleteMessage={onDeleteMessage}
             onResendMessage={onResendMessage}

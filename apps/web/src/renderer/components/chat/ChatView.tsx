@@ -19,7 +19,6 @@ import { AlertCircle, X } from 'lucide-react'
 import { ChatHeader } from './ChatHeader'
 import { ChatMessages } from './ChatMessages'
 import { ChatInput } from './ChatInput'
-import { AgentRecommendBanner } from './AgentRecommendBanner'
 import { PromptEditorSidebar } from './PromptEditorSidebar'
 import type { InlineEditSubmitPayload } from './ChatMessageItem'
 import {
@@ -27,7 +26,6 @@ import {
   streamingStatesAtom,
   chatStreamErrorsAtom,
   chatMessageRefreshAtom,
-  pendingAgentRecommendationAtom,
   conversationModelsAtom,
   chatPendingMessageAtom,
   INITIAL_MESSAGE_LIMIT,
@@ -118,7 +116,6 @@ function ChatViewInner({ conversationId, hideHeader = false, hidePromptSidebar =
   const userProfile = useAtomValue(userProfileAtom)
   const promptSidebarOpen = useAtomValue(promptSidebarOpenAtom)
   const activeToolIds = useAtomValue(activeToolIdsAtom)
-  const setPendingRecommendation = useSetAtom(pendingAgentRecommendationAtom)
   const [chatPendingMessage, setChatPendingMessage] = React.useState<ChatPendingMessage | null>(null)
 
   // 从全局 atom 读取快速任务待发送消息
@@ -158,7 +155,6 @@ function ChatViewInner({ conversationId, hideHeader = false, hidePromptSidebar =
   // ===== 对话切换时重置状态 =====
   React.useEffect(() => {
     setInlineEditingMessageId(null)
-    setPendingRecommendation(null)
 
     // 清空附件列表和缓存
     setPendingAttachments((prev) => {
@@ -166,7 +162,7 @@ function ChatViewInner({ conversationId, hideHeader = false, hidePromptSidebar =
       pendingAttachmentsRef.current = []
       return []
     })
-  }, [conversationId, setPendingRecommendation])
+  }, [conversationId])
 
   // ===== 加载消息 + 上下文分隔线 =====
   React.useEffect(() => {
@@ -688,9 +684,6 @@ function ChatViewInner({ conversationId, hideHeader = false, hidePromptSidebar =
               </button>
             </div>
           )}
-
-          {/* Agent 模式推荐横幅 */}
-          <AgentRecommendBanner />
 
           {/* 底部：输入框 */}
           <ChatInput

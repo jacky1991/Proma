@@ -2,7 +2,7 @@
  * Chat 工具注册表（server-core）
  *
  * 管理所有可用的 Chat 工具元数据：
- * - 内置工具（联网搜索、Agent 模式推荐）
+ * - 内置工具（联网搜索）
  * - 自定义工具（用户配置的 HTTP 工具）
  *
  * 提供统一接口获取工具列表（供路由层和 Electron 端共用）。
@@ -23,24 +23,10 @@ export const BUILTIN_TOOL_METAS: ChatToolMeta[] = [
     category: 'builtin',
     executorType: 'builtin',
   },
-  {
-    id: 'agent-mode-recommend',
-    name: 'Agent 模式推荐',
-    description: '智能识别适合 Agent 模式的任务，推荐用户切换',
-    params: [
-      { name: 'reason', type: 'string', description: '推荐理由', required: true },
-      { name: 'suggestedPrompt', type: 'string', description: '建议的 Agent 初始提示词', required: true },
-    ],
-    icon: 'Sparkles',
-    category: 'builtin',
-    executorType: 'builtin',
-  },
 ]
 
 /** 检查内置工具是否可用（凭据已配置） */
 function checkBuiltinAvailable(toolId: string, credentials: Record<string, string>): boolean {
-  // agent-mode-recommend 无需凭据，始终可用
-  if (toolId === 'agent-mode-recommend') return true
   // web-search 需要 apiKey
   return !!credentials.apiKey
 }

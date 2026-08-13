@@ -383,7 +383,6 @@ export function ChatMessages({
                 <div data-message-id={msg.id}>
                   <ChatMessageItem
                     message={msg}
-                    conversationId={conversationId}
                     isStreaming={false}
                     isLastAssistant={false}
                     allMessages={messages}
