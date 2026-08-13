@@ -14,6 +14,8 @@ import { AgentEventBus } from '@proma/server-core/agent-event-bus'
 import { AgentOrchestrator } from '@proma/server-core/agent-orchestrator'
 import { PiAgentAdapter } from '@proma/server-core/adapters/pi-agent-adapter'
 import type { PiBuiltinToolDeps } from '@proma/server-core/adapters/pi-builtin-tools'
+import { buildWebTools } from '@proma/server-core/adapters/pi-web-tools'
+import { isWebSearchEnabledForAgent } from '@proma/server-core/web-search-service'
 import { NodeAesGcmCryptoProvider, createNodeEnvProbe } from '@proma/server-core/node'
 import { wsStreamSink } from './ws'
 import { startWorkspaceWatcher } from './workspace-watcher'
@@ -38,21 +40,21 @@ const eventBus = new AgentEventBus()
 const adapter = new PiAgentAdapter()  // M2 仅 Pi runtime
 
 /**
- * 内置工具依赖注入（M2.5 迭代 6）
+ * 内置工具依赖注入
  *
- * Server 端显式传空 deps：automation / collaboration / web-search 内置工具
- * 在 Agent 执行时不注册（buildPiBuiltinTools 检测 deps 为空后跳过）。
- * UI 侧这些工具不会出现在 Agent 工具列表中（SDK 动态注册，未注册即不可见）。
+ * web-search 已注入：buildWebTools（WebSearch/WebFetch，Tavily 实现）+ isWebSearchEnabled。
+ * 开关 + 凭据齐全时，buildPiBuiltinTools 自动将其注册到 Pi runtime，Agent 工具列表可见。
  *
- * M3 按需接入：
- * - web-search：注入 Tavily/SerpAPI 实现
- * - automation：注入定时任务触发器（automation-scheduler 已服务端化，见 apps/server/src/automation-scheduler.ts；agent 内置工具注入仍待 M3）
+ * 仍未注入：
+ * - automation：注入定时任务触发器（automation-scheduler 已服务端化，见 apps/server/src/automation-scheduler.ts；agent 内置工具注入仍待后续）
  * - collaboration：评估是否为 IM bridge 相关（已 🚫 Out），若是则不注入
  */
 const piBuiltinToolDeps: PiBuiltinToolDeps = {
-  // 全部留空——不可用工具不会被注册到 Agent SDK，UI 不会显示
+  // web-search：注入 Tavily 实现的 WebSearch/WebFetch（开关 + 凭据齐全时由 buildPiBuiltinTools 注册）
+  buildWebTools,
+  isWebSearchEnabled: isWebSearchEnabledForAgent,
 }
-logger.info('内置工具依赖: automation / collaboration / web-search 未注入（Agent 执行时不可用）')
+logger.info('内置工具依赖: web-search 已注入；automation / collaboration 未注入（Agent 执行时不可用）')
 
 const orchestrator = new AgentOrchestrator(adapter, eventBus, { piBuiltinToolDeps })
 

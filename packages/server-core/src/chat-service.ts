@@ -3,7 +3,7 @@
  *
  * 从 Electron chat-service.ts 剥离，去耦 WebContents：
  * - 流式事件通过 ChatStreamEmitter 回调推送（Electron 侧传 webContents.send，Server 侧传 WS 推送）
- * - 工具注册/执行通过可选注入（M2 暂不启用 Chat 工具）
+ * - 工具调用：getEnabledTools 注入 function calling 定义，模型 tool_use 时经 executeToolCalls 执行并续接
  *
  * 纯逻辑（消息转换、SSE 解析、请求构建）已抽象到 @proma/core/providers。
  */
@@ -15,9 +15,11 @@ import {
   streamSSE,
   fetchTitle,
 } from '@proma/core'
-import type { ImageAttachmentData, ContinuationMessage } from '@proma/core'
+import type { ImageAttachmentData, ContinuationMessage, ToolDefinition } from '@proma/core'
 import { listChannels, resolveChannelRuntimeApiKey } from './channel-manager'
 import { appendMessage, updateConversationMeta, getConversationMessages } from './conversation-manager'
+import { getEnabledTools } from './chat-tool-registry'
+import { executeToolCalls } from './chat-tool-executor'
 import type { UserScope } from './config-paths'
 import { readAttachmentAsBase64, isImageAttachment } from './attachment-service'
 import { extractTextFromAttachment, isDocumentAttachment } from './document-parser'
@@ -147,7 +149,7 @@ export async function sendChatMessage(
   const {
     conversationId, userMessage, channelId,
     modelId, systemMessage, contextLength, contextDividers, attachments,
-    thinkingEnabled,
+    thinkingEnabled, enabledToolIds,
   } = input
 
   // 1. 查找渠道
@@ -204,12 +206,17 @@ export async function sendChatMessage(
     const proxyUrl = await getEffectiveProxyUrl()
     const fetchFn = getFetchFn(proxyUrl)
 
-    // M2：Chat 工具暂不启用（工具注册/执行留待后续迭代注入）
-    const effectiveSystemMessage = systemMessage
+    // 从工具注册表获取已启用且可用的工具定义 + 系统提示词追加
+    const { tools, systemPromptAppend } = getEnabledTools(enabledToolIds)
+    const effectiveSystemMessage =
+      [systemMessage, systemPromptAppend].filter(Boolean).join('') || undefined
 
     let continuationMessages: ContinuationMessage[] = []
     let round = 0
+    /** 标记最近一轮是否执行了工具（用于判断是否需要最终响应轮） */
+    let pendingToolResults = false
 
+    /** 流式事件处理器（工具轮和最终响应轮复用） */
     const handleStreamEvent = (event: { type: string; delta?: string; toolCallId?: string; toolName?: string }): void => {
       switch (event.type) {
         case 'chunk':
@@ -220,13 +227,24 @@ export async function sendChatMessage(
           accumulatedReasoning += event.delta ?? ''
           emit({ type: 'reasoning', conversationId, delta: event.delta ?? '' })
           break
+        case 'tool_call_start':
+          accumulatedToolActivities.push({
+            toolCallId: event.toolCallId!,
+            toolName: event.toolName!,
+            type: 'start',
+          })
+          emit({
+            type: 'tool-activity',
+            conversationId,
+            activity: { type: 'start', toolName: event.toolName!, toolCallId: event.toolCallId! },
+          })
+          break
       }
     }
 
-    while (round < MAX_TOOL_ROUNDS) {
-      round++
-
-      const request = adapter.buildStreamRequest({
+    /** 构建流式请求（工具轮与最终响应轮共用，仅 tools/continuationMessages 不同） */
+    const buildRequest = (overrides: { tools?: ToolDefinition[]; continuationMessages?: ContinuationMessage[] } = {}) =>
+      adapter.buildStreamRequest({
         baseUrl: channel.baseUrl,
         apiKey,
         modelId,
@@ -236,20 +254,59 @@ export async function sendChatMessage(
         attachments,
         readImageAttachments: (attachments?: FileAttachment[]) => getImageAttachmentData(attachments, scope),
         thinkingEnabled,
-        continuationMessages: continuationMessages.length > 0 ? continuationMessages : undefined,
+        ...overrides,
       })
 
-      const { stopReason, toolCalls } = await streamSSE({
-        request,
+    while (round < MAX_TOOL_ROUNDS) {
+      round++
+      pendingToolResults = false
+
+      const { content, reasoning, thinkingBlocks, toolCalls, stopReason } = await streamSSE({
+        request: buildRequest({
+          tools,
+          continuationMessages: continuationMessages.length > 0 ? continuationMessages : undefined,
+        }),
         adapter,
         signal: controller.signal,
         fetchFn,
         onEvent: handleStreamEvent,
       })
 
-      // M2：不执行工具调用，直接退出循环
+      // 没有工具调用或非 tool_use 停止，退出循环
       if (!toolCalls || toolCalls.length === 0 || stopReason !== 'tool_use') break
-      break
+
+      // 执行工具调用；emit 回调同时落库 + 实时推送（result 活动由执行器单点构造）
+      const toolResults = await executeToolCalls(toolCalls, {
+        conversationId,
+        emitToolActivity: (activity) => {
+          accumulatedToolActivities.push(activity)
+          emit({ type: 'tool-activity', conversationId, activity })
+        },
+      })
+
+      // 构建续接消息
+      // thinkingBlocks 保留服务端原始 thinking 块结构（含签名），思考+工具模式下必须
+      // 原样回传给 Anthropic 协议家族（Anthropic/DeepSeek/Kimi），否则会被拒绝。
+      continuationMessages = [
+        ...continuationMessages,
+        { role: 'assistant' as const, content, reasoning, thinkingBlocks, toolCalls },
+        { role: 'tool' as const, results: toolResults },
+      ]
+      pendingToolResults = true
+      // 注意：不重置 accumulatedContent/accumulatedReasoning，跨轮次持续累积
+    }
+
+    // 最终响应轮：达到 MAX_TOOL_ROUNDS 仍有待处理工具结果时，
+    // 再发起一次 API 调用（不传 tools）让模型基于工具结果生成最终文本回复
+    if (pendingToolResults && continuationMessages.length > 0) {
+      console.log(`[聊天服务] 工具轮次已达上限 (${MAX_TOOL_ROUNDS})，发起最终响应轮`)
+      await streamSSE({
+        request: buildRequest({ continuationMessages }),
+        adapter,
+        signal: controller.signal,
+        fetchFn,
+        onEvent: handleStreamEvent,
+      })
     }
 
     // 保存 assistant 消息

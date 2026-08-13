@@ -202,12 +202,14 @@ renderer 源码零改动，浏览器注入 `window.electronAPI` shim（`apps/web
 | `agent-prompt-builder.ts` | Agent 系统提示词构建：动态上下文、内置 Agent、工作区上下文注入 |
 | `agent-permission-service.ts` | Agent 权限管理：工具权限检查、权限模式管理 |
 | `agent-workspace-manager.ts` | 工作区管理：MCP Server 配置、Skills 配置、工作区 CRUD |
-| `chat-service.ts` | Chat 流式调用编排：Provider 适配器集成、消息持久化、AbortController |
+| `chat-service.ts` | Chat 流式调用编排：Provider 适配器集成、消息持久化、AbortController、function calling 工具循环（web_search 等） |
 | `conversation-manager.ts` | 对话管理：对话 CRUD、JSONL 消息存储、置顶、上下文分割 |
 | `channel-manager.ts` | 渠道管理：渠道 CRUD、API Key 加密（CryptoPort）、连接测试、模型获取 |
 | `attachment-service.ts` | 附件管理：存储/读取/删除 |
 | `office-preview-service.ts` | 文档解析：DOCX/XLSX/PPTX → HTML、PDF/图片 base64 |
 | `automation-manager.ts` | 自动化任务管理 |
+| `web-search-service.ts` | 联网搜索/抓取（Tavily），Chat 工具与 Agent WebSearch/WebFetch 共用 |
+| `chat-tool-executor.ts` | Chat 工具统一执行器：分发工具调用、推送工具活动事件 |
 
 ### AI Provider 适配器（`packages/core/src/providers/`）
 
@@ -363,6 +365,7 @@ Proma 的 Agent 模式通过 `RuntimeRoutingAgentAdapter` 统一入口，路由�
 - ✅ **代理支持**：系统代理检测与配置
 - ✅ **文档解析**：PDF、Office、文本文件提取（server-core office-preview-service）
 - ✅ **多模态支持**：图片、文档附件
+- ✅ **联网搜索**：Chat 与 Agent 双模式内置 web_search（Tavily 集成）——Chat 走 function calling 工具循环、Agent 走 Pi customTools（WebSearch/WebFetch），设置页配置 API Key + 开关后生效
 - ✅ **Chat 工具**：内置工具系统 + 动态加载
 
 ### 架构亮点

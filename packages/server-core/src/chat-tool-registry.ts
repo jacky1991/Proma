@@ -9,24 +9,20 @@
  */
 
 import type { ChatToolInfo, ChatToolMeta } from '@proma/shared'
+import type { ToolDefinition } from '@proma/core'
 import { getChatToolsConfig } from './chat-tool-config'
+import { WEB_SEARCH_TOOL_DEFINITIONS, WEB_SEARCH_TOOL_META } from './chat-tools/web-search-tool'
 
 // ===== 内置工具元数据 =====
 
-export const BUILTIN_TOOL_METAS: ChatToolMeta[] = [
-  {
-    id: 'web-search',
-    name: '联网搜索',
-    description: '实时搜索互联网获取最新信息',
-    params: [{ name: 'query', type: 'string', description: '搜索查询', required: true }],
-    icon: 'Globe',
-    category: 'builtin',
-    executorType: 'builtin',
-  },
-]
+/**
+ * 内置工具元数据列表（供前端展示）。
+ * 单源：直接复用各工具模块的 META，避免元数据漂移。
+ */
+export const BUILTIN_TOOL_METAS: ChatToolMeta[] = [WEB_SEARCH_TOOL_META]
 
 /** 检查内置工具是否可用（凭据已配置） */
-function checkBuiltinAvailable(toolId: string, credentials: Record<string, string>): boolean {
+function checkBuiltinAvailable(credentials: Record<string, string>): boolean {
   // web-search 需要 apiKey
   return !!credentials.apiKey
 }
@@ -47,7 +43,7 @@ export function getAllToolInfos(): ChatToolInfo[] {
     infos.push({
       meta,
       enabled: state?.enabled ?? false,
-      available: checkBuiltinAvailable(meta.id, credentials),
+      available: checkBuiltinAvailable(credentials),
     })
   }
 
@@ -62,4 +58,37 @@ export function getAllToolInfos(): ChatToolInfo[] {
   }
 
   return infos
+}
+
+// ===== 启用工具收集（供 chat-service 注入 Provider function calling）=====
+
+export interface EnabledToolsResult {
+  tools: ToolDefinition[] | undefined
+  systemPromptAppend: string | undefined
+}
+
+/**
+ * 获取已启用且可用的工具定义 + 系统提示词追加
+ *
+ * 供 chat-service 注入 Provider 的 function calling。单次读配置（getChatToolsConfig），
+ * 同时判断开关与凭据，避免可用性检查二次读文件。
+ *
+ * 注意：本次只注册 web-search builtin；自定义 HTTP 工具待执行器接入后开放，
+ * 避免模型调用了工具却无执行器而报错。
+ */
+export function getEnabledTools(enabledToolIds?: string[]): EnabledToolsResult {
+  const config = getChatToolsConfig()
+  const isEnabled = enabledToolIds
+    ? enabledToolIds.includes(WEB_SEARCH_TOOL_META.id)
+    : (config.toolStates['web-search']?.enabled ?? false)
+  // 可用性 = 凭据已配置（与 checkBuiltinAvailable 同源，复用已读 config）
+  const isAvailable = !!config.toolCredentials['web-search']?.apiKey
+
+  if (!isEnabled || !isAvailable) {
+    return { tools: undefined, systemPromptAppend: undefined }
+  }
+  return {
+    tools: WEB_SEARCH_TOOL_DEFINITIONS,
+    systemPromptAppend: WEB_SEARCH_TOOL_META.systemPromptAppend,
+  }
 }
