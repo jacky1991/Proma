@@ -277,6 +277,32 @@ function findCatalogModelById(models: readonly PiCatalogModel[], modelId: string
     model.id.toLowerCase() === normalized || model.name.toLowerCase() === normalized)
 }
 
+/**
+ * 从常见 provider 别名中提取无歧义的 Claude family/version key。
+ *
+ * 不同 catalog 会用 `claude-opus-4-6`、`Claude Opus 4.6` 以及 provider 作用域形式
+ * （如 `anthropic.claude-opus-4-6-v1`）。回退匹配要求 family + 完整 major/minor 版本；
+ * 仅 major 的匹配只允许 Fable、catalog 条目或显式 `-promo` 别名使用。
+ */
+function getClaudeFamilyKey(modelRef: string, allowMajorOnly = false): string | undefined {
+  const normalized = modelRef.toLowerCase()
+  const familyFirst = normalized.match(/claude[\s._:/-]+(opus|sonnet|haiku|fable)[\s._:/-]+(\d+)(?:[\s._:/-]+(\d+))?/)
+  const versionFirst = normalized.match(/claude[\s._:/-]+(\d+)(?:[\s._:/-]+(\d+))?[\s._:/-]+(opus|sonnet|haiku)/)
+  const family = familyFirst?.[1] ?? versionFirst?.[3]
+  const major = familyFirst?.[2] ?? versionFirst?.[1]
+  const minor = familyFirst?.[3] ?? versionFirst?.[2]
+  const isPromoAlias = /[\s._:/-]promo$/.test(normalized)
+  if (!family || !major || (!minor && family !== 'fable' && !allowMajorOnly && !isPromoAlias)) return undefined
+  return `${family}-${major}${minor ? `-${minor}` : ''}`
+}
+
+function findClaudeCatalogModel(models: readonly PiCatalogModel[], modelId: string): PiCatalogModel | undefined {
+  const familyKey = getClaudeFamilyKey(modelId)
+  if (!familyKey) return undefined
+  return models.find((model) =>
+    getClaudeFamilyKey(model.id, true) === familyKey || getClaudeFamilyKey(model.name, true) === familyKey)
+}
+
 async function getCatalogModels(provider: KnownProvider): Promise<readonly PiCatalogModel[]> {
   try {
     const { getModels } = await loadPiAiCompat()
@@ -291,19 +317,37 @@ async function findPiCatalogModel(provider: ProviderType, modelId: string): Prom
     return findCatalogModelById(await getCodexCatalogModels(), modelId)
   }
 
-  const checked = new Set<string>()
-  for (const candidate of candidatePiProviders(provider)) {
-    checked.add(candidate)
+  const preferredProviders = candidatePiProviders(provider)
+  const { getProviders } = await loadPiAiCompat()
+  const checked = new Set(preferredProviders)
+  const fallbackProviders = getProviders().filter((candidate) => !checked.has(candidate))
+
+  // 配置的 provider 同时拥有精确匹配和安全的 Claude family 放宽匹配。
+  for (const candidate of preferredProviders) {
+    const model = findCatalogModelById(await getCatalogModels(candidate), modelId)
+    if (model) return model
+  }
+
+  const claudeFamilyKey = getClaudeFamilyKey(modelId)
+  if (claudeFamilyKey) {
+    for (const candidate of preferredProviders) {
+      const model = findClaudeCatalogModel(await getCatalogModels(candidate), modelId)
+      if (model) return model
+    }
+  }
+
+  // 通用/自定义渠道仍可精确匹配 provider 作用域的 catalog ID。
+  for (const candidate of fallbackProviders) {
     const model = findCatalogModelById(await getCatalogModels(candidate as KnownProvider), modelId)
     if (model) return model
   }
 
-  // 兼容自定义代理和 Anthropic-compatible：模型 id 常常仍是官方 id。
-  const { getProviders } = await loadPiAiCompat()
-  for (const candidate of getProviders()) {
-    if (checked.has(candidate)) continue
-    const model = findCatalogModelById(await getCatalogModels(candidate), modelId)
-    if (model) return model
+  // 只有在所有精确查找都失败后才放宽别名匹配。
+  if (claudeFamilyKey) {
+    for (const candidate of fallbackProviders) {
+      const model = findClaudeCatalogModel(await getCatalogModels(candidate as KnownProvider), modelId)
+      if (model) return model
+    }
   }
   return undefined
 }
