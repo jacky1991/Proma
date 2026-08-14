@@ -46,6 +46,14 @@ RUN bun install --network-concurrency=8 \
 FROM deps AS web-build
 WORKDIR /app
 
+# vite build MUST run under node: with bun's JSC runtime the build peaks at
+# ~4GB RAM and gets OOM-killed (SIGKILL, no output) on the low-memory Jenkins
+# CI node; node peaks at ~2GB. Debian's nodejs (v20) is compatible with vite 6.
+# node is installed in this stage only -- it never enters the runtime image.
+RUN apt-get update -qq -o Acquire::Retries=3 \
+ && apt-get install -y -qq --no-install-recommends -o Acquire::Retries=3 nodejs \
+ && rm -rf /var/lib/apt/lists/*
+
 # COPY all sources needed by vite (apps/web + packages workspace sources +
 # root tsconfig.json for extends)
 COPY tsconfig.json ./
@@ -53,8 +61,9 @@ COPY packages/ ./packages/
 COPY apps/web/  ./apps/web/
 
 # Build the frontend only: apps/web build = vite build, root=apps/web/src/renderer,
-# base='/', output to src/renderer/dist
-RUN bun run --filter='@proma/web' build
+# base='/', output to src/renderer/dist. Run vite directly with node (not via
+# bun run) to avoid bun's high-memory runtime.
+RUN cd apps/web && node ../../node_modules/vite/bin/vite.js build
 
 # --- Stage 3: runtime (reuse deps hoisted node_modules, no reinstall) ---
 # Do NOT re-run bun install in runtime: reuse the complete hoisted node_modules
