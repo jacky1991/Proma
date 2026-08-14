@@ -34,25 +34,16 @@ export function AboutSettings(): React.ReactElement {
         <SettingsRow label="运行时">
           <span className="text-sm text-muted-foreground">Bun + React</span>
         </SettingsRow>
-      </SettingsCard>
-      <SettingsCard>
-        <div className="space-y-1">
-          <h4 className="text-sm font-medium text-foreground">开源许可与源码</h4>
-          <p className="text-sm text-muted-foreground leading-relaxed">
-            本项目基于{' '}
-            <a
-              href={UPSTREAM_REPO_URL}
-              target="_blank"
-              rel="noreferrer"
-              className="text-primary hover:underline"
-            >
-              proma-ai/Proma
-            </a>
-            {' '}（上游）衍生，遵循{' '}
-            <span className="font-mono">AGPL-3.0</span>{' '}
-            开源。依据 AGPL-3.0 第 13 条，任何通过网络与本服务交互的用户均可免费获取完整源码。
-          </p>
-        </div>
+        <SettingsRow label="开源协议">
+          <a
+            href="https://www.gnu.org/licenses/agpl-3.0.html"
+            target="_blank"
+            rel="noreferrer"
+            className="text-sm text-primary hover:underline font-mono"
+          >
+            AGPL-3.0
+          </a>
+        </SettingsRow>
         <SettingsRow label="完整源码">
           <a
             href={SOURCE_REPO_URL}
@@ -61,6 +52,16 @@ export function AboutSettings(): React.ReactElement {
             className="text-sm text-primary hover:underline font-mono"
           >
             {SOURCE_REPO_URL.replace('https://', '')}
+          </a>
+        </SettingsRow>
+        <SettingsRow label="项目来源">
+          <a
+            href={UPSTREAM_REPO_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="text-sm text-primary hover:underline font-mono"
+          >
+            {UPSTREAM_REPO_URL.replace('https://', '')}
           </a>
         </SettingsRow>
       </SettingsCard>
