@@ -66,3 +66,6 @@ pnpm-workspace.yaml
 docs/
 DEPLOYMENT.md
 tests/
+
+# 本地 AI 辅助配置（不进仓库）
+CLAUDE.md
