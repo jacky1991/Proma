@@ -5,9 +5,8 @@ Proma Web is a **multi-user web-deployed AI agent platform** — a derivative wo
 ## Features
 
 - **Chat with multiple models**: Anthropic, OpenAI, DeepSeek, Zhipu, MiniMax, Doubao, Qwen, Google, and custom OpenAI-compatible endpoints; multimodal image input, document parsing, Markdown / Mermaid / KaTeX / code highlighting.
-- **Agent dual runtime**: Claude Agent SDK and Pi Agent SDK; workspace isolation, permission modes (safe / ask / allow-all), file operations, streaming long tasks, plan confirmation and follow-up questions.
+- **Agent workspace**: Pi Agent SDK runtime; workspace isolation, permission modes (safe / ask / allow-all), file operations, streaming long tasks, plan confirmation and follow-up questions.
 - **Workspaces / Skills / MCP**: per-workspace Skills, MCP servers and workspace files.
-- **Remote bot bridges**: Feishu / DingTalk / WeChat bots to trigger agent workflows from mobile or group chat.
 - **Memory & tools**: shared memory for Chat and Agent, web search, built-in chat tools.
 - **Multi-user & permissions**: JWT auth, admin/user roles, per-user data isolation (`~/.proma-web/users/{userId}/`), encrypted API keys, audit log.
 - **CLI**: `proma session` subcommands (`list` / `info` / `outline` / `search` / `export`) for progressive reading of sessions.

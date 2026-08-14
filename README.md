@@ -7,9 +7,8 @@ Proma Web 是一个**多用户 Web 部署形态**的通用 AI Agent 平台，是
 ## 功能特性
 
 - **Chat 多模型对话**：支持 Anthropic、OpenAI、DeepSeek、智谱、MiniMax、豆包、通义千问、Google 及自定义 OpenAI 兼容端点；多模态图片输入、文档解析、Markdown / Mermaid / KaTeX / 代码高亮。
-- **Agent 双运行时**：内置 Claude Agent SDK 与 Pi Agent SDK 两套运行时；支持工作区隔离、权限模式（safe / ask / allow-all）、文件操作、长任务流式输出、计划确认与用户追问。
+- **Agent 工作台**：基于 Pi Agent SDK 的运行时；支持工作区隔离、权限模式（safe / ask / allow-all）、文件操作、长任务流式输出、计划确认与用户追问。
 - **工作区 / Skills / MCP**：每个工作区独立配置 Skills、MCP Server 与工作区文件，支持团队沉淀可复用能力。
-- **远程机器人桥接**：支持飞书 / 钉钉 / 微信机器人，用手机或群聊触发 Agent 工作流。
 - **记忆与工具**：Chat 与 Agent 共享记忆能力，支持联网搜索、内置 Chat 工具。
 - **多用户与权限**：JWT 认证、admin / 普通用户角色、按用户隔离的数据目录（`~/.proma-web/users/{userId}/`）、API Key 加密存储、操作审计日志。
 - **CLI**：`proma session` 子命令（`list` / `info` / `outline` / `search` / `export`），面向有限上下文的 Agent 消费者提供会话渐进式读取。
