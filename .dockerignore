@@ -31,7 +31,7 @@ docs
 .env.*
 !.env.example
 
-# Docker description files stay out of the image (keep docker/ for COPY entrypoint / bunfig)
-Dockerfile
-.dockerignore
-docker-compose.yml
+# NOTE: the Dockerfile must NOT be listed here. docker-java (used by the
+# Jenkins docker-build-step) refuses to build when the explicitly specified
+# Dockerfile matches a .dockerignore pattern. Keeping it in the context is
+# harmless -- it is a few KB and is never COPYed into the image.
