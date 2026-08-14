@@ -1,10 +1,17 @@
 # GitHub Actions: 发布 Docker 镜像
 #
 # 触发方式：
-# 1. 推送 v* tag（如 v0.4.0）→ 镜像 tag = 版本号
+# 1. 推送 v* tag（如 v0.4.0）→ 镜像 tag = 版本号 + latest
 # 2. 手动触发（Actions → Release → Run workflow）→ 镜像 tag = 输入值（默认 manual）
+#
 # 构建 Proma Web 单镜像并推送到 GitHub Container Registry（ghcr.io）
-# 镜像名：ghcr.io/<owner>/<repo>，另打 latest
+# 镜像名：ghcr.io/<owner>/<repo>
+#
+# 优化点：
+# - buildx + GHA layer cache：依赖层命中缓存，重复构建从全量 install 降到秒级
+# - 多平台构建：linux/amd64 + linux/arm64 一次出双平台 manifest
+# - metadata-action 自动生成 tag（git tag / 手动输入 / latest）
+# - concurrency 防止重复触发并发构建
 
 name: Release
 
@@ -20,6 +27,10 @@ on:
         default: 'manual'
         type: string
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   packages: write
@@ -31,7 +42,10 @@ jobs:
 
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+
+      - name: 设置 buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: 登录 GHCR
         uses: docker/login-action@v3
@@ -40,22 +54,21 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 计算镜像 tag
-        id: version
-        run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
-            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "tag=${{ inputs.image_tag }}" >> "$GITHUB_OUTPUT"
-          fi
+      - name: 计算镜像 tag（自动 tag + 手动输入）
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=latest
+            ${{ github.event_name == 'push' && 'type=ref,event=tag' || format('type=raw,value={0}', inputs.image_tag || 'manual') }}
 
-      - name: 构建并推送镜像
-        run: |
-          IMAGE=ghcr.io/${{ github.repository }}
-          VERSION=${{ steps.version.outputs.tag }}
-          docker build \
-            -t "$IMAGE:$VERSION" \
-            -t "$IMAGE:latest" \
-            .
-          docker push "$IMAGE:$VERSION"
-          docker push "$IMAGE:latest"
+      - name: 构建并推送镜像（amd64 + arm64）
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

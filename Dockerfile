@@ -1,15 +1,22 @@
-# Proma single-image build (amd64 / Bun + Hono + frontend static assets)
+# Proma single-image build (amd64/arm64 / Bun + Hono + frontend static assets)
 # Run from source (no bun build --compile) so default-skills can keep using
 # import.meta.url relative path resolution.
+#
+# NOTE: keep this file pure ASCII -- the Jenkins docker-build-step reads it
+# with the agent's default charset (GBK on the CI node) and UTF-8 comments
+# throw MalformedInputException. This overrides the repo's "Chinese comments
+# preferred" rule for this file only.
 
-# --- Stage 1: deps (full hoisted node_modules, reused by web-build and runtime) ---
-FROM oven/bun:1.3.9-debian AS deps
+# --- Stage 0: base (install metadata + workspace manifests, shared by all
+#    install stages so the COPY layers are cached once) ---
+FROM oven/bun:1.3.9-debian AS base
 WORKDIR /app
 USER root
-# Explicit bun install cache dir, still used within this stage's install.
-# NOTE: no BuildKit cache mount (--mount=type=cache) here -- the Jenkins CI
-# daemon runs the classic builder and rejects it, so the cache is not
-# persisted across builds.
+# Explicit bun install cache dir, still used within each install stage.
+# No BuildKit cache mount (--mount=type=cache) here -- the Jenkins CI daemon
+# runs the classic builder and rejects it, so install caches are not persisted
+# across builds on that node. GitHub Actions persists them via the buildx
+# layer cache instead.
 ENV BUN_INSTALL_CACHE_DIR=/proma-bun-cache
 
 # 1) COPY install metadata + bun.lock first to maximize layer caching.
@@ -27,7 +34,10 @@ COPY apps/server/package.json           ./apps/server/
 COPY apps/web/package.json              ./apps/web/
 COPY apps/cli/package.json              ./apps/cli/
 
-# 3) Install all deps (incl. devDependencies for vite build).
+# --- Stage 1: deps (full hoisted node_modules incl. devDependencies, used by
+#    web-build for vite) ---
+FROM base AS deps
+#    --frozen-lockfile: CI must never drift from bun.lock.
 #    Keep bun.lock (bunfig does NOT set lockfile=false) so bun 1.3.9 uses the
 #    hoisted node_modules layout: workspace members and transitive deps
 #    (e.g. typebox from pi-ai) are hoisted to the top level and resolvable at
@@ -39,10 +49,17 @@ COPY apps/cli/package.json              ./apps/cli/
 #    *-linux-*-musl platform binaries (~231MB) are only loaded under
 #    alpine(musl), so remove them here so they never enter the runtime COPY
 #    layer (removing them in runtime would not save space -- layers stack).
-RUN bun install --network-concurrency=8 \
+RUN bun install --frozen-lockfile --network-concurrency=8 \
  && rm -rf node_modules/@anthropic-ai/claude-agent-sdk-linux-*-musl
 
-# --- Stage 2: web-build (frontend bundle) ---
+# --- Stage 2: prod-deps (production-only node_modules for the runtime image,
+#    keeping devDependencies like vite/typescript/eslint out of the ~1.3GB
+#    node_modules that runtime COPYs) ---
+FROM base AS prod-deps
+RUN bun install --omit=dev --frozen-lockfile --network-concurrency=8 \
+ && rm -rf node_modules/@anthropic-ai/claude-agent-sdk-linux-*-musl
+
+# --- Stage 3: web-build (frontend bundle) ---
 FROM deps AS web-build
 WORKDIR /app
 
@@ -61,23 +78,22 @@ COPY apps/web/  ./apps/web/
 # base='/', output to src/renderer/dist
 RUN bun run --filter='@proma/web' build
 
-# --- Stage 3: runtime (reuse deps hoisted node_modules, no reinstall) ---
-# Do NOT re-run bun install in runtime: reuse the complete hoisted node_modules
-# installed in deps (with @proma/* workspace links, transitive deps like
-# typebox, and applied patches). Reinstalling would fail because runtime only
-# contains apps/server (no apps/web or apps/cli), leaving the workspace
-# incomplete and drifting from the lockfile.
+# --- Stage 4: runtime (prod node_modules, no reinstall) ---
+# Do NOT re-run bun install in runtime: reuse the prod-deps node_modules (with
+# @proma/* workspace links and applied patches). Reinstalling would fail
+# because runtime only contains apps/server (no apps/web or apps/cli), leaving
+# the workspace incomplete and drifting from the lockfile.
 FROM oven/bun:1.3.9-debian AS runtime
 WORKDIR /app
 
 # Slimming: all COPY use --chown=bun:bun to land files directly owned by bun,
 # avoiding a later `chown -R /app` (Docker copy-on-write would duplicate the
-# whole /app including ~1.3GB node_modules into a new layer, adding ~1.3GB).
-# oven/bun images ship a bun user with UID/GID=1000:1000.
+# whole /app including ~1GB node_modules into a new layer). oven/bun images
+# ship a bun user with UID/GID=1000:1000.
 
-# 1) Reuse deps hoisted node_modules (all deps + @proma/* links; musl binaries
-#    already removed in the deps stage)
-COPY --from=deps --chown=bun:bun /app/node_modules ./node_modules
+# 1) Reuse prod-deps hoisted node_modules (production deps + @proma/* links;
+#    musl binaries already removed in the prod-deps stage)
+COPY --from=prod-deps --chown=bun:bun /app/node_modules ./node_modules
 
 # 2) Runtime sources: workspace sources (server closure deps) + server itself +
 #    install metadata (patches already applied inside node_modules)

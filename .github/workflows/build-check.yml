@@ -9,6 +9,10 @@ name: Build Check
 on:
   workflow_dispatch:
 
+concurrency:
+  group: build-check
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -21,9 +25,18 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v5
 
-      - name: 构建镜像
-        run: |
-          docker build -t proma-build-check .
+      - name: 设置 buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 构建镜像（单平台，加载到本地供冒烟测试）
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: proma-build-check
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: 冒烟测试（启动容器 + 健康检查）
         run: |
