@@ -6,8 +6,10 @@
 FROM oven/bun:1.3.9-debian AS deps
 WORKDIR /app
 USER root
-# Explicit bun install cache dir, matching the --mount=type=cache target below,
-# so the download cache of this stage can be reused by the web-build stage.
+# Explicit bun install cache dir, still used within this stage's install.
+# NOTE: no BuildKit cache mount (--mount=type=cache) here -- the Jenkins CI
+# daemon runs the classic builder and rejects it, so the cache is not
+# persisted across builds.
 ENV BUN_INSTALL_CACHE_DIR=/proma-bun-cache
 
 # 1) COPY install metadata + bun.lock first to maximize layer caching.
@@ -37,8 +39,7 @@ COPY apps/cli/package.json              ./apps/cli/
 #    *-linux-*-musl platform binaries (~231MB) are only loaded under
 #    alpine(musl), so remove them here so they never enter the runtime COPY
 #    layer (removing them in runtime would not save space -- layers stack).
-RUN --mount=type=cache,target=/proma-bun-cache \
-    bun install --network-concurrency=8 \
+RUN bun install --network-concurrency=8 \
  && rm -rf node_modules/@anthropic-ai/claude-agent-sdk-linux-*-musl
 
 # --- Stage 2: web-build (frontend bundle) ---
@@ -53,8 +54,7 @@ COPY apps/web/  ./apps/web/
 
 # Build the frontend only: apps/web build = vite build, root=apps/web/src/renderer,
 # base='/', output to src/renderer/dist
-RUN --mount=type=cache,target=/proma-bun-cache \
-    bun run --filter='@proma/web' build
+RUN bun run --filter='@proma/web' build
 
 # --- Stage 3: runtime (reuse deps hoisted node_modules, no reinstall) ---
 # Do NOT re-run bun install in runtime: reuse the complete hoisted node_modules
@@ -84,9 +84,10 @@ COPY --chown=bun:bun apps/server/ ./apps/server/
 # 3) Frontend bundle (from web-build stage)
 COPY --from=web-build --chown=bun:bun /app/apps/web/src/renderer/dist ./apps/web/src/renderer/dist
 
-# 4) entrypoint script (seeds proxy-settings.json on first boot); --chmod sets
-#    the exec bit directly, avoiding a later RUN chmod
-COPY --chmod=755 --chown=bun:bun docker/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+# 4) entrypoint script (seeds proxy-settings.json on first boot). Use plain
+#    COPY --chown (classic-builder compatible); the exec bit is set by the
+#    root RUN below, since COPY --chmod requires Docker >= 20.10.
+COPY --chown=bun:bun docker/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 ENV PROMA_DATA_ROOT=/data \
     PORT=3000 \
@@ -96,7 +97,7 @@ ENV PROMA_DATA_ROOT=/data \
 # just the dir itself without triggering a large layer copy. Must be created by
 # root -- entrypoint runs as bun and cannot create dirs under /.
 USER root
-RUN mkdir -p /data && chown bun:bun /data
+RUN mkdir -p /data && chown bun:bun /data && chmod 755 /usr/local/bin/docker-entrypoint.sh
 
 USER bun
 EXPOSE 3000
