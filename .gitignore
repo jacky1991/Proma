@@ -58,3 +58,6 @@ pnpm-workspace.yaml
 
 # Playwright MCP 工具输出（日志/快照）
 .playwright-mcp/
+
+# 内部工具目录（不进公开仓库）
+.zcode/

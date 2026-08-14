@@ -1,7 +1,7 @@
 {
   "name": "proma",
   "version": "0.1.0",
-  "description": "The next gen ai software with general agents",
+  "description": "Proma Web — 集成通用 AI Agent 的多用户 Web 部署平台（fork of proma-ai/Proma, AGPL-3.0）",
   "type": "module",
   "private": true,
   "workspaces": [

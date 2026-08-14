@@ -12,7 +12,7 @@ import type { BrandingConfig } from '@proma/shared'
 import defaultLogoUrl from '@/assets/bots/proma-logos/proma-gradient.png'
 
 /** 默认产品名称（未配置时回退） */
-export const DEFAULT_PRODUCT_NAME = 'Proma'
+export const DEFAULT_PRODUCT_NAME = 'Proma Web'
 
 /** 默认 Logo URL（未配置时回退，Vite 打包的资源 URL） */
 export const DEFAULT_LOGO_URL = defaultLogoUrl
