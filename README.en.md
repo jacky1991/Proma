@@ -29,7 +29,7 @@ bun run docker:build        # local build
 bun run docker:build:prod   # production build (linux/amd64)
 ```
 
-See [DEPLOYMENT.md](./DEPLOYMENT.md) for details.
+The container exposes port `3000` by default with data root `PROMA_DATA_ROOT=/data`.
 
 ## Architecture
 
