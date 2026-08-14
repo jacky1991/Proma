@@ -1,8 +1,10 @@
 # GitHub Actions: 发布 Docker 镜像
 #
-# 触发条件：推送 v* tag（如 v0.4.0）
+# 触发方式：
+# 1. 推送 v* tag（如 v0.4.0）→ 镜像 tag = 版本号
+# 2. 手动触发（Actions → Release → Run workflow）→ 镜像 tag = 输入值（默认 manual）
 # 构建 Proma Web 单镜像并推送到 GitHub Container Registry（ghcr.io）
-# 镜像名：ghcr.io/<owner>/<repo>，tag 为版本号 + latest
+# 镜像名：ghcr.io/<owner>/<repo>，另打 latest
 
 name: Release
 
@@ -10,6 +12,13 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: '手动触发的镜像 tag（留空默认 manual）'
+        required: false
+        default: 'manual'
+        type: string
 
 permissions:
   contents: read
@@ -31,12 +40,22 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: 计算镜像 tag
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ inputs.image_tag }}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: 构建并推送镜像
         run: |
           IMAGE=ghcr.io/${{ github.repository }}
+          VERSION=${{ steps.version.outputs.tag }}
           docker build \
-            -t "$IMAGE:${{ github.ref_name }}" \
+            -t "$IMAGE:$VERSION" \
             -t "$IMAGE:latest" \
             .
-          docker push "$IMAGE:${{ github.ref_name }}"
+          docker push "$IMAGE:$VERSION"
           docker push "$IMAGE:latest"
