@@ -1,18 +1,5 @@
-# GitHub Actions: 发布 Docker 镜像
-#
-# 触发方式：
-# 1. 推送 v* tag（如 v0.4.0）→ 镜像 tag = 版本号 + latest
-# 2. 手动触发（Actions → Release → Run workflow）→ 镜像 tag = 输入值（默认 manual）
-#
-# 构建 Proma Web 单镜像并推送到 GitHub Container Registry（ghcr.io）
-# 镜像名：ghcr.io/<owner>/<repo>
-#
-# 优化点：
-# - buildx + GHA layer cache：依赖层命中缓存，重复构建从全量 install 降到秒级
-# - 多平台构建：linux/amd64 + linux/arm64 一次出双平台 manifest
-# - metadata-action 自动生成 tag（git tag / 手动输入 / latest）
-# - concurrency 防止重复触发并发构建
-
+# 发布 Docker 镜像到 ghcr.io/<owner>/<repo>
+# 触发：v* tag（tag = 版本号 + latest）或手动触发（tag = 输入值，默认 manual）
 name: Release
 
 on:
@@ -54,7 +41,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 计算镜像 tag（自动 tag + 手动输入）
+      - name: 计算镜像 tag
         id: meta
         uses: docker/metadata-action@v6
         with:
@@ -63,7 +50,7 @@ jobs:
             type=raw,value=latest
             ${{ github.event_name == 'push' && 'type=ref,event=tag' || format('type=raw,value={0}', inputs.image_tag || 'manual') }}
 
-      - name: 构建并推送镜像（amd64 + arm64）
+      - name: 构建并推送（amd64 + arm64）
         uses: docker/build-push-action@v7
         with:
           context: .
