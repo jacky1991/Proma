@@ -61,3 +61,7 @@ pnpm-workspace.yaml
 
 # 内部工具目录（不进公开仓库）
 .zcode/
+
+# 本地文档与测试（仅本地保留，不推送远程）
+docs/
+tests/

@@ -29,7 +29,7 @@ bun run docker:build        # local build
 bun run docker:build:prod   # production build (linux/amd64)
 ```
 
-See [docs/docker-deploy.md](./docs/docker-deploy.md) for details.
+See [DEPLOYMENT.md](./DEPLOYMENT.md) for details.
 
 ## Architecture
 

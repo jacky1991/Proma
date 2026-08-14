@@ -39,7 +39,7 @@ bun run docker:build        # 本地构建（tag = proma:local）
 bun run docker:build:prod   # 生产构建（linux/amd64，tag = <git-sha>）
 ```
 
-容器默认 `EXPOSE 3000`，数据根 `PROMA_DATA_ROOT=/data`。详细部署步骤见 [docs/docker-deploy.md](./docs/docker-deploy.md)。
+容器默认 `EXPOSE 3000`，数据根 `PROMA_DATA_ROOT=/data`。详细部署步骤见 [DEPLOYMENT.md](./DEPLOYMENT.md)。
 
 ### CLI
 
