@@ -1,0 +1,41 @@
+# GitHub Actions: 仅构建验证（不推送镜像）
+#
+# 用途：在干净 runner 上验证 Dockerfile 能否完整构建 + 容器冒烟测试，
+#       不推送任何 registry，方便 CI 构建问题排查。
+# 触发方式：Actions → Build Check → Run workflow
+
+name: Build Check
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-docker:
+    name: build & smoke test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 构建镜像
+        run: |
+          docker build -t proma-build-check .
+
+      - name: 冒烟测试（启动容器 + 健康检查）
+        run: |
+          docker run -d -p 3000:3000 -e PROMA_DEV=1 --name proma-check proma-build-check
+          # 等待服务就绪（健康检查间隔 + 首启初始化）
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3000/api/health; then
+              echo "health OK"
+              break
+            fi
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:3000/api/health
+          docker logs proma-check 2>&1 | tail -5
+          docker stop proma-check
