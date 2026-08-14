@@ -51,7 +51,7 @@ proma/
 - **导出模块**：`./providers`、`./highlight`、`./types`、`./utils`
 - **关键功能**：Provider 适配器注册表、代码高亮（Shiki）
 - **依赖**：`@proma/shared`、`shiki`
-- **Peer 依赖**：`@modelcontextprotocol/sdk`
+- **Peer 依赖**：`@anthropic-ai/claude-agent-sdk`（>=0.2.123）、`@anthropic-ai/sdk`（>=0.70.0）、`@modelcontextprotocol/sdk`
 
 #### @proma/ui
 - **关键组件**：共享 React UI 组件库（CodeBlock、MermaidBlock）
@@ -116,6 +116,10 @@ cd packages/server-core && bun run typecheck
 
 # 测试
 bun test
+
+# Docker 镜像构建（见「部署与 CI」）
+bun run docker:build        # 本地镜像（native 平台，tag=local）
+bun run docker:build:prod   # 生产镜像（linux/amd64，tag=<git-sha>+latest）
 ```
 
 ## 运行时环境
@@ -141,13 +145,13 @@ bun test
 | **状态管理** | Jotai | 2.17.1 |
 | **UI 组件** | Radix UI | 最新 |
 | **样式** | Tailwind CSS | 3.4.17 |
-| **富文本编辑器** | TipTap | 3.19.0 |
+| **富文本编辑器** | TipTap | 3.29.2 |
 | **代码高亮** | Shiki | 3.22.0 |
 | **Markdown** | React Markdown | 10.1.0 |
 | **图表** | Beautiful Mermaid | 最新 |
 | **数学公式** | KaTeX | 0.16+ |
 | **构建工具（前端）** | Vite | 6.0.3 |
-| **Agent Runtime** | Pi Agent SDK | `0.80.9`（`@earendil-works/pi-*`） |
+| **Agent Runtime** | Pi Agent SDK | `0.82.1`（`@earendil-works/pi-*`） |
 
 ## 核心架构
 
@@ -293,6 +297,20 @@ renderer 源码零改动，浏览器注入 `window.electronAPI` shim（`apps/web
 - Web 独立数据根 `~/.proma-web/`（与历史桌面端 `~/.proma/` 隔离，迁移时复制而非移动）
 - 多用户：会话归属 userId + API 鉴权 + 存储分层（`users/{userId}/`）；工作区团队共享
 - MCP 配置和 Skills 按工作区管理
+
+## 部署与 CI
+
+### Docker 镜像
+
+单镜像多阶段构建：`base`（元数据+lockfile）→ `deps`（全量依赖）/ `prod-deps`（`--omit=dev` 生产依赖）→ `web-build`（bun 构建前端产物）→ `runtime`（prod node_modules + 前端产物）。
+
+- 数据卷 `PROMA_DATA_ROOT=/data`（持久化），端口 3000，健康检查 `/api/health`；entrypoint 首启播种 proxy-settings.json
+- **Dockerfile 保持纯 ASCII + 无 BuildKit 语法**：Jenkins 的 docker-build-step 用 GBK 读文件（UTF-8 注释抛 MalformedInputException），daemon 为经典 builder
+
+### GitHub Actions
+
+- `release.yml`：push `v*` tag 或手动触发 → buildx 多平台（amd64/arm64）+ GHA layer cache → 推 GHCR（tag = 版本号 + latest）
+- `build-check.yml`：手动触发构建 + 冒烟测试（不推送），用于 Dockerfile 验证
 
 ## Agent Runtime 架构
 
